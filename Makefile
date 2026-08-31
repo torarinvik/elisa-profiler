@@ -5,13 +5,16 @@ SEED_OPT_LEVEL ?= -O0
 SEED_MAX_RSS_KB ?= 8388608
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
 
-.PHONY: compiler-status compiler-seed compiler-smoke collector-content-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke collector-content-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
 	@echo "compiler worktree: $(COMPILER_WORKTREE)"
 	@git -C "$(COMPILER_WORKTREE)" status --short --branch
 	@if test -x "$(COMPILER_WORKTREE)/bin/elisac-stage1"; then echo "stage1 product: ready"; else echo "stage1 product: missing (run make compiler-seed)"; fi
+
+compiler-audit:
+	@ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" "$(PROFILER_ROOT)/scripts/audit-compiler-branches.sh"
 
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
@@ -39,4 +42,4 @@ profile-protocol-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-smoke collector-content-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke
+test: compiler-audit compiler-smoke collector-content-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke

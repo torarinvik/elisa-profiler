@@ -20,6 +20,7 @@ override it with `ELISA_COMPILER_ROOT` when needed.
 
 ```sh
 make compiler-status
+make compiler-audit
 make compiler-seed
 make compiler-smoke
 make profiler-smoke
@@ -33,6 +34,11 @@ scripts/elisa-compiler -o build/hello.o examples/hello.elisa
 `ELISA_STAGE0_CORE` when using a different local stage0 checkout. The seeded
 stage1 binary and compiler build outputs remain ignored artifacts inside the
 compiler worktree.
+
+`compiler-audit` verifies that every local branch tip in the compiler repository is
+already included in the profiler compiler worktree. It also warns about uncommitted
+changes in any compiler worktree; those changes are intentionally not imported until
+they have been reviewed and committed.
 
 The profiler Makefile seeds at -O0 with an 8 GiB RSS cap by default for a
 predictable local bootstrap. Override SEED_OPT_LEVEL and SEED_MAX_RSS_KB when
