@@ -242,11 +242,17 @@ def prepare_target(
 def parse_profile(
     stderr: str, *, allow_missing: bool = False
 ) -> tuple[
-    dict[str, int], list[dict[str, Any]], list[dict[str, Any]], str, list[dict[str, Any]]
+    dict[str, int],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    str,
+    list[dict[str, Any]],
 ]:
     meta: dict[str, int] | None = None
     locations: list[dict[str, Any]] = []
     call_edges: list[dict[str, Any]] = []
+    stacks: list[dict[str, Any]] = []
     recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
     for line in stderr.splitlines():
@@ -290,6 +296,16 @@ def parse_profile(
                 }
             )
             continue
+        if len(fields) == 7 and fields[2] == "stack":
+            stacks.append(
+                {
+                    "stack": fields[3],
+                    "call_events": int(fields[4]),
+                    "completed_calls": int(fields[5]),
+                    "self_ns": int(fields[6]),
+                }
+            )
+            continue
         if len(fields) != 15 or fields[2] != "location":
             raise ProfilerError(f"malformed profiler runtime record: {line}")
         kind = int(fields[3])
@@ -321,9 +337,16 @@ def parse_profile(
         locations.append(location)
     if meta is None:
         if allow_missing:
-            return {"events": 0, "locations": 0, "dropped": 0}, [], [], stderr, recent_events
+            return {"events": 0, "locations": 0, "dropped": 0}, [], [], [], stderr, recent_events
         raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
-    return meta, locations, call_edges, "\n".join(program_stderr) + ("\n" if program_stderr else ""), recent_events
+    return (
+        meta,
+        locations,
+        call_edges,
+        stacks,
+        "\n".join(program_stderr) + ("\n" if program_stderr else ""),
+        recent_events,
+    )
 
 
 def merge_profiles(
@@ -332,20 +355,27 @@ def merge_profiles(
             dict[str, int],
             list[dict[str, Any]],
             list[dict[str, Any]],
+            list[dict[str, Any]],
             str,
             list[dict[str, Any]],
         ]
     ],
 ) -> tuple[
-    dict[str, int], list[dict[str, Any]], list[dict[str, Any]], str, list[dict[str, Any]]
+    dict[str, int],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    str,
+    list[dict[str, Any]],
 ]:
     merged: dict[tuple[str, str, int, str | None, bool], dict[str, Any]] = {}
     merged_call_edges: dict[tuple[str, str], dict[str, Any]] = {}
+    merged_stacks: dict[str, dict[str, Any]] = {}
     events = 0
     dropped = 0
     recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
-    for repetition, (meta, locations, call_edges, stderr, path) in enumerate(results, start=1):
+    for repetition, (meta, locations, call_edges, stacks, stderr, path) in enumerate(results, start=1):
         events += meta["events"]
         dropped += meta["dropped"]
         if stderr:
@@ -390,6 +420,15 @@ def merge_profiles(
             combined_edge["call_events"] += call_edge["call_events"]
             combined_edge["completed_calls"] += call_edge["completed_calls"]
             combined_edge["inclusive_ns"] += call_edge["inclusive_ns"]
+        for stack in stacks:
+            key = stack["stack"]
+            if key not in merged_stacks:
+                merged_stacks[key] = dict(stack)
+                continue
+            combined_stack = merged_stacks[key]
+            combined_stack["call_events"] += stack["call_events"]
+            combined_stack["completed_calls"] += stack["completed_calls"]
+            combined_stack["self_ns"] += stack["self_ns"]
     locations = sorted(
         merged.values(),
         key=lambda location: (
@@ -409,10 +448,19 @@ def merge_profiles(
             call_edge["callee"],
         ),
     )
+    stacks = sorted(
+        merged_stacks.values(),
+        key=lambda stack: (
+            -stack["self_ns"],
+            -stack["call_events"],
+            stack["stack"],
+        ),
+    )
     return (
         {"events": events, "locations": len(locations), "dropped": dropped},
         locations,
         call_edges,
+        stacks,
         "\n\n".join(program_stderr) + ("\n" if program_stderr else ""),
         recent_events,
     )
@@ -571,12 +619,23 @@ def text_report(report: dict[str, Any], top: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+def folded_report(report: dict[str, Any]) -> str:
+    """Render stack aggregates in the collapsed-stack format used by flamegraphs."""
+    lines: list[str] = []
+    for stack in report["stacks"]:
+        weight = stack["self_ns"] if report["run"]["location_timing"] else stack["call_events"]
+        if weight > 0:
+            lines.append(f"{stack['stack']} {weight}")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def build_report(
     source: Path,
     compiler: dict[str, Any],
     meta: dict[str, int],
     locations: list[dict[str, Any]],
     call_edges: list[dict[str, Any]],
+    stacks: list[dict[str, Any]],
     *,
     exit_code: int | None,
     signal: int | None,
@@ -667,6 +726,7 @@ def build_report(
         },
         "functions": functions,
         "call_edges": call_edges,
+        "stacks": stacks,
         "locations": locations,
     }
     if program_stderr:
@@ -687,7 +747,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("source", type=Path, help="Elisa source file containing main() -> i64")
     parser.add_argument("-o", "--output", type=Path, help="write the report to this file")
-    parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument("--format", choices=("text", "json", "folded"), default="text")
     parser.add_argument("--top", type=int, default=20, help="number of hot locations in text output")
     parser.add_argument("--repeat", type=int, default=1, help="number of measured executions (default: 1)")
     parser.add_argument("--warmup", type=int, default=0, help="number of unreported executions before measuring")
@@ -837,6 +897,7 @@ def profile(args: argparse.Namespace) -> int:
                 dict[str, int],
                 list[dict[str, Any]],
                 list[dict[str, Any]],
+                list[dict[str, Any]],
                 str,
                 list[dict[str, Any]],
             ]
@@ -851,7 +912,7 @@ def profile(args: argparse.Namespace) -> int:
             )
             execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
             stderr = run_stderr_bytes.decode("utf-8", errors="replace")
-            meta, locations, call_edges, program_stderr, recent_events = parse_profile(
+            meta, locations, call_edges, stacks, program_stderr, recent_events = parse_profile(
                 stderr,
                 allow_missing=run_status < 0 or run_timed_out,
             )
@@ -864,13 +925,13 @@ def profile(args: argparse.Namespace) -> int:
                 "timed_out": run_timed_out,
             }
             run_records.append(run_record)
-            profile_results.append((meta, locations, call_edges, program_stderr, recent_events))
+            profile_results.append((meta, locations, call_edges, stacks, program_stderr, recent_events))
             run_stdout.append(run_stdout_bytes.decode("utf-8", errors="replace"))
             run_stderr.append(program_stderr)
             if run_status != 0 or run_timed_out:
                 break
 
-        meta, locations, call_edges, program_stderr, recent_events = merge_profiles(profile_results)
+        meta, locations, call_edges, stacks, program_stderr, recent_events = merge_profiles(profile_results)
         failed_run = next(
             (
                 record
@@ -896,6 +957,7 @@ def profile(args: argparse.Namespace) -> int:
             meta,
             locations,
             call_edges,
+            stacks,
             exit_code=exit_code,
             signal=signal,
             run_records=run_records,
@@ -908,11 +970,12 @@ def profile(args: argparse.Namespace) -> int:
             temp_root=temp_root if args.keep_temp else None,
             recent_events=recent_events,
         )
-        rendered = (
-            json.dumps(report, indent=2, sort_keys=False) + "\n"
-            if args.format == "json"
-            else text_report(report, args.top)
-        )
+        if args.format == "json":
+            rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"
+        elif args.format == "folded":
+            rendered = folded_report(report)
+        else:
+            rendered = text_report(report, args.top)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(rendered, encoding="utf-8")

@@ -8,14 +8,21 @@ trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --warmup 1 --repeat 2 --location-timing --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --repeat 2 --location-timing --format folded --output "$WORK/hot-loop.folded"
+grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
+grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
 test -s "$WORK/included-report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/signed_values.elisa" \
     --repeat 2 --format json --output "$WORK/signed-report.json"
 test -s "$WORK/signed-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/recursive.elisa" \
+    --repeat 2 --location-timing --format json --output "$WORK/recursive-report.json"
+test -s "$WORK/recursive-report.json"
 
-python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
+python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -62,6 +69,11 @@ assert hot_edge["caller"] == "main"
 assert hot_edge["callee"] == "accumulate"
 assert hot_edge["call_events"] == hot_edge["completed_calls"] == 2
 assert hot_edge["inclusive_ns"] == report["functions"][0]["inclusive_ns"]
+stacks = {stack["stack"]: stack for stack in report["stacks"]}
+assert stacks["main"]["call_events"] == stacks["main"]["completed_calls"] == 2
+assert stacks["main"]["self_ns"] > 0
+assert stacks["main;accumulate"]["call_events"] == stacks["main;accumulate"]["completed_calls"] == 2
+assert stacks["main;accumulate"]["self_ns"] > 0
 assert report["source_mapping"]["mode"] == "include-aware"
 assert report["source_mapping"]["unmapped_locations"] == 0
 
@@ -91,8 +103,22 @@ assert next(
     and location["variable"] == "total"
 ) == 330
 
-included_source = Path(sys.argv[4]).resolve()
-helper_source = Path(sys.argv[5]).resolve()
+with open(sys.argv[4], encoding="utf-8") as stream:
+    recursive_report = json.load(stream)
+recursive_functions = {
+    function["function"]: function for function in recursive_report["functions"]
+}
+assert recursive_functions["countdown"]["call_events"] == 14
+assert recursive_functions["countdown"]["completed_calls"] == 14
+assert next(
+    edge
+    for edge in recursive_report["call_edges"]
+    if edge["caller"] == "countdown" and edge["callee"] == "countdown"
+)["call_events"] == 12
+assert max(stack["stack"].count("countdown") for stack in recursive_report["stacks"]) == 7
+
+included_source = Path(sys.argv[5]).resolve()
+helper_source = Path(sys.argv[6]).resolve()
 with open(sys.argv[2], encoding="utf-8") as stream:
     included_report = json.load(stream)
 helper_locations = [
@@ -137,6 +163,9 @@ signed_main = next(function for function in signed_report["functions"] if functi
 assert signed_main["completed_calls"] == signed_main["call_events"] == 2
 assert signed_main["inclusive_ns"] == 0
 assert signed_main["self_ns"] == 0
+signed_stack = next(stack for stack in signed_report["stacks"] if stack["stack"] == "main")
+assert signed_stack["call_events"] == signed_stack["completed_calls"] == 2
+assert signed_stack["self_ns"] == 0
 signed_values = [
     location for location in signed_report["locations"]
     if location["kind"] == "value" and location["function"] == "main"
@@ -189,6 +218,9 @@ assert report["recent_events"][-1]["line"] == 2
 crash_main = next(function for function in report["functions"] if function["function"] == "main")
 assert crash_main["call_events"] == 1
 assert crash_main["completed_calls"] == 0
+crash_stack = next(stack for stack in report["stacks"] if stack["stack"] == "main")
+assert crash_stack["call_events"] == 1
+assert crash_stack["completed_calls"] == 0
 print("crash capture OK")
 PY
 

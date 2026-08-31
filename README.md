@@ -54,10 +54,13 @@ the program, and reports function-entry, statement, and scalar-value events:
 
     scripts/elisa-profiler profile examples/hot_loop.elisa
     scripts/elisa-profiler examples/hot_loop.elisa --format json -o profiles/hot-loop.json
+    scripts/elisa-profiler profile examples/hot_loop.elisa --format folded \
+        -o profiles/hot-loop.folded
 
 The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, execution status/timing, all locations
-with source snippets, function call-event counts, and scalar value statistics
+with source snippets, function call-event counts, aggregate caller-to-callee
+edges, folded call stacks, and scalar value statistics
 (minimum, maximum, sum, and last). Signed scalar values retain their signed
 interpretation instead of being reported as raw u64 bit patterns.
 Include-expanded programs are mapped
@@ -71,6 +74,7 @@ trace events in execution order, when the collector received the terminating sig
 
 Useful controls:
 
+    --format text|json|folded  choose the report format (default: text)
     --opt-level 0..3       choose the compiler optimization level (default: 0)
     --top N                number of locations in the text report (default: 20)
     --warmup N             execute N unreported startup runs (default: 0)
@@ -96,5 +100,8 @@ only functions whose return hook was observed; panic and timeout reports can
 therefore contain incomplete calls. Inclusive/self timings are available with
 --location-timing. This is an opt-in diagnostic estimate: it includes collector
 overhead and is not statistical CPU sampling.
+The folded format is compatible with flamegraph tooling: timing runs use
+function self nanoseconds as weights, while count-only runs use observed call
+entries as weights.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler.
