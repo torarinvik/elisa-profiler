@@ -32,6 +32,12 @@ grep -q 'run 2' "$WORK/hot-loop.html"
     --format text --top 3 --output "$WORK/comparison.txt"
 "$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
     --format json --output "$WORK/comparison.json"
+"$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
+    --format html --top 3 --output "$WORK/comparison.html"
+test -s "$WORK/comparison.html"
+grep -q 'Elisa profile comparison' "$WORK/comparison.html"
+grep -q 'Source-location changes' "$WORK/comparison.html"
+grep -q 'DOMContentLoaded' "$WORK/comparison.html"
 python3 - "$WORK/timing.txt" "$WORK/comparison.txt" "$WORK/o2-report.json" "$WORK/comparison.json" <<'PY'
 import json
 import sys

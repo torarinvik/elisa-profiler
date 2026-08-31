@@ -1522,6 +1522,131 @@ def comparison_text(report: dict[str, Any], top: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+def comparison_html(report: dict[str, Any], top: int) -> str:
+    baseline = report["baseline"]
+    candidate = report["candidate"]
+    metric_rows = [
+        ["Wall mean", comparison_metric_text(report["metrics"]["execution_ms_mean"], "ms")],
+        ["Compile", comparison_metric_text(report["metrics"]["compile_ms"], "ms")],
+        ["CPU", comparison_metric_text(report["metrics"]["cpu_ms"], "ms")],
+        ["Peak RSS", comparison_metric_text(report["metrics"]["peak_rss_bytes"], "MiB")],
+        ["Events", comparison_metric_text(report["metrics"]["events"])],
+    ]
+    function_rows = [
+        [
+            function["function"],
+            comparison_metric_text(function["inclusive_ns"], "ns"),
+            comparison_metric_text(function["events"]),
+            comparison_metric_text(function["completed_calls"]),
+        ]
+        for function in report["functions"][:top]
+    ]
+    location_rows = []
+    for location in report["locations"][:top]:
+        source = Path(location["source"]).name if location["source"] else "<unknown>"
+        location_rows.append(
+            [
+                f"{source}:{location['line']}",
+                location["function"],
+                location["kind"],
+                location.get("variable") or "",
+                comparison_metric_text(location["interval_ns"], "ns"),
+                comparison_metric_text(location["count"]),
+            ]
+        )
+    sections = [
+        html_table("Run metrics", ["Metric", "Baseline → Candidate"], metric_rows),
+        html_table(
+            f"Function changes (top {min(top, len(report['functions']))})",
+            ["Function", "Inclusive", "Events", "Completed calls"],
+            function_rows,
+        ),
+        html_table(
+            f"Source-location changes (top {min(top, len(report['locations']))})",
+            ["Location", "Function", "Kind", "Variable", "Interval", "Events"],
+            location_rows,
+        ),
+    ]
+    if report["warnings"]:
+        warning_rows = [[warning] for warning in report["warnings"]]
+        sections.append(html_table("Warnings", ["Message"], warning_rows))
+    if report["regressions"]:
+        regression_rows = [
+            [regression["scope"], regression["metric"], regression["message"]]
+            for regression in report["regressions"]
+        ]
+        sections.append(html_table("Regressions", ["Scope", "Metric", "Message"], regression_rows))
+    status = report["status"]
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en"><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            "<title>Elisa profile comparison</title>",
+            """<style>
+:root { color-scheme: light dark; font: 15px/1.45 -apple-system, BlinkMacSystemFont, sans-serif; }
+body { margin: 0; background: #f5f7fa; color: #182230; }
+main { max-width: 1500px; margin: 0 auto; padding: 28px; }
+h1 { margin: 0 0 4px; font-size: 26px; }
+.subtitle, .muted { color: #667085; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 22px 0; }
+.card { background: white; border: 1px solid #d8dee8; border-radius: 10px; padding: 14px; }
+.card-label { color: #667085; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.card-value { font-size: 18px; font-weight: 650; margin-top: 4px; overflow-wrap: anywhere; }
+h2 { margin: 28px 0 10px; font-size: 18px; }
+.table-wrap { overflow-x: auto; background: white; border: 1px solid #d8dee8; border-radius: 10px; }
+table { border-collapse: collapse; min-width: 720px; width: 100%; }
+th, td { border-bottom: 1px solid #e9edf3; padding: 9px 11px; text-align: left; vertical-align: top; }
+th { background: #eef2f7; }
+tbody tr:last-child td { border-bottom: 0; }
+footer { border-top: 1px solid #d8dee8; margin-top: 30px; padding-top: 14px; color: #667085; font-size: 12px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #111827; color: #e5e7eb; }
+  .card, .table-wrap { background: #1f2937; border-color: #374151; }
+  th, td { border-color: #374151; }
+  th { background: #374151; }
+  .subtitle, .muted, .card-label, footer { color: #9ca3af; }
+}
+</style>""",
+            """<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("table[data-sortable]").forEach(table => {
+    const body = table.tBodies[0];
+    table.querySelectorAll("th").forEach((header, index) => {
+      header.addEventListener("click", () => {
+        const direction = header.dataset.direction === "ascending" ? -1 : 1;
+        header.dataset.direction = direction === 1 ? "ascending" : "descending";
+        [...body.rows].sort((left, right) => {
+          const a = left.cells[index].textContent.trim();
+          const b = right.cells[index].textContent.trim();
+          const an = Number(a.replace(/[^0-9.+-]/g, ""));
+          const bn = Number(b.replace(/[^0-9.+-]/g, ""));
+          if (Number.isFinite(an) && Number.isFinite(bn) && a !== "" && b !== "") {
+            return (an - bn) * direction;
+          }
+          return a.localeCompare(b) * direction;
+        }).forEach(row => body.appendChild(row));
+      });
+    });
+  });
+});
+</script>""",
+            "</head><body><main>",
+            "<h1>Elisa profile comparison</h1>",
+            f'<p class="subtitle">{escape(baseline["path"])} → {escape(candidate["path"])}</p>',
+            '<div class="cards">',
+            f'<div class="card"><div class="card-label">Status</div><div class="card-value">{escape(status)}</div></div>',
+            f'<div class="card"><div class="card-label">Threshold</div><div class="card-value">{report["threshold_percent"]:g}%</div></div>',
+            f'<div class="card"><div class="card-label">Baseline</div><div class="card-value">{escape(str(baseline.get("opt_level") or "unknown"))}</div></div>',
+            f'<div class="card"><div class="card-label">Candidate</div><div class="card-value">{escape(str(candidate.get("opt_level") or "unknown"))}</div></div>',
+            "</div>",
+            *sections,
+            f"<footer>Comparison schema {report['schema_version']}</footer>",
+            "</main></body></html>",
+        ]
+    ) + "\n"
+
+
 def build_report(
     source: Path,
     compiler: dict[str, Any],
@@ -1697,11 +1822,11 @@ def parse_compare_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("baseline", type=Path, help="baseline JSON profile")
     parser.add_argument("candidate", type=Path, help="candidate JSON profile")
     parser.add_argument(
-        "--format", choices=("text", "json"), default="text", help="comparison output format"
+        "--format", choices=("text", "json", "html"), default="text", help="comparison output format"
     )
     parser.add_argument("-o", "--output", type=Path, help="write the comparison to this file")
     parser.add_argument(
-        "--top", type=int, default=20, help="number of function changes in text output"
+        "--top", type=int, default=20, help="number of function and location changes in text output"
     )
     parser.add_argument(
         "--threshold",
@@ -1712,7 +1837,7 @@ def parse_compare_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--fail-on-regression",
         action="store_true",
-        help="return status 1 when a metric or function exceeds the threshold",
+        help="return status 1 when a metric, function, or location exceeds the threshold",
     )
     args = parser.parse_args(argv)
     if args.top < 1:
@@ -2036,6 +2161,8 @@ def compare_profiles(args: argparse.Namespace) -> int:
     comparison = build_comparison_report(args.baseline, args.candidate, args.threshold)
     if args.format == "json":
         rendered = json.dumps(comparison, indent=2, sort_keys=False) + "\n"
+    elif args.format == "html":
+        rendered = comparison_html(comparison, args.top)
     else:
         rendered = comparison_text(comparison, args.top)
     if args.output is not None:

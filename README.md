@@ -59,6 +59,8 @@ the program, and reports function-entry, statement, and scalar-value events:
     scripts/elisa-profiler profile examples/hot_loop.elisa --format html \
         -o profiles/hot-loop.html
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
+    scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
+        --format html -o profiles/comparison.html
 
 The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, selected optimization level,
@@ -97,7 +99,7 @@ depth at termination.
 
 Useful controls:
 
-    --format text|json|folded|html  choose the report format (default: text)
+    --format text|json|folded|html  choose the profile report format (default: text)
     --opt-level 0..3       choose the compiler optimization level (default: 0)
     --top N                number of locations in the text report (default: 20)
     --warmup N             execute N unreported startup runs (default: 0)
@@ -146,6 +148,8 @@ Comparison JSON output follows
 Comparisons warn when the source path, timing mode, or compiler provenance
 differs between the two reports. The baseline must be a successful profile;
 failed candidate profiles are retained as explicit comparison regressions.
+Comparison HTML is self-contained and includes sortable-style tables for run,
+function, and source-location changes, plus warnings and regressions.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target
