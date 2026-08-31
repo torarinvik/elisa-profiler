@@ -1507,11 +1507,14 @@ def build_comparison_report(
         "cpu_ms": "run",
         "peak_rss_bytes": "run",
         "events": "summary",
+        "dropped_events": "summary",
+        "stack_overflow_entries": "summary",
     }
+    profile_metric_names = {"dropped_events": "dropped"}
     metrics = {
         name: comparison_metric(
-            profile_numeric_value(baseline, section, name),
-            profile_numeric_value(candidate, section, name),
+            profile_numeric_value(baseline, section, profile_metric_names.get(name, name)),
+            profile_numeric_value(candidate, section, profile_metric_names.get(name, name)),
         )
         for name, section in run_metric_names.items()
     }
@@ -1649,6 +1652,25 @@ def build_comparison_report(
                     "message": message,
                 }
             )
+    quality_metric_messages = {
+        "dropped_events": "candidate profile dropped trace events",
+        "stack_overflow_entries": "candidate profile exceeded the tracked call-stack depth",
+    }
+    for metric_name, message in quality_metric_messages.items():
+        metric = metrics[metric_name]
+        candidate_value = metric["candidate"]
+        if isinstance(candidate_value, (int, float)) and not isinstance(candidate_value, bool) and candidate_value > 0:
+            regressions.append(
+                {
+                    "scope": "quality",
+                    "metric": metric_name,
+                    "baseline": metric["baseline"],
+                    "candidate": candidate_value,
+                    "delta": metric["delta"],
+                    "percent": metric["percent"],
+                    "message": message,
+                }
+            )
     for function_change in function_changes:
         metric = function_change["inclusive_ns"]
         percent = metric["percent"]
@@ -1771,6 +1793,18 @@ def build_comparison_report(
             }
         )
     warnings: list[str] = []
+    quality_descriptions = (
+        ("dropped_events", "dropped trace events"),
+        ("stack_overflow_entries", "call-stack overflow entries"),
+    )
+    for label, report in (("baseline", baseline), ("candidate", candidate)):
+        summary = report.get("summary", {})
+        for field, description in quality_descriptions:
+            value = summary.get("dropped" if field == "dropped_events" else field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                warnings.append(
+                    f"{label} profile contains {value:g} {description}; measurements may be incomplete"
+                )
     if baseline.get("source") != candidate.get("source"):
         warnings.append("baseline and candidate use different source paths")
     if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
@@ -1868,6 +1902,8 @@ def comparison_text(report: dict[str, Any], top: int) -> str:
         f"  CPU: {comparison_metric_text(report['metrics']['cpu_ms'], 'ms')}",
         f"  peak RSS: {comparison_metric_text(report['metrics']['peak_rss_bytes'], 'MiB')}",
         f"  events: {comparison_metric_text(report['metrics']['events'])}",
+        f"  dropped trace events: {comparison_metric_text(report['metrics']['dropped_events'])}",
+        f"  stack overflow entries: {comparison_metric_text(report['metrics']['stack_overflow_entries'])}",
         "",
         f"Function changes (top {min(top, len(report['functions']))}):",
     ]
@@ -1938,6 +1974,8 @@ def comparison_html(report: dict[str, Any], top: int) -> str:
         ["CPU", comparison_metric_text(report["metrics"]["cpu_ms"], "ms")],
         ["Peak RSS", comparison_metric_text(report["metrics"]["peak_rss_bytes"], "MiB")],
         ["Events", comparison_metric_text(report["metrics"]["events"])],
+        ["Dropped trace events", comparison_metric_text(report["metrics"]["dropped_events"])],
+        ["Stack overflow entries", comparison_metric_text(report["metrics"]["stack_overflow_entries"])],
     ]
     function_rows = [
         [

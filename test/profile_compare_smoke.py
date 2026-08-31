@@ -43,7 +43,7 @@ def profile(
         "schema_version": 1,
         "source": "demo.elisa",
         "compiler": {"commit": f"compiler-{opt_level}"},
-        "summary": {"events": 100},
+        "summary": {"events": 100, "dropped": 0, "stack_overflow_entries": 0},
         "source_mapping": {},
         "run": {
             "exit_code": 0,
@@ -147,6 +147,12 @@ def main() -> int:
         assert any(item["scope"] == "stack" for item in comparison["regressions"])
         assert comparison["call_edges"][0]["inclusive_ns"]["percent"] == 100.0
         assert comparison["stacks"][0]["self_ns"]["percent"] == 100.0
+        assert comparison["metrics"]["dropped_events"] == {
+            "baseline": 0,
+            "candidate": 0,
+            "delta": 0,
+            "percent": 0.0,
+        }
         assert comparison["locations"][0]["line"] == 3
         assert comparison["locations"][0]["interval_ns"]["percent"] is None
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])
@@ -184,6 +190,44 @@ def main() -> int:
             item["scope"] == "stack" and item["metric"] == "call_events"
             for item in count_comparison["regressions"]
         )
+
+        incomplete_candidate = profile(10.0, 1_000, "-O0")
+        incomplete_candidate["summary"]["dropped"] = 3
+        incomplete_candidate["summary"]["stack_overflow_entries"] = 1
+        incomplete_path = root / "incomplete-candidate.json"
+        incomplete_comparison_path = root / "incomplete-comparison.json"
+        incomplete_path.write_text(json.dumps(incomplete_candidate), encoding="utf-8")
+        incomplete_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(incomplete_path),
+                "--format",
+                "json",
+                "--output",
+                str(incomplete_comparison_path),
+                "--fail-on-regression",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert incomplete_result.returncode == 1, incomplete_result.stderr
+        incomplete_comparison = json.loads(
+            incomplete_comparison_path.read_text(encoding="utf-8")
+        )
+        assert any(
+            item["scope"] == "quality" and item["metric"] == "dropped_events"
+            for item in incomplete_comparison["regressions"]
+        )
+        assert any(
+            item["scope"] == "quality" and item["metric"] == "stack_overflow_entries"
+            for item in incomplete_comparison["regressions"]
+        )
+        assert any("dropped trace events" in warning for warning in incomplete_comparison["warnings"])
+        assert any("call-stack overflow entries" in warning for warning in incomplete_comparison["warnings"])
 
         baseline_without_edge = profile(10.0, 1_000, "-O0")
         baseline_without_edge["call_edges"] = []

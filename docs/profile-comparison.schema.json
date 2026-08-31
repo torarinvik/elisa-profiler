@@ -27,13 +27,23 @@
     "threshold_percent": { "type": "number", "minimum": 0 },
     "metrics": {
       "type": "object",
-      "required": ["execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes", "events"],
+      "required": [
+        "execution_ms_mean",
+        "compile_ms",
+        "cpu_ms",
+        "peak_rss_bytes",
+        "events",
+        "dropped_events",
+        "stack_overflow_entries"
+      ],
       "properties": {
         "execution_ms_mean": { "$ref": "#/$defs/metric" },
         "compile_ms": { "$ref": "#/$defs/metric" },
         "cpu_ms": { "$ref": "#/$defs/metric" },
         "peak_rss_bytes": { "$ref": "#/$defs/metric" },
-        "events": { "$ref": "#/$defs/metric" }
+        "events": { "$ref": "#/$defs/metric" },
+        "dropped_events": { "$ref": "#/$defs/metric" },
+        "stack_overflow_entries": { "$ref": "#/$defs/metric" }
       },
       "additionalProperties": true
     },
@@ -119,7 +129,7 @@
       "type": "object",
       "required": ["scope", "metric", "baseline", "candidate", "delta", "percent", "message"],
       "properties": {
-        "scope": { "type": "string", "enum": ["run", "function", "location", "call_edge", "stack"] },
+        "scope": { "type": "string", "enum": ["run", "function", "location", "call_edge", "stack", "quality"] },
         "function": { "type": "string" },
         "caller": { "type": "string" },
         "callee": { "type": "string" },
