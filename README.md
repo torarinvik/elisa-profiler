@@ -23,6 +23,7 @@ make compiler-status
 make compiler-audit
 make compiler-seed
 make compiler-smoke
+make runtime-abi-smoke
 make profiler-smoke
 make test
 

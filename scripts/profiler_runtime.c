@@ -1030,6 +1030,7 @@ static void profile_dump_from_signal(void) {
     }
 }
 
+#ifndef ELISA_PROFILE_NO_MAIN
 extern int64_t elisa_profile_target_main(void);
 
 int main(void) {
@@ -1041,6 +1042,7 @@ int main(void) {
     profile_dump();
     return (int)(result & 0xff);
 }
+#endif
 
 /* Optional runtime hooks. The standalone runtime object keeps these unresolved
  * because embedding hosts may provide richer implementations. A profiler run
@@ -1081,7 +1083,7 @@ uint32_t elisa_native_callback_context_result_u32(void *ctx, uint32_t fallback) 
     (void)ctx; return fallback;
 }
 void elisa_native_callback_context_free(void *ctx) { (void)ctx; }
-void va_copy(void *destination, void *source) {
-    (void)destination; (void)source;
+void *va_copy(void *source) {
+    return source;
 }
 void va_end(void *argument) { (void)argument; }
