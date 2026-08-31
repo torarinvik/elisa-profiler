@@ -1310,6 +1310,15 @@ def build_comparison_report(
         warnings.append("baseline and candidate use different source paths")
     if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
         warnings.append("baseline and candidate use different location-timing settings")
+    baseline_compiler = baseline.get("compiler")
+    candidate_compiler = candidate.get("compiler")
+    if isinstance(baseline_compiler, dict) and isinstance(candidate_compiler, dict):
+        if baseline_compiler.get("commit") != candidate_compiler.get("commit"):
+            warnings.append("baseline and candidate use different compiler commits")
+        if baseline_compiler.get("branch") != candidate_compiler.get("branch"):
+            warnings.append("baseline and candidate use different compiler branches")
+        if baseline_compiler.get("dirty") != candidate_compiler.get("dirty"):
+            warnings.append("baseline and candidate use different compiler dirty states")
     return {
         "schema_version": 1,
         "kind": "profile_comparison",

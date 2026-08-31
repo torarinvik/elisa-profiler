@@ -78,6 +78,7 @@ def main() -> int:
         assert comparison["status"] == "regression"
         assert comparison["metrics"]["execution_ms_mean"]["percent"] == 100.0
         assert comparison["metrics"]["compile_ms"]["percent"] == 0.0
+        assert any("compiler commits" in warning for warning in comparison["warnings"])
         assert any(item["scope"] == "function" for item in comparison["regressions"])
 
         failing = subprocess.run(
