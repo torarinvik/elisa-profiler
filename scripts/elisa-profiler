@@ -1967,8 +1967,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         parser.error("--repeat must be positive")
     if args.warmup < 0:
         parser.error("--warmup cannot be negative")
-    if args.timeout is not None and args.timeout <= 0:
-        parser.error("--timeout must be positive")
+    if args.timeout is not None and (not math.isfinite(args.timeout) or args.timeout <= 0):
+        parser.error("--timeout must be a finite positive number")
     args.source = args.source.resolve()
     args.compiler_root = args.compiler_root.resolve()
     args.stage0_core = args.stage0_core.resolve()

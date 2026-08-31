@@ -14,6 +14,24 @@ ROOT = Path(__file__).resolve().parent.parent
 PROFILER = ROOT / "scripts" / "elisa-profiler"
 
 
+def assert_invalid_timeout() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROFILER),
+            "profile",
+            str(ROOT / "examples" / "hello.elisa"),
+            "--timeout",
+            "nan",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "--timeout must be a finite positive number" in result.stderr
+
+
 def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str, object]:
     return {
         "schema_version": 1,
@@ -65,6 +83,7 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
 
 
 def main() -> int:
+    assert_invalid_timeout()
     with tempfile.TemporaryDirectory(prefix="elisa-profile-compare-") as directory:
         root = Path(directory)
         baseline_path = root / "baseline.json"
