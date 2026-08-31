@@ -1286,6 +1286,8 @@ def comparison_identity(report: dict[str, Any], path: Path) -> dict[str, Any]:
         "opt_level": run.get("opt_level"),
         "location_timing": run.get("location_timing"),
         "completed_repetitions": run.get("completed_repetitions"),
+        "successful_repetitions": run.get("successful_repetitions"),
+        "failed_repetitions": run.get("failed_repetitions"),
     }
 
 
@@ -1462,6 +1464,16 @@ def build_comparison_report(
         warnings.append("baseline and candidate use different source paths")
     if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
         warnings.append("baseline and candidate use different location-timing settings")
+    baseline_successful = baseline["run"].get("successful_repetitions")
+    candidate_successful = candidate_run.get("successful_repetitions")
+    if (
+        isinstance(baseline_successful, int)
+        and isinstance(candidate_successful, int)
+        and baseline_successful != candidate_successful
+    ):
+        warnings.append(
+            "baseline and candidate use different successful repetition counts"
+        )
     baseline_compiler = baseline.get("compiler")
     candidate_compiler = candidate.get("compiler")
     if isinstance(baseline_compiler, dict) and isinstance(candidate_compiler, dict):
@@ -1512,13 +1524,21 @@ def comparison_metric_text(metric: dict[str, Any], unit: str = "") -> str:
     return f"{baseline_text} -> {candidate_text} ({delta_text}, {percent_text})"
 
 
+def comparison_sample_text(identity: dict[str, Any]) -> str:
+    successful = identity.get("successful_repetitions")
+    completed = identity.get("completed_repetitions")
+    if isinstance(successful, int) and isinstance(completed, int):
+        return f"{successful}/{completed} successful repetitions"
+    return "successful repetition count unavailable"
+
+
 def comparison_text(report: dict[str, Any], top: int) -> str:
     baseline = report["baseline"]
     candidate = report["candidate"]
     lines = [
         "Elisa profile comparison",
-        f"baseline: {baseline['path']} ({baseline.get('opt_level') or 'unknown opt level'})",
-        f"candidate: {candidate['path']} ({candidate.get('opt_level') or 'unknown opt level'})",
+        f"baseline: {baseline['path']} ({baseline.get('opt_level') or 'unknown opt level'}; {comparison_sample_text(baseline)})",
+        f"candidate: {candidate['path']} ({candidate.get('opt_level') or 'unknown opt level'}; {comparison_sample_text(candidate)})",
         f"status: {report['status']} (threshold {report['threshold_percent']:g}%)",
         "",
         "Run metrics:",
@@ -1678,6 +1698,8 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">Threshold</div><div class="card-value">{report["threshold_percent"]:g}%</div></div>',
             f'<div class="card"><div class="card-label">Baseline</div><div class="card-value">{escape(str(baseline.get("opt_level") or "unknown"))}</div></div>',
             f'<div class="card"><div class="card-label">Candidate</div><div class="card-value">{escape(str(candidate.get("opt_level") or "unknown"))}</div></div>',
+            f'<div class="card"><div class="card-label">Baseline samples</div><div class="card-value">{escape(comparison_sample_text(baseline))}</div></div>',
+            f'<div class="card"><div class="card-label">Candidate samples</div><div class="card-value">{escape(comparison_sample_text(candidate))}</div></div>',
             "</div>",
             *sections,
             f"<footer>Comparison schema {report['schema_version']}</footer>",

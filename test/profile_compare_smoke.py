@@ -30,6 +30,8 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
             "cpu_ms": 5.0,
             "peak_rss_bytes": 1024,
             "completed_repetitions": 1,
+            "successful_repetitions": 1,
+            "failed_repetitions": 0,
             "repetitions": [{"timed_out": False}],
         },
         "functions": [
@@ -95,11 +97,49 @@ def main() -> int:
         assert comparison["metrics"]["execution_ms_mean"]["percent"] == 100.0
         assert comparison["metrics"]["compile_ms"]["percent"] == 0.0
         assert any("compiler commits" in warning for warning in comparison["warnings"])
+        assert not any("successful repetition counts" in warning for warning in comparison["warnings"])
         assert any(item["scope"] == "function" for item in comparison["regressions"])
         assert any(item["scope"] == "location" for item in comparison["regressions"])
         assert comparison["locations"][0]["line"] == 3
         assert comparison["locations"][0]["interval_ns"]["percent"] is None
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])
+
+        candidate_with_different_sample_count = profile(20.0, 2_000, "-O2")
+        candidate_with_different_sample_count["run"]["successful_repetitions"] = 2
+        candidate_with_different_sample_count["run"]["completed_repetitions"] = 2
+        candidate_with_different_sample_count["run"]["repetitions"] = [
+            {"timed_out": False},
+            {"timed_out": False},
+        ]
+        different_sample_path = root / "different-sample-count.json"
+        different_sample_path.write_text(
+            json.dumps(candidate_with_different_sample_count), encoding="utf-8"
+        )
+        different_sample_comparison_path = root / "different-sample-comparison.json"
+        different_sample = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(different_sample_path),
+                "--format",
+                "json",
+                "--output",
+                str(different_sample_comparison_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert different_sample.returncode == 0, different_sample.stderr
+        different_sample_comparison = json.loads(
+            different_sample_comparison_path.read_text(encoding="utf-8")
+        )
+        assert any(
+            "successful repetition counts" in warning
+            for warning in different_sample_comparison["warnings"]
+        )
 
         failing = subprocess.run(
             [

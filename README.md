@@ -152,7 +152,9 @@ for regressions:
 Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
 Comparisons warn when the source path, timing mode, or compiler provenance
-differs between the two reports. The baseline must be a successful profile;
+differs between the two reports, and retain each profile's successful/failed
+repetition counts. A sample-count warning is emitted when those successful
+counts differ. The baseline must be a successful profile;
 failed candidate profiles are retained as explicit comparison regressions.
 Comparison HTML is self-contained and includes sortable-style tables for run,
 function, and source-location changes, plus warnings and regressions.
