@@ -65,8 +65,9 @@ back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records
 whether that mapping succeeded. A nonzero target exit status is reported and
 returned by the profiler. Use --show-output to forward the target's
-stdout/stderr. A panic or timeout report also includes the last 256 trace
-events in execution order, when the collector received the terminating signal.
+stdout/stderr. JSON reports also include call_edges with observed and completed
+caller-to-callee calls. A panic or timeout report also includes the last 256
+trace events in execution order, when the collector received the terminating signal.
 
 Useful controls:
 
@@ -75,7 +76,7 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
---location-timing      attribute wall time between trace events to locations
+    --location-timing      attribute wall time between trace events to locations
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable

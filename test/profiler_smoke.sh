@@ -56,6 +56,12 @@ assert main_function["completed_calls"] == main_function["call_events"] == 2
 assert main_function["inclusive_ns"] > 0
 assert main_function["inclusive_ns"] >= main_function["self_ns"]
 assert main_function["inclusive_ns"] >= report["functions"][0]["inclusive_ns"]
+assert len(report["call_edges"]) == 1
+hot_edge = report["call_edges"][0]
+assert hot_edge["caller"] == "main"
+assert hot_edge["callee"] == "accumulate"
+assert hot_edge["call_events"] == hot_edge["completed_calls"] == 2
+assert hot_edge["inclusive_ns"] == report["functions"][0]["inclusive_ns"]
 assert report["source_mapping"]["mode"] == "include-aware"
 assert report["source_mapping"]["unmapped_locations"] == 0
 
@@ -105,6 +111,12 @@ assert next(
     function for function in included_report["functions"]
     if function["function"] == "included_work"
 )["call_events"] == 1
+included_edge = next(
+    edge
+    for edge in included_report["call_edges"]
+    if edge["caller"] == "main" and edge["callee"] == "included_work"
+)
+assert included_edge["call_events"] == included_edge["completed_calls"] == 1
 assert all(Path(location["source"]) == helper_source for location in helper_locations)
 assert any(
     location["line"] == 5

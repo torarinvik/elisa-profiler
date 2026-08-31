@@ -39,6 +39,14 @@ typedef struct {
     uint64_t max_interval_ns;
 } profile_entry;
 
+typedef struct {
+    const char *caller_name;
+    const char *callee_name;
+    uint64_t call_events;
+    uint64_t completed_calls;
+    uint64_t inclusive_ns;
+} profile_call_edge;
+
 enum {
     PROFILE_KIND_STATEMENT = 1,
     PROFILE_KIND_VALUE = 2,
@@ -66,19 +74,26 @@ static volatile sig_atomic_t profile_dumped;
 static profile_recent_entry profile_recent[PROFILE_RECENT_CAPACITY];
 static uint64_t profile_recent_position;
 
-#if ELISA_PROFILE_TIMING
+static profile_call_edge *profile_call_edges;
+static size_t profile_call_edge_capacity;
+static size_t profile_call_edge_size;
+
 #define PROFILE_CALL_STACK_CAPACITY 1024
 
 typedef struct {
     const char *function_name;
+    const char *caller_name;
+#if ELISA_PROFILE_TIMING
     uint64_t start_ns;
     uint64_t child_ns;
+#endif
 } profile_call_frame;
 
 static _Thread_local profile_call_frame profile_call_stack[PROFILE_CALL_STACK_CAPACITY];
 static _Thread_local size_t profile_call_depth;
 static _Thread_local size_t profile_call_overflow_depth;
 
+#if ELISA_PROFILE_TIMING
 static const char *profile_timing_function_name;
 static const char *profile_timing_variable_name;
 static uint32_t profile_timing_line;
@@ -140,6 +155,111 @@ static profile_entry *profile_find_locked(const char *function_name,
         slot = (slot + 1) & (profile_capacity - 1);
     }
     return NULL;
+}
+
+static uint64_t profile_call_edge_hash(const char *caller_name, const char *callee_name) {
+    uint64_t hash = UINT64_C(1469598103934665603);
+    hash ^= (uint64_t)(uintptr_t)caller_name;
+    hash *= UINT64_C(1099511628211);
+    hash ^= (uint64_t)(uintptr_t)callee_name;
+    hash *= UINT64_C(1099511628211);
+    return hash;
+}
+
+static profile_call_edge *profile_find_call_edge_locked(const char *caller_name,
+                                                         const char *callee_name) {
+    if (profile_call_edge_capacity == 0) {
+        return NULL;
+    }
+    size_t slot = profile_call_edge_hash(caller_name, callee_name) &
+                  (profile_call_edge_capacity - 1);
+    for (size_t probes = 0; probes < profile_call_edge_capacity; ++probes) {
+        profile_call_edge *edge = &profile_call_edges[slot];
+        if (edge->caller_name == NULL) {
+            return NULL;
+        }
+        if (edge->caller_name == caller_name && edge->callee_name == callee_name) {
+            return edge;
+        }
+        slot = (slot + 1) & (profile_call_edge_capacity - 1);
+    }
+    return NULL;
+}
+
+static int profile_grow_call_edges_locked(void) {
+    size_t new_capacity = profile_call_edge_capacity == 0
+                              ? 64
+                              : profile_call_edge_capacity * 2;
+    profile_call_edge *new_edges = calloc(new_capacity, sizeof(*new_edges));
+    if (new_edges == NULL) {
+        return 0;
+    }
+    for (size_t index = 0; index < profile_call_edge_capacity; ++index) {
+        profile_call_edge edge = profile_call_edges[index];
+        if (edge.caller_name == NULL) {
+            continue;
+        }
+        size_t slot = profile_call_edge_hash(edge.caller_name, edge.callee_name) &
+                      (new_capacity - 1);
+        while (new_edges[slot].caller_name != NULL) {
+            slot = (slot + 1) & (new_capacity - 1);
+        }
+        new_edges[slot] = edge;
+    }
+    free(profile_call_edges);
+    profile_call_edges = new_edges;
+    profile_call_edge_capacity = new_capacity;
+    return 1;
+}
+
+static void profile_record_call_edge(const char *caller_name, const char *callee_name) {
+    if (caller_name == NULL || callee_name == NULL) {
+        return;
+    }
+    pthread_mutex_lock(&profile_lock);
+    if (profile_call_edge_capacity == 0 ||
+        (profile_call_edge_size + 1) * 10 >= profile_call_edge_capacity * 7) {
+        if (!profile_grow_call_edges_locked()) {
+            pthread_mutex_unlock(&profile_lock);
+            return;
+        }
+    }
+    size_t slot = profile_call_edge_hash(caller_name, callee_name) &
+                  (profile_call_edge_capacity - 1);
+    while (profile_call_edges[slot].caller_name != NULL &&
+           !(profile_call_edges[slot].caller_name == caller_name &&
+             profile_call_edges[slot].callee_name == callee_name)) {
+        slot = (slot + 1) & (profile_call_edge_capacity - 1);
+    }
+    profile_call_edge *edge = &profile_call_edges[slot];
+    if (edge->caller_name == NULL) {
+        edge->caller_name = caller_name;
+        edge->callee_name = callee_name;
+        ++profile_call_edge_size;
+    }
+    ++edge->call_events;
+    pthread_mutex_unlock(&profile_lock);
+}
+
+static void profile_record_completed_call_edge(const char *caller_name,
+                                                const char *callee_name,
+                                                uint64_t inclusive_ns) {
+    if (caller_name == NULL || callee_name == NULL) {
+        return;
+    }
+    pthread_mutex_lock(&profile_lock);
+    profile_call_edge *edge = profile_find_call_edge_locked(caller_name, callee_name);
+    if (edge != NULL) {
+        ++edge->completed_calls;
+#if ELISA_PROFILE_TIMING
+        edge->inclusive_ns = UINT64_MAX - edge->inclusive_ns < inclusive_ns
+                                 ? UINT64_MAX
+                                 : edge->inclusive_ns + inclusive_ns;
+#else
+        (void)inclusive_ns;
+#endif
+    }
+    pthread_mutex_unlock(&profile_lock);
 }
 
 #if ELISA_PROFILE_TIMING
@@ -275,12 +395,29 @@ void elisa_trace_record(const char *function_name, uint32_t line) {
 }
 
 void elisa_trace_function_entry(const char *function_name, uint32_t line) {
+    const char *caller_name = NULL;
+    if (profile_call_overflow_depth == 0 && profile_call_depth > 0) {
+        caller_name = profile_call_stack[profile_call_depth - 1].function_name;
+    }
+    profile_record_call_edge(caller_name, function_name);
+
 #if ELISA_PROFILE_TIMING
     if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
         profile_call_stack[profile_call_depth] = (profile_call_frame){
             .function_name = function_name,
+            .caller_name = caller_name,
             .start_ns = profile_now_ns(),
             .child_ns = 0,
+        };
+        ++profile_call_depth;
+    } else {
+        ++profile_call_overflow_depth;
+    }
+#else
+    if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
+        profile_call_stack[profile_call_depth] = (profile_call_frame){
+            .function_name = function_name,
+            .caller_name = caller_name,
         };
         ++profile_call_depth;
     } else {
@@ -323,6 +460,7 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         profile_record_completed_function(function_name, line);
         return;
     }
+    const char *caller_name = frame->caller_name;
     uint64_t now_ns = profile_now_ns();
     uint64_t inclusive_ns = now_ns >= frame->start_ns ? now_ns - frame->start_ns : 0;
     uint64_t self_ns = inclusive_ns >= frame->child_ns ? inclusive_ns - frame->child_ns : 0;
@@ -341,6 +479,32 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         entry->self_ns = profile_saturating_add(entry->self_ns, self_ns);
     }
     pthread_mutex_unlock(&profile_lock);
+    profile_record_completed_call_edge(caller_name, function_name, inclusive_ns);
+}
+#endif
+
+#if !ELISA_PROFILE_TIMING
+static void profile_record_untimed_function_exit(const char *function_name, uint32_t line) {
+    if (profile_call_overflow_depth > 0) {
+        --profile_call_overflow_depth;
+        profile_record_completed_function(function_name, line);
+        return;
+    }
+    if (profile_call_depth == 0) {
+        profile_record_completed_function(function_name, line);
+        return;
+    }
+    profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
+    if (frame->function_name != function_name) {
+        profile_call_depth = 0;
+        profile_call_overflow_depth = 0;
+        profile_record_completed_function(function_name, line);
+        return;
+    }
+    const char *caller_name = frame->caller_name;
+    --profile_call_depth;
+    profile_record_completed_function(function_name, line);
+    profile_record_completed_call_edge(caller_name, function_name, 0);
 }
 #endif
 
@@ -348,7 +512,7 @@ void elisa_trace_function_exit(const char *function_name, uint32_t line) {
 #if ELISA_PROFILE_TIMING
     profile_record_timed_function_exit(function_name, line);
 #else
-    profile_record_completed_function(function_name, line);
+    profile_record_untimed_function_exit(function_name, line);
 #endif
 }
 
@@ -395,6 +559,19 @@ static int profile_entry_compare(const void *left_pointer, const void *right_poi
         return left->is_signed < right->is_signed ? -1 : 1;
     }
     return 0;
+}
+
+static int profile_call_edge_compare(const void *left_pointer, const void *right_pointer) {
+    const profile_call_edge *left = *(const profile_call_edge *const *)left_pointer;
+    const profile_call_edge *right = *(const profile_call_edge *const *)right_pointer;
+    if (left->call_events != right->call_events) {
+        return left->call_events < right->call_events ? 1 : -1;
+    }
+    int caller_order = strcmp(left->caller_name, right->caller_name);
+    if (caller_order != 0) {
+        return caller_order;
+    }
+    return strcmp(left->callee_name, right->callee_name);
 }
 
 static void profile_print_field(const char *value) {
@@ -524,6 +701,27 @@ static void profile_dump_body(void) {
         }
         fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\n",
                 entry->interval_ns, entry->max_interval_ns);
+    }
+    profile_call_edge **call_edges = calloc(
+        profile_call_edge_size == 0 ? 1 : profile_call_edge_size, sizeof(*call_edges));
+    if (call_edges != NULL) {
+        size_t call_output_count = 0;
+        for (size_t index = 0; index < profile_call_edge_capacity; ++index) {
+            if (profile_call_edges[index].caller_name != NULL) {
+                call_edges[call_output_count++] = &profile_call_edges[index];
+            }
+        }
+        qsort(call_edges, call_output_count, sizeof(*call_edges), profile_call_edge_compare);
+        for (size_t index = 0; index < call_output_count; ++index) {
+            const profile_call_edge *edge = call_edges[index];
+            fputs("ELISA_PROFILE\t1\tcall\t", stderr);
+            profile_print_field(edge->caller_name);
+            fputc('\t', stderr);
+            profile_print_field(edge->callee_name);
+            fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
+                    edge->call_events, edge->completed_calls, edge->inclusive_ns);
+        }
+        free(call_edges);
     }
     free(entries);
     if (profile_crash_dumped) {

@@ -241,9 +241,12 @@ def prepare_target(
 
 def parse_profile(
     stderr: str, *, allow_missing: bool = False
-) -> tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]:
+) -> tuple[
+    dict[str, int], list[dict[str, Any]], list[dict[str, Any]], str, list[dict[str, Any]]
+]:
     meta: dict[str, int] | None = None
     locations: list[dict[str, Any]] = []
+    call_edges: list[dict[str, Any]] = []
     recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
     for line in stderr.splitlines():
@@ -273,6 +276,17 @@ def parse_profile(
                     "variable": None if fields[7] == "-" else fields[7],
                     "signed": fields[8] == "1",
                     "value": int(fields[9]),
+                }
+            )
+            continue
+        if len(fields) == 8 and fields[2] == "call":
+            call_edges.append(
+                {
+                    "caller": fields[3],
+                    "callee": fields[4],
+                    "call_events": int(fields[5]),
+                    "completed_calls": int(fields[6]),
+                    "inclusive_ns": int(fields[7]),
                 }
             )
             continue
@@ -307,25 +321,31 @@ def parse_profile(
         locations.append(location)
     if meta is None:
         if allow_missing:
-            return {"events": 0, "locations": 0, "dropped": 0}, [], stderr, recent_events
+            return {"events": 0, "locations": 0, "dropped": 0}, [], [], stderr, recent_events
         raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
-    return (
-        meta,
-        locations,
-        "\n".join(program_stderr) + ("\n" if program_stderr else ""),
-        recent_events,
-    )
+    return meta, locations, call_edges, "\n".join(program_stderr) + ("\n" if program_stderr else ""), recent_events
 
 
 def merge_profiles(
-    results: list[tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]],
-) -> tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]:
+    results: list[
+        tuple[
+            dict[str, int],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            str,
+            list[dict[str, Any]],
+        ]
+    ],
+) -> tuple[
+    dict[str, int], list[dict[str, Any]], list[dict[str, Any]], str, list[dict[str, Any]]
+]:
     merged: dict[tuple[str, str, int, str | None, bool], dict[str, Any]] = {}
+    merged_call_edges: dict[tuple[str, str], dict[str, Any]] = {}
     events = 0
     dropped = 0
     recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
-    for repetition, (meta, locations, stderr, path) in enumerate(results, start=1):
+    for repetition, (meta, locations, call_edges, stderr, path) in enumerate(results, start=1):
         events += meta["events"]
         dropped += meta["dropped"]
         if stderr:
@@ -361,6 +381,15 @@ def merge_profiles(
                 combined["inclusive_ns"] += location["inclusive_ns"]
                 combined["self_ns"] += location["self_ns"]
                 combined["completed_calls"] += location["completed_calls"]
+        for call_edge in call_edges:
+            key = (call_edge["caller"], call_edge["callee"])
+            if key not in merged_call_edges:
+                merged_call_edges[key] = dict(call_edge)
+                continue
+            combined_edge = merged_call_edges[key]
+            combined_edge["call_events"] += call_edge["call_events"]
+            combined_edge["completed_calls"] += call_edge["completed_calls"]
+            combined_edge["inclusive_ns"] += call_edge["inclusive_ns"]
     locations = sorted(
         merged.values(),
         key=lambda location: (
@@ -372,9 +401,18 @@ def merge_profiles(
             location.get("signed", False),
         ),
     )
+    call_edges = sorted(
+        merged_call_edges.values(),
+        key=lambda call_edge: (
+            -call_edge["call_events"],
+            call_edge["caller"],
+            call_edge["callee"],
+        ),
+    )
     return (
         {"events": events, "locations": len(locations), "dropped": dropped},
         locations,
+        call_edges,
         "\n\n".join(program_stderr) + ("\n" if program_stderr else ""),
         recent_events,
     )
@@ -495,6 +533,19 @@ def text_report(report: dict[str, Any], top: int) -> str:
                 f", attributed={function['interval_ns'] / 1_000_000:.3f} ms"
                 f", max-gap={function['max_interval_ns'] / 1_000_000:.3f} ms"
             )
+    if report["call_edges"]:
+        shown_edges = report["call_edges"][:top]
+        lines.extend(["", f"Call graph (top {len(shown_edges)}):"])
+        for call_edge in shown_edges:
+            detail = (
+                f"calls={call_edge['call_events']}, "
+                f"completed={call_edge['completed_calls']}"
+            )
+            if run["location_timing"]:
+                detail += f", inclusive={call_edge['inclusive_ns'] / 1_000_000:.3f} ms"
+            lines.append(
+                f"  {call_edge['caller']} -> {call_edge['callee']} ({detail})"
+            )
     recent_events = report.get("recent_events", [])
     if recent_events:
         shown_events = recent_events[-top:]
@@ -525,6 +576,7 @@ def build_report(
     compiler: dict[str, Any],
     meta: dict[str, int],
     locations: list[dict[str, Any]],
+    call_edges: list[dict[str, Any]],
     *,
     exit_code: int | None,
     signal: int | None,
@@ -614,6 +666,7 @@ def build_report(
             "compile_ms": compile_ms,
         },
         "functions": functions,
+        "call_edges": call_edges,
         "locations": locations,
     }
     if program_stderr:
@@ -780,7 +833,13 @@ def profile(args: argparse.Namespace) -> int:
                 raise ProfilerError(f"warmup run {repetition} failed with {warmup_status}")
 
         profile_results: list[
-            tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]
+            tuple[
+                dict[str, int],
+                list[dict[str, Any]],
+                list[dict[str, Any]],
+                str,
+                list[dict[str, Any]],
+            ]
         ] = []
         run_records: list[dict[str, Any]] = []
         run_stdout: list[str] = []
@@ -792,7 +851,7 @@ def profile(args: argparse.Namespace) -> int:
             )
             execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
             stderr = run_stderr_bytes.decode("utf-8", errors="replace")
-            meta, locations, program_stderr, recent_events = parse_profile(
+            meta, locations, call_edges, program_stderr, recent_events = parse_profile(
                 stderr,
                 allow_missing=run_status < 0 or run_timed_out,
             )
@@ -805,13 +864,13 @@ def profile(args: argparse.Namespace) -> int:
                 "timed_out": run_timed_out,
             }
             run_records.append(run_record)
-            profile_results.append((meta, locations, program_stderr, recent_events))
+            profile_results.append((meta, locations, call_edges, program_stderr, recent_events))
             run_stdout.append(run_stdout_bytes.decode("utf-8", errors="replace"))
             run_stderr.append(program_stderr)
             if run_status != 0 or run_timed_out:
                 break
 
-        meta, locations, program_stderr, recent_events = merge_profiles(profile_results)
+        meta, locations, call_edges, program_stderr, recent_events = merge_profiles(profile_results)
         failed_run = next(
             (
                 record
@@ -836,6 +895,7 @@ def profile(args: argparse.Namespace) -> int:
             compiler_metadata(args.compiler_root, args.runtime_object),
             meta,
             locations,
+            call_edges,
             exit_code=exit_code,
             signal=signal,
             run_records=run_records,
