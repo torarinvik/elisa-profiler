@@ -444,12 +444,37 @@ static uint64_t profile_now_ns_for_thread(const profile_thread_state *thread) {
 #endif
 }
 
+static uint64_t profile_elapsed_ns(uint64_t start_ns, uint64_t end_ns) {
+    if (start_ns == 0 || end_ns == 0 || end_ns < start_ns) {
+        return 0;
+    }
+    return end_ns - start_ns;
+}
+
+static void profile_invalidate_timing_cursor(profile_thread_state *thread) {
+    if (thread == NULL) {
+        return;
+    }
+    thread->timing_last_ns = 0;
+    thread->timing_have_last = 0;
+}
+
 static void profile_account_previous_locked(profile_thread_state *thread,
                                              uint64_t now_ns) {
     if (thread == NULL) {
         return;
     }
-    if (!thread->timing_have_last || now_ns == 0 || thread->timing_last_ns == 0 ||
+    /* A foreign thread cannot be queried on macOS in CPU-clock mode. Do not
+     * invalidate its cursor while dumping from the main thread; its own next
+     * trace event will account it using that worker's clock. A zero timestamp
+     * on the current thread is a clock failure, so discard the unknown gap. */
+    if (now_ns == 0) {
+        if (thread == profile_current_thread) {
+            profile_invalidate_timing_cursor(thread);
+        }
+        return;
+    }
+    if (!thread->timing_have_last || thread->timing_last_ns == 0 ||
         now_ns < thread->timing_last_ns) {
         thread->timing_last_ns = now_ns;
         return;
@@ -458,8 +483,8 @@ static void profile_account_previous_locked(profile_thread_state *thread,
         thread->timing_function_name, thread->timing_variable_name,
         thread->timing_line, thread->timing_kind, thread->timing_is_signed);
     if (previous != NULL) {
-        uint64_t interval_ns = now_ns - thread->timing_last_ns;
-        previous->interval_ns += interval_ns;
+        uint64_t interval_ns = profile_elapsed_ns(thread->timing_last_ns, now_ns);
+        previous->interval_ns = profile_saturating_add(previous->interval_ns, interval_ns);
         if (interval_ns > previous->max_interval_ns) {
             previous->max_interval_ns = interval_ns;
         }
@@ -671,7 +696,10 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
     const char *caller_name = frame->caller_name;
     profile_call_path *path = frame->path;
     uint64_t now_ns = profile_now_ns();
-    uint64_t inclusive_ns = now_ns >= frame->start_ns ? now_ns - frame->start_ns : 0;
+    if (now_ns == 0) {
+        profile_invalidate_timing_cursor(profile_current_thread);
+    }
+    uint64_t inclusive_ns = profile_elapsed_ns(frame->start_ns, now_ns);
     uint64_t self_ns = inclusive_ns >= frame->child_ns ? inclusive_ns - frame->child_ns : 0;
     --profile_call_depth;
     if (profile_call_depth > 0) {
