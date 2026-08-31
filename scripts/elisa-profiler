@@ -343,6 +343,8 @@ def parse_profile(
             program_stderr.append(line)
             continue
         fields = line.split("\t")
+        if len(fields) < 2 or fields[1] != "1":
+            raise ProfilerError(f"unsupported profiler runtime protocol version: {line}")
         if len(fields) in (6, 8, 9) and fields[2] == "meta":
             meta = {
                 "events": parse_protocol_int(fields[3], line),

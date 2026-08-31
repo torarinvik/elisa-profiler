@@ -31,8 +31,18 @@ def assert_malformed(profiler, record: str) -> None:
         raise AssertionError("malformed protocol record was accepted")
 
 
+def assert_unsupported_version(profiler, record: str) -> None:
+    try:
+        profiler.parse_profile(record)
+    except profiler.ProfilerError as error:
+        assert str(error).startswith("unsupported profiler runtime protocol version:")
+    else:
+        raise AssertionError("unsupported protocol version was accepted")
+
+
 def main() -> int:
     profiler = load_profiler()
+    assert_unsupported_version(profiler, "ELISA_PROFILE\t2\tmeta\t0\t0\t0")
     assert_malformed(profiler, "ELISA_PROFILE\t1\tmeta\tnot-a-number\t0\t0")
     assert_malformed(
         profiler,
