@@ -329,10 +329,10 @@ def source_line_map(source: Path) -> list[tuple[Path, int, str]]:
 
     def flatten(path: Path, stack: list[Path]) -> list[tuple[Path, int, str]]:
         path = path.resolve()
-        if path in seen:
-            return []
         if path in stack:
             raise ProfilerError(f"cyclic include while mapping profile locations: {path}")
+        if path in seen:
+            return []
         seen.add(path)
         try:
             contents = path.read_text(encoding="utf-8")

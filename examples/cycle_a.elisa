@@ -1,0 +1,4 @@
+include "cycle_b.elisa"
+
+def main() -> i64:
+    return 0
