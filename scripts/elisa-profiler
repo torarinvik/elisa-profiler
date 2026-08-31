@@ -577,7 +577,10 @@ def text_report(report: dict[str, Any], top: int) -> str:
         if run["location_timing"]:
             lines[-1] += (
                 f", inclusive={function['inclusive_ns'] / 1_000_000:.3f} ms"
+                f" ({function['inclusive_percent']:.1f}%)"
                 f", self={function['self_ns'] / 1_000_000:.3f} ms"
+                f" ({function['self_percent']:.1f}%)"
+                f", mean={function['mean_inclusive_ns'] / 1_000_000:.3f} ms"
                 f", attributed={function['interval_ns'] / 1_000_000:.3f} ms"
                 f", max-gap={function['max_interval_ns'] / 1_000_000:.3f} ms"
             )
@@ -651,7 +654,7 @@ def build_report(
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
-    function_stats: defaultdict[str, dict[str, int]] = defaultdict(
+    function_stats: defaultdict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "events": 0,
             "statement_events": 0,
@@ -692,6 +695,26 @@ def build_report(
     summary["function_events"] = sum(
         location["count"] for location in locations if location["kind"] == "function"
     )
+    called_function_names = {call_edge["callee"] for call_edge in call_edges}
+    root_inclusive_ns = sum(
+        stats["inclusive_ns"]
+        for function_name, stats in function_stats.items()
+        if function_name not in called_function_names
+    )
+    for stats in function_stats.values():
+        completed_calls = stats["completed_calls"]
+        stats["mean_inclusive_ns"] = (
+            stats["inclusive_ns"] // completed_calls if completed_calls else 0
+        )
+        stats["mean_self_ns"] = stats["self_ns"] // completed_calls if completed_calls else 0
+        stats["inclusive_percent"] = (
+            stats["inclusive_ns"] * 100.0 / root_inclusive_ns
+            if root_inclusive_ns
+            else 0.0
+        )
+        stats["self_percent"] = (
+            stats["self_ns"] * 100.0 / root_inclusive_ns if root_inclusive_ns else 0.0
+        )
     functions = [
         {"function": function_name, **stats}
         for function_name, stats in sorted(

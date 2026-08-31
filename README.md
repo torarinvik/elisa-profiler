@@ -63,6 +63,9 @@ with source snippets, function call-event counts, aggregate caller-to-callee
 edges, folded call stacks, and scalar value statistics
 (minimum, maximum, sum, and last). Signed scalar values retain their signed
 interpretation instead of being reported as raw u64 bit patterns.
+Function timing also includes mean inclusive/self duration and percentages of
+the root function's inclusive time, so the JSON report is useful without a
+separate post-processing step.
 Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records

@@ -57,11 +57,15 @@ assert report["functions"][0]["call_events"] == 2
 assert report["functions"][0]["completed_calls"] == 2
 assert report["functions"][0]["inclusive_ns"] > 0
 assert report["functions"][0]["inclusive_ns"] >= report["functions"][0]["self_ns"]
+assert report["functions"][0]["mean_inclusive_ns"] == report["functions"][0]["inclusive_ns"] // 2
+assert report["functions"][0]["inclusive_percent"] > 0
 assert report["functions"][0]["events"] == 96
 main_function = next(function for function in report["functions"] if function["function"] == "main")
 assert main_function["completed_calls"] == main_function["call_events"] == 2
 assert main_function["inclusive_ns"] > 0
 assert main_function["inclusive_ns"] >= main_function["self_ns"]
+assert main_function["mean_inclusive_ns"] == main_function["inclusive_ns"] // 2
+assert abs(main_function["inclusive_percent"] - 100.0) < 1e-9
 assert main_function["inclusive_ns"] >= report["functions"][0]["inclusive_ns"]
 assert len(report["call_edges"]) == 1
 hot_edge = report["call_edges"][0]
@@ -163,6 +167,8 @@ signed_main = next(function for function in signed_report["functions"] if functi
 assert signed_main["completed_calls"] == signed_main["call_events"] == 2
 assert signed_main["inclusive_ns"] == 0
 assert signed_main["self_ns"] == 0
+assert signed_main["mean_inclusive_ns"] == 0
+assert signed_main["inclusive_percent"] == 0.0
 signed_stack = next(stack for stack in signed_report["stacks"] if stack["stack"] == "main")
 assert signed_stack["call_events"] == signed_stack["completed_calls"] == 2
 assert signed_stack["self_ns"] == 0
