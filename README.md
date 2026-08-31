@@ -107,6 +107,8 @@ caller-to-callee calls. A panic or timeout report also includes the last 256
 trace events in execution order, when the collector received the terminating signal,
 plus `active_stack` with the tracked function names and any untracked overflow
 depth at termination.
+Pass `--recent-path` to include the same recent-event ring in successful-run
+reports for execution-path diagnostics.
 
 Useful controls:
 
@@ -117,6 +119,7 @@ Useful controls:
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
     --location-timing      attribute wall time between trace events to locations
+    --recent-path          include the last 256 trace events in successful reports
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable

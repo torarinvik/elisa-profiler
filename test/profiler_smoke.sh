@@ -6,7 +6,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
-    --warmup 1 --repeat 2 --location-timing --format json --output "$WORK/report.json"
+    --warmup 1 --repeat 2 --location-timing --recent-path --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format folded --output "$WORK/hot-loop.folded"
@@ -125,6 +125,8 @@ assert report["run"]["measurement_repetitions"] == 2
 assert report["run"]["measurement_basis"] == "successful"
 assert report["run"]["location_timing"] is True
 assert report["run"]["opt_level"] == "-O0"
+assert report["recent_events"]
+assert report["recent_events"][-1]["function"] == "main"
 assert report["run"]["cpu_ms"] is not None
 assert report["run"]["cpu_ms"] >= 0
 assert all(repetition["cpu_ms"] is not None for repetition in report["run"]["repetitions"])

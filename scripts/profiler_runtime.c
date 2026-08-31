@@ -81,6 +81,7 @@ static uint64_t profile_dropped_count;
 static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t profile_crash_dumped;
 static volatile sig_atomic_t profile_dumped;
+static int profile_recent_path_enabled;
 static profile_recent_entry profile_recent[PROFILE_RECENT_CAPACITY];
 static uint64_t profile_recent_position;
 
@@ -878,8 +879,10 @@ static void profile_dump_body(void) {
                 profile_event_count, profile_dropped_count,
                 profile_max_call_depth, profile_stack_overflow_entries,
                 profile_thread_count);
-        if (profile_crash_dumped) {
+        if (profile_crash_dumped || profile_recent_path_enabled) {
             profile_dump_recent_path();
+        }
+        if (profile_crash_dumped) {
             profile_dump_active_stack();
         }
         return;
@@ -973,8 +976,10 @@ static void profile_dump_body(void) {
         free(paths);
     }
     free(entries);
-    if (profile_crash_dumped) {
+    if (profile_crash_dumped || profile_recent_path_enabled) {
         profile_dump_recent_path();
+    }
+    if (profile_crash_dumped) {
         profile_dump_active_stack();
     }
 }
@@ -1006,6 +1011,8 @@ static void profile_dump_from_signal(void) {
 extern int64_t elisa_profile_target_main(void);
 
 int main(void) {
+    const char *recent_path = getenv("ELISA_PROFILE_RECENT_PATH");
+    profile_recent_path_enabled = recent_path != NULL && strcmp(recent_path, "1") == 0;
     profile_install_crash_handlers();
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main();

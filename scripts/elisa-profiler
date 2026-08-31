@@ -119,12 +119,14 @@ def execute_program(
     executable_path: Path,
     timeout: float | None,
     resource_path: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> tuple[int, bytes, bytes, bool, dict[str, float | int]]:
     command = [str(executable_path)]
     if resource_path is not None:
         command = ["/usr/bin/time", "-l", "-o", str(resource_path), *command]
     process = subprocess.Popen(
         command,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=os.name == "posix",
@@ -2013,6 +2015,11 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="attribute wall time between trace events to source locations",
     )
+    parser.add_argument(
+        "--recent-path",
+        action="store_true",
+        help="include the last 256 trace events for successful runs",
+    )
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
     parser.add_argument(
         "--compiler-root",
@@ -2058,6 +2065,7 @@ def profile(args: argparse.Namespace) -> int:
     clang, objcopy, nm = compiler_tools()
     env = os.environ.copy()
     env["ELISA_COMPILER_ROOT"] = str(args.compiler_root)
+    env["ELISA_PROFILE_RECENT_PATH"] = "1" if args.recent_path else "0"
     ensure_runtime(
         args.compiler_root,
         args.runtime_object,
@@ -2140,7 +2148,7 @@ def profile(args: argparse.Namespace) -> int:
         for repetition in range(1, args.warmup + 1):
             warmup_start = time.perf_counter_ns()
             warmup_status, _, _, warmup_timed_out, _ = execute_program(
-                executable_path, args.timeout
+                executable_path, args.timeout, env=env
             )
             warmup_ms += (time.perf_counter_ns() - warmup_start) / 1_000_000
             if warmup_status != 0 or warmup_timed_out:
@@ -2170,7 +2178,7 @@ def profile(args: argparse.Namespace) -> int:
             cpu_before = child_cpu_usage()
             resource_path = measured_resource_file(temp_root, repetition, args.timeout)
             run_status, run_stdout_bytes, run_stderr_bytes, run_timed_out, resources = execute_program(
-                executable_path, args.timeout, resource_path
+                executable_path, args.timeout, resource_path, env
             )
             cpu_after = child_cpu_usage()
             cpu_delta = child_cpu_delta(cpu_before, cpu_after)
