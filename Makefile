@@ -1,6 +1,6 @@
 PROFILER_ROOT := $(abspath .)
 COMPILER_WORKTREE ?= $(abspath ../elisa-compiler-worktrees/profiler)
-STAGE0_CORE ?= $(abspath ../../Go projects/structpy-tree)
+STAGE0_CORE ?= $(CURDIR)/../../Go projects/structpy-tree
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
 
 .PHONY: compiler-status compiler-seed compiler-smoke profiler-smoke test
