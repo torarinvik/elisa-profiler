@@ -13,6 +13,7 @@
     "metrics",
     "functions",
     "locations",
+    "call_edges",
     "warnings",
     "regressions",
     "status"
@@ -42,6 +43,10 @@
     "locations": {
       "type": "array",
       "items": { "$ref": "#/$defs/location_change" }
+    },
+    "call_edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/call_edge_change" }
     },
     "warnings": {
       "type": "array",
@@ -109,8 +114,10 @@
       "type": "object",
       "required": ["scope", "metric", "baseline", "candidate", "delta", "percent", "message"],
       "properties": {
-        "scope": { "type": "string", "enum": ["run", "function", "location"] },
+        "scope": { "type": "string", "enum": ["run", "function", "location", "call_edge"] },
         "function": { "type": "string" },
+        "caller": { "type": "string" },
+        "callee": { "type": "string" },
         "source": { "type": ["string", "null"] },
         "line": { "type": ["integer", "null"], "minimum": 0 },
         "metric": { "type": "string" },
@@ -145,6 +152,24 @@
         "count": { "$ref": "#/$defs/metric" },
         "interval_ns": { "$ref": "#/$defs/metric" },
         "max_interval_ns": { "$ref": "#/$defs/metric" }
+      },
+      "additionalProperties": true
+    },
+    "call_edge_change": {
+      "type": "object",
+      "required": [
+        "caller",
+        "callee",
+        "call_events",
+        "completed_calls",
+        "inclusive_ns"
+      ],
+      "properties": {
+        "caller": { "type": "string" },
+        "callee": { "type": "string" },
+        "call_events": { "$ref": "#/$defs/metric" },
+        "completed_calls": { "$ref": "#/$defs/metric" },
+        "inclusive_ns": { "$ref": "#/$defs/metric" }
       },
       "additionalProperties": true
     }

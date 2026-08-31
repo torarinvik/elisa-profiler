@@ -65,7 +65,15 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
                 "max_interval_ns": 0,
             }
         ],
-        "call_edges": [],
+        "call_edges": [
+            {
+                "caller": "main",
+                "callee": "worker",
+                "call_events": 1,
+                "completed_calls": 1,
+                "inclusive_ns": inclusive_ns,
+            }
+        ],
         "stacks": [],
         "locations": [
             {
@@ -121,6 +129,8 @@ def main() -> int:
         assert not any("measurement bases" in warning for warning in comparison["warnings"])
         assert any(item["scope"] == "function" for item in comparison["regressions"])
         assert any(item["scope"] == "location" for item in comparison["regressions"])
+        assert any(item["scope"] == "call_edge" for item in comparison["regressions"])
+        assert comparison["call_edges"][0]["inclusive_ns"]["percent"] == 100.0
         assert comparison["locations"][0]["line"] == 3
         assert comparison["locations"][0]["interval_ns"]["percent"] is None
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])

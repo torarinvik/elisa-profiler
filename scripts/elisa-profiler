@@ -1342,6 +1342,15 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
             if field in function:
                 validate_profile_number(function[field], path, f"{field_prefix}.{field}")
 
+    call_edge_metric_names = ("call_events", "completed_calls", "inclusive_ns")
+    for index, edge in enumerate(report["call_edges"]):
+        field_prefix = f"call_edges[{index}]"
+        validate_profile_string(edge.get("caller"), path, f"{field_prefix}.caller", allow_null=False)
+        validate_profile_string(edge.get("callee"), path, f"{field_prefix}.callee", allow_null=False)
+        for field in call_edge_metric_names:
+            if field in edge:
+                validate_profile_number(edge[field], path, f"{field_prefix}.{field}")
+
     location_metric_names = ("count", "interval_ns", "max_interval_ns")
     for index, location in enumerate(report["locations"]):
         field_prefix = f"locations[{index}]"
@@ -1404,6 +1413,18 @@ def profile_function_map(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if isinstance(function, dict) and isinstance(function.get("function"), str):
             functions[function["function"]] = function
     return functions
+
+
+def profile_call_edge_map(report: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    edges: dict[tuple[str, str], dict[str, Any]] = {}
+    for edge in report.get("call_edges", []):
+        if not isinstance(edge, dict):
+            continue
+        caller = edge.get("caller")
+        callee = edge.get("callee")
+        if isinstance(caller, str) and isinstance(callee, str):
+            edges[(caller, callee)] = edge
+    return edges
 
 
 def profile_location_map(report: dict[str, Any]) -> dict[tuple[Any, ...], dict[str, Any]]:
@@ -1543,6 +1564,31 @@ def build_comparison_report(
         )
     )
 
+    call_edge_metric_names = ("call_events", "completed_calls", "inclusive_ns")
+    baseline_call_edges = profile_call_edge_map(baseline)
+    candidate_call_edges = profile_call_edge_map(candidate)
+    call_edge_changes: list[dict[str, Any]] = []
+    for edge_key in sorted(
+        set(baseline_call_edges) | set(candidate_call_edges), key=str
+    ):
+        baseline_edge = baseline_call_edges.get(edge_key, {})
+        candidate_edge = candidate_call_edges.get(edge_key, {})
+        caller, callee = edge_key
+        edge_change: dict[str, Any] = {"caller": caller, "callee": callee}
+        for metric_name in call_edge_metric_names:
+            edge_change[metric_name] = comparison_metric(
+                baseline_edge.get(metric_name), candidate_edge.get(metric_name)
+            )
+        call_edge_changes.append(edge_change)
+    call_edge_changes.sort(
+        key=lambda change: (
+            -abs(change["inclusive_ns"]["delta"] or 0),
+            -abs(change["call_events"]["delta"] or 0),
+            change["caller"],
+            change["callee"],
+        )
+    )
+
     regressions: list[dict[str, Any]] = []
     for metric_name in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
         metric = metrics[metric_name]
@@ -1617,6 +1663,33 @@ def build_comparison_report(
                     "message": message,
                 }
             )
+
+    for call_edge_change in call_edge_changes:
+        metric = call_edge_change["inclusive_ns"]
+        percent = metric["percent"]
+        if comparison_increased(metric, threshold_percent):
+            edge_label = f"{call_edge_change['caller']} -> {call_edge_change['callee']}"
+            message = (
+                f"call edge {edge_label} became non-zero"
+                if metric["baseline"] == 0
+                else (
+                    f"call edge {edge_label} inclusive time increased by more than "
+                    f"{threshold_percent:g}%"
+                )
+            )
+            regressions.append(
+                {
+                    "scope": "call_edge",
+                    "caller": call_edge_change["caller"],
+                    "callee": call_edge_change["callee"],
+                    "metric": "inclusive_ns",
+                    "baseline": metric["baseline"],
+                    "candidate": metric["candidate"],
+                    "delta": metric["delta"],
+                    "percent": percent,
+                    "message": message,
+                }
+            )
     candidate_run = candidate["run"]
     candidate_failed = profile_run_failed(candidate)
     if candidate_failed:
@@ -1672,6 +1745,7 @@ def build_comparison_report(
         "metrics": metrics,
         "functions": function_changes,
         "locations": location_changes,
+        "call_edges": call_edge_changes,
         "warnings": warnings,
         "regressions": regressions,
         "status": "regression" if regressions else "ok",
@@ -1752,6 +1826,21 @@ def comparison_text(report: dict[str, Any], top: int) -> str:
         lines.append(f"  {label}: interval={timing}; events={events}")
     if not report["locations"]:
         lines.append("  none recorded")
+    lines.extend(
+        [
+            "",
+            f"Call-edge changes (top {min(top, len(report['call_edges']))}):",
+        ]
+    )
+    for call_edge in report["call_edges"][:top]:
+        timing = comparison_metric_text(call_edge["inclusive_ns"], "ns")
+        calls = comparison_metric_text(call_edge["call_events"])
+        lines.append(
+            f"  {call_edge['caller']} -> {call_edge['callee']}: "
+            f"inclusive={timing}; calls={calls}"
+        )
+    if not report["call_edges"]:
+        lines.append("  none recorded")
     if report["warnings"]:
         lines.extend(["", "Warnings:"])
         lines.extend(f"  - {warning}" for warning in report["warnings"])
@@ -1793,6 +1882,15 @@ def comparison_html(report: dict[str, Any], top: int) -> str:
                 comparison_metric_text(location["count"]),
             ]
         )
+    call_edge_rows = [
+        [
+            f"{call_edge['caller']} -> {call_edge['callee']}",
+            comparison_metric_text(call_edge["inclusive_ns"], "ns"),
+            comparison_metric_text(call_edge["call_events"]),
+            comparison_metric_text(call_edge["completed_calls"]),
+        ]
+        for call_edge in report["call_edges"][:top]
+    ]
     sections = [
         html_table("Run metrics", ["Metric", "Baseline → Candidate"], metric_rows),
         html_table(
@@ -1804,6 +1902,11 @@ def comparison_html(report: dict[str, Any], top: int) -> str:
             f"Source-location changes (top {min(top, len(report['locations']))})",
             ["Location", "Function", "Kind", "Variable", "Interval", "Events"],
             location_rows,
+        ),
+        html_table(
+            f"Call-edge changes (top {min(top, len(report['call_edges']))})",
+            ["Call edge", "Inclusive", "Calls", "Completed calls"],
+            call_edge_rows,
         ),
     ]
     if report["warnings"]:

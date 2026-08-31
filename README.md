@@ -155,8 +155,8 @@ The HTML format is a self-contained local report with summary cards, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies.
 The `compare` command accepts two JSON reports, shows compile/wall/CPU/RSS,
-function, and source-location timing deltas, and can return a failing status
-for regressions:
+function, caller-to-callee edge, and source-location timing deltas, and can
+return a failing status for regressions:
 
     scripts/elisa-profiler compare baseline.json candidate.json \
         --threshold 10 --fail-on-regression
@@ -169,7 +169,7 @@ repetition counts. A sample-count warning is emitted when those successful
 counts or aggregate measurement bases differ. The baseline must be a successful profile;
 failed candidate profiles are retained as explicit comparison regressions.
 Comparison HTML is self-contained and includes sortable-style tables for run,
-function, and source-location changes, plus warnings and regressions.
+function, call-edge, and source-location changes, plus warnings and regressions.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target
