@@ -708,6 +708,11 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
     }
 
     pthread_mutex_lock(&profile_lock);
+    /* Close the final location interval before the callee disappears. This
+     * is essential for worker CPU timing: the worker's clock is unavailable
+     * once the worker has returned, so the shutdown thread cannot recover its
+     * final gap without this boundary flush. */
+    profile_account_previous_locked(profile_current_thread, now_ns);
     profile_entry *entry = profile_find_locked(
         function_name, NULL, line, PROFILE_KIND_FUNCTION, 0);
     if (entry != NULL) {
@@ -715,6 +720,7 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         entry->inclusive_ns = profile_saturating_add(entry->inclusive_ns, inclusive_ns);
         entry->self_ns = profile_saturating_add(entry->self_ns, self_ns);
     }
+    profile_invalidate_timing_cursor(profile_current_thread);
     pthread_mutex_unlock(&profile_lock);
     profile_record_completed_call_path(path, self_ns);
     profile_record_completed_call_edge(caller_name, function_name, inclusive_ns);

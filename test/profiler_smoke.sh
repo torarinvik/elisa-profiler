@@ -370,6 +370,11 @@ worker_tail = next(
     if location["function"] == "worker" and "usleep" in (location.get("source_text") or "")
 )
 assert worker_tail["max_interval_ns"] >= 1_000_000
+return_location = next(
+    location for location in report["locations"]
+    if location["function"] == "worker" and "return null" in (location.get("source_text") or "")
+)
+assert return_location["max_interval_ns"] < 1_000_000
 print("threaded profiling OK")
 PY
 
@@ -389,6 +394,11 @@ worker_tail = next(
     if location["function"] == "worker" and "usleep" in (location.get("source_text") or "")
 )
 assert worker_tail["max_interval_ns"] < 1_000_000
+return_location = next(
+    location for location in report["locations"]
+    if location["function"] == "worker" and "return null" in (location.get("source_text") or "")
+)
+assert return_location["max_interval_ns"] < 1_000_000
 print("threaded CPU timing OK")
 PY
 
