@@ -84,6 +84,17 @@ helper_locations = [
     if location["function"] == "included_work"
 ]
 assert helper_locations
+assert any(
+    location["kind"] == "function"
+    and location["line"] == 1
+    and location["count"] == 1
+    and Path(location["source"]) == helper_source
+    for location in helper_locations
+)
+assert next(
+    function for function in included_report["functions"]
+    if function["function"] == "included_work"
+)["call_events"] == 1
 assert all(Path(location["source"]) == helper_source for location in helper_locations)
 assert any(
     location["line"] == 5

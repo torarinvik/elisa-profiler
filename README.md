@@ -1,6 +1,6 @@
 # Elisa profiler
 
-This repository will contain a profiler for programs written in Elisa.
+This repository contains a profiler for programs written in Elisa.
 
 The profiler uses a dedicated local worktree of the self-hosted compiler so
 compiler changes stay isolated from the main compiler checkout and can be
@@ -59,8 +59,8 @@ The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, execution status/timing, all locations
 with source snippets, function call-event counts, and scalar value statistics
 (minimum, maximum, sum, and last). Signed scalar values retain their signed
-interpretation instead of
-being reported as raw u64 bit patterns. Include-expanded programs are mapped
+interpretation instead of being reported as raw u64 bit patterns.
+Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records
 whether that mapping succeeded. A nonzero target exit status is reported and
