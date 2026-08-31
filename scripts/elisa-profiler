@@ -115,7 +115,9 @@ def ensure_runtime(
     rebuild: bool,
     env: dict[str, str],
 ) -> None:
-    if runtime_object.is_file() and not rebuild:
+    if runtime_object.is_file() and not rebuild and not runtime_sources_newer(
+        compiler_root, runtime_object
+    ):
         return
     build_script = compiler_root / "scripts" / "build_runtime_object.sh"
     if not build_script.is_file():
@@ -132,6 +134,27 @@ def ensure_runtime(
     if result.returncode != 0 or not runtime_object.is_file():
         message = result.stderr.strip() or result.stdout.strip() or "runtime build failed"
         raise ProfilerError(message)
+
+
+def runtime_sources_newer(compiler_root: Path, runtime_object: Path) -> bool:
+    """Return whether a source that contributes to the cached runtime is newer."""
+    try:
+        runtime_mtime = runtime_object.stat().st_mtime_ns
+    except OSError:
+        return True
+    runtime_source_root = compiler_root / "elisacore_std"
+    if not runtime_source_root.is_dir():
+        return False
+    try:
+        for source in runtime_source_root.rglob("*"):
+            if source.is_file() and source.suffix in {".elisa", ".elisai"}:
+                if source.stat().st_mtime_ns > runtime_mtime:
+                    return True
+    except OSError:
+        # Let the actual builder report an actionable error if a source disappears
+        # during the dependency scan.
+        return True
+    return False
 
 
 def defined_symbols(nm: str, object_path: Path) -> set[str]:
