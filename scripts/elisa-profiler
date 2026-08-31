@@ -663,6 +663,7 @@ def text_report(report: dict[str, Any], top: int) -> str:
         f"Elisa profile: {report['source']}",
         (
             f"exit={run['exit_code'] if run['exit_code'] is not None else 'signal ' + str(run['signal'])} "
+            f"opt={run['opt_level']} "
             f"warmups={run['warmup_repetitions']} "
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
             f"execution={run['execution_ms']:.3f} ms "
@@ -1102,6 +1103,7 @@ document.addEventListener("DOMContentLoaded", () => {
             f"<h1>Elisa profile</h1><p class=\"subtitle\">{escape(report['source'])}</p>",
             '<div class="cards">',
             f'<div class="card"><div class="card-label">Status</div><div class="card-value">{escape(status)}</div></div>',
+            f'<div class="card"><div class="card-label">Optimization</div><div class="card-value">{escape(run["opt_level"])}</div></div>',
             f'<div class="card"><div class="card-label">Events</div><div class="card-value">{summary["events"]}</div></div>',
             f'<div class="card"><div class="card-label">Execution</div><div class="card-value">{run["execution_ms_mean"]:.3f} ms</div></div>',
             f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
@@ -1111,7 +1113,7 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">Stack overflows</div><div class="card-value">{summary["stack_overflow_entries"]}</div></div>',
             "</div>",
             *sections,
-            f"<footer>Schema {report['schema_version']} · compiler {escape(compiler['commit'])} · timing {'enabled' if run['location_timing'] else 'disabled'}</footer>",
+            f"<footer>Schema {report['schema_version']} · compiler {escape(compiler['commit'])} · optimization {escape(run['opt_level'])} · timing {'enabled' if run['location_timing'] else 'disabled'}</footer>",
             "</main></body></html>",
         ]
     ) + "\n"
@@ -1142,6 +1144,7 @@ def build_report(
     warmup_repetitions: int,
     timeout_s: float | None,
     location_timing: bool,
+    opt_level: str,
     compile_ms: float,
     program_stderr: str,
     temp_root: Path | None,
@@ -1258,6 +1261,7 @@ def build_report(
             "exit_code": exit_code,
             "signal": signal,
             "location_timing": location_timing,
+            "opt_level": opt_level,
             "execution_ms": execution_ms,
             "timeout_s": timeout_s,
             "execution_ms_min": min(execution_times),
@@ -1559,6 +1563,7 @@ def profile(args: argparse.Namespace) -> int:
             warmup_repetitions=args.warmup,
             timeout_s=args.timeout,
             location_timing=args.location_timing,
+            opt_level=f"-O{args.opt_level}",
             compile_ms=compile_ms,
             program_stderr="" if args.show_output else program_stderr,
             temp_root=temp_root if args.keep_temp else None,

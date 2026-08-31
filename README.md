@@ -60,7 +60,8 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop.html
 
 The text report lists hot source locations and event totals. JSON reports have
-schema version 1, compiler provenance, execution status/timing, all locations
+schema version 1, compiler provenance, selected optimization level,
+execution status/timing, all locations
 with source snippets, function call-event counts, aggregate caller-to-callee
 edges, folded call stacks, and scalar value statistics
 (minimum, maximum, sum, and last). Signed scalar values retain their signed

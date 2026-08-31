@@ -19,12 +19,15 @@ grep -q '<table data-sortable>' "$WORK/hot-loop.html"
 grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
 grep -q 'main;accumulate' "$WORK/hot-loop.html"
 grep -q 'Max stack depth' "$WORK/hot-loop.html"
+grep -q 'Optimization' "$WORK/hot-loop.html"
 grep -q 'Definition' "$WORK/hot-loop.html"
 grep -q 'Measured repetitions' "$WORK/hot-loop.html"
 grep -q 'run 2' "$WORK/hot-loop.html"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format text --output "$WORK/timing.txt"
-python3 - "$WORK/timing.txt" <<'PY'
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --opt-level 2 --format text --output "$WORK/o2.txt"
+python3 - "$WORK/timing.txt" "$WORK/o2.txt" <<'PY'
 import sys
 
 text = open(sys.argv[1], encoding="utf-8").read()
@@ -34,6 +37,8 @@ assert "defined at hot_loop.elisa:9" in text
 assert "Measured repetitions:" in text
 assert "run 1: exit 0" in text
 assert "run 2: exit 0" in text
+assert "opt=-O0" in text
+assert "opt=-O2" in open(sys.argv[2], encoding="utf-8").read()
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
@@ -74,6 +79,7 @@ assert report["run"]["warmup_ms"] > 0
 assert report["run"]["requested_repetitions"] == 2
 assert report["run"]["completed_repetitions"] == 2
 assert report["run"]["location_timing"] is True
+assert report["run"]["opt_level"] == "-O0"
 assert report["run"]["cpu_ms"] is not None
 assert report["run"]["cpu_ms"] >= 0
 assert all(repetition["cpu_ms"] is not None for repetition in report["run"]["repetitions"])
