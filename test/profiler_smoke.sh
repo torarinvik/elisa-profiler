@@ -20,6 +20,7 @@ grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
 grep -q 'main;accumulate' "$WORK/hot-loop.html"
 grep -q 'Max stack depth' "$WORK/hot-loop.html"
 grep -q 'Optimization' "$WORK/hot-loop.html"
+grep -q 'Compile' "$WORK/hot-loop.html"
 grep -q 'Definition' "$WORK/hot-loop.html"
 grep -q 'Measured repetitions' "$WORK/hot-loop.html"
 grep -q 'run 2' "$WORK/hot-loop.html"
@@ -43,6 +44,7 @@ assert "defined at hot_loop.elisa:9" in text
 assert "Measured repetitions:" in text
 assert "run 1: exit 0" in text
 assert "run 2: exit 0" in text
+assert "compile=" in text
 assert "opt=-O0" in text
 assert "Elisa profile comparison" in comparison_text
 assert "wall mean:" in comparison_text

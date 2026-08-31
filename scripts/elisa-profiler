@@ -678,6 +678,7 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
             f"execution={run['execution_ms']:.3f} ms "
             f"mean={run['execution_ms_mean']:.3f} ms "
+            f"compile={run['compile_ms']:.3f} ms "
             f"min={run['execution_ms_min']:.3f} ms "
             f"median={run['execution_ms_median']:.3f} ms "
             f"max={run['execution_ms_max']:.3f} ms "
@@ -869,6 +870,7 @@ def html_report(report: dict[str, Any], top: int) -> str:
         if run["peak_rss_bytes"] is None
         else f"{run['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
     )
+    compile_time = f"{run['compile_ms']:.3f} ms"
     display_locations = list(report["locations"])
     if run["location_timing"]:
         display_locations.sort(
@@ -1117,6 +1119,7 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">Optimization</div><div class="card-value">{escape(run["opt_level"])}</div></div>',
             f'<div class="card"><div class="card-label">Events</div><div class="card-value">{summary["events"]}</div></div>',
             f'<div class="card"><div class="card-label">Execution</div><div class="card-value">{run["execution_ms_mean"]:.3f} ms</div></div>',
+            f'<div class="card"><div class="card-label">Compile</div><div class="card-value">{escape(compile_time)}</div></div>',
             f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
             f'<div class="card"><div class="card-label">Peak RSS</div><div class="card-value">{escape(peak_rss)}</div></div>',
             f'<div class="card"><div class="card-label">Locations</div><div class="card-value">{summary["locations"]}</div></div>',
