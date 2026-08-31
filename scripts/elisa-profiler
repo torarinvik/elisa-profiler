@@ -1205,13 +1205,24 @@ def comparison_metric(
     if baseline is None or candidate is None:
         return {"baseline": baseline, "candidate": candidate, "delta": None, "percent": None}
     delta = candidate - baseline
-    percent = delta * 100.0 / abs(baseline) if baseline != 0 else None
+    percent = delta * 100.0 / abs(baseline) if baseline != 0 else (0.0 if candidate == 0 else None)
     return {
         "baseline": baseline,
         "candidate": candidate,
         "delta": delta,
         "percent": percent,
     }
+
+
+def comparison_increased(metric: dict[str, int | float | None], threshold: float) -> bool:
+    baseline = metric["baseline"]
+    candidate = metric["candidate"]
+    percent = metric["percent"]
+    if baseline is None or candidate is None:
+        return False
+    if baseline == 0:
+        return candidate > 0
+    return percent is not None and percent > threshold
 
 
 def profile_function_map(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1360,7 +1371,12 @@ def build_comparison_report(
     for metric_name in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
         metric = metrics[metric_name]
         percent = metric["percent"]
-        if percent is not None and percent > threshold_percent:
+        if comparison_increased(metric, threshold_percent):
+            message = (
+                f"run {metric_name} became non-zero"
+                if metric["baseline"] == 0
+                else f"run {metric_name} increased by more than {threshold_percent:g}%"
+            )
             regressions.append(
                 {
                     "scope": "run",
@@ -1369,13 +1385,21 @@ def build_comparison_report(
                     "candidate": metric["candidate"],
                     "delta": metric["delta"],
                     "percent": percent,
-                    "message": f"run {metric_name} increased by more than {threshold_percent:g}%",
+                    "message": message,
                 }
             )
     for function_change in function_changes:
         metric = function_change["inclusive_ns"]
         percent = metric["percent"]
-        if percent is not None and percent > threshold_percent:
+        if comparison_increased(metric, threshold_percent):
+            message = (
+                f"function {function_change['function']} became non-zero"
+                if metric["baseline"] == 0
+                else (
+                    f"function {function_change['function']} inclusive time increased "
+                    f"by more than {threshold_percent:g}%"
+                )
+            )
             regressions.append(
                 {
                     "scope": "function",
@@ -1385,18 +1409,23 @@ def build_comparison_report(
                     "candidate": metric["candidate"],
                     "delta": metric["delta"],
                     "percent": percent,
-                    "message": (
-                        f"function {function_change['function']} inclusive time increased "
-                        f"by more than {threshold_percent:g}%"
-                    ),
+                    "message": message,
                 }
             )
     for location_change in location_changes:
         metric = location_change["interval_ns"]
         percent = metric["percent"]
-        if percent is not None and percent > threshold_percent:
+        if comparison_increased(metric, threshold_percent):
             location_label = (
                 f"{location_change['function']}:{location_change['line']}"
+            )
+            message = (
+                f"location {location_label} became non-zero"
+                if metric["baseline"] == 0
+                else (
+                    f"location {location_label} interval increased by more than "
+                    f"{threshold_percent:g}%"
+                )
             )
             regressions.append(
                 {
@@ -1409,10 +1438,7 @@ def build_comparison_report(
                     "candidate": metric["candidate"],
                     "delta": metric["delta"],
                     "percent": percent,
-                    "message": (
-                        f"location {location_label} interval increased by more than "
-                        f"{threshold_percent:g}%"
-                    ),
+                    "message": message,
                 }
             )
     candidate_run = candidate["run"]
@@ -1465,7 +1491,10 @@ def comparison_metric_text(metric: dict[str, Any], unit: str = "") -> str:
     percent = metric["percent"]
     if baseline is None or candidate is None:
         return "unavailable"
-    percent_text = "n/a" if percent is None else f"{percent:+.1f}%"
+    if percent is None and baseline == 0 and candidate != 0:
+        percent_text = "new"
+    else:
+        percent_text = "n/a" if percent is None else f"{percent:+.1f}%"
     if unit == "MiB":
         baseline_text = f"{baseline / (1024 * 1024):.2f} MiB"
         candidate_text = f"{candidate / (1024 * 1024):.2f} MiB"

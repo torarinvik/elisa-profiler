@@ -55,8 +55,8 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
                 "variable": None,
                 "signed": False,
                 "count": 10 if opt_level == "-O0" else 20,
-                "interval_ns": 1_000 if opt_level == "-O0" else 2_000,
-                "max_interval_ns": 1_000 if opt_level == "-O0" else 2_000,
+                "interval_ns": 0 if opt_level == "-O0" else 2_000,
+                "max_interval_ns": 0 if opt_level == "-O0" else 2_000,
             }
         ],
     }
@@ -98,6 +98,8 @@ def main() -> int:
         assert any(item["scope"] == "function" for item in comparison["regressions"])
         assert any(item["scope"] == "location" for item in comparison["regressions"])
         assert comparison["locations"][0]["line"] == 3
+        assert comparison["locations"][0]["interval_ns"]["percent"] is None
+        assert any("became non-zero" in item["message"] for item in comparison["regressions"])
 
         failing = subprocess.run(
             [
