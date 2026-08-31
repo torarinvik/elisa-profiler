@@ -32,7 +32,13 @@ def assert_invalid_timeout() -> None:
     assert "--timeout must be a finite positive number" in result.stderr
 
 
-def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str, object]:
+def profile(
+    execution_ms: float,
+    inclusive_ns: int,
+    opt_level: str,
+    *,
+    location_timing: bool = True,
+) -> dict[str, object]:
     return {
         "schema_version": 1,
         "source": "demo.elisa",
@@ -42,6 +48,7 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
         "run": {
             "exit_code": 0,
             "signal": None,
+            "location_timing": location_timing,
             "opt_level": opt_level,
             "execution_ms_mean": execution_ms,
             "compile_ms": 1.0,
@@ -60,7 +67,7 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
                 "call_events": 1,
                 "completed_calls": 1,
                 "inclusive_ns": inclusive_ns,
-                "self_ns": inclusive_ns,
+                "self_ns": inclusive_ns if location_timing else 0,
                 "interval_ns": 0,
                 "max_interval_ns": 0,
             }
@@ -74,7 +81,14 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
                 "inclusive_ns": inclusive_ns,
             }
         ],
-        "stacks": [],
+        "stacks": [
+            {
+                "stack": "main;worker",
+                "call_events": 1 if opt_level == "-O0" else 2,
+                "completed_calls": 1 if opt_level == "-O0" else 2,
+                "self_ns": inclusive_ns,
+            }
+        ],
         "locations": [
             {
                 "source": "demo.elisa",
@@ -130,10 +144,46 @@ def main() -> int:
         assert any(item["scope"] == "function" for item in comparison["regressions"])
         assert any(item["scope"] == "location" for item in comparison["regressions"])
         assert any(item["scope"] == "call_edge" for item in comparison["regressions"])
+        assert any(item["scope"] == "stack" for item in comparison["regressions"])
         assert comparison["call_edges"][0]["inclusive_ns"]["percent"] == 100.0
+        assert comparison["stacks"][0]["self_ns"]["percent"] == 100.0
         assert comparison["locations"][0]["line"] == 3
         assert comparison["locations"][0]["interval_ns"]["percent"] is None
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])
+
+        count_baseline = profile(10.0, 0, "-O0", location_timing=False)
+        count_candidate = profile(10.0, 0, "-O0", location_timing=False)
+        count_candidate["stacks"][0]["call_events"] = 2
+        count_candidate["stacks"][0]["completed_calls"] = 2
+        count_baseline_path = root / "count-baseline.json"
+        count_candidate_path = root / "count-candidate.json"
+        count_comparison_path = root / "count-comparison.json"
+        count_baseline_path.write_text(json.dumps(count_baseline), encoding="utf-8")
+        count_candidate_path.write_text(json.dumps(count_candidate), encoding="utf-8")
+        count_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(count_baseline_path),
+                str(count_candidate_path),
+                "--format",
+                "json",
+                "--output",
+                str(count_comparison_path),
+                "--threshold",
+                "10",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert count_result.returncode == 0, count_result.stderr
+        count_comparison = json.loads(count_comparison_path.read_text(encoding="utf-8"))
+        assert any(
+            item["scope"] == "stack" and item["metric"] == "call_events"
+            for item in count_comparison["regressions"]
+        )
 
         baseline_without_edge = profile(10.0, 1_000, "-O0")
         baseline_without_edge["call_edges"] = []
@@ -265,6 +315,25 @@ def main() -> int:
         )
         assert invalid_metric_result.returncode == 2
         assert "functions[0].inclusive_ns must be a finite number or null" in invalid_metric_result.stderr
+
+        invalid_stack = profile(20.0, 2_000, "-O2")
+        invalid_stack["stacks"][0]["self_ns"] = "slow"
+        invalid_stack_path = root / "invalid-stack.json"
+        invalid_stack_path.write_text(json.dumps(invalid_stack), encoding="utf-8")
+        invalid_stack_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(invalid_stack_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert invalid_stack_result.returncode == 2
+        assert "stacks[0].self_ns must be a finite number or null" in invalid_stack_result.stderr
 
         nonfinite_path = root / "nonfinite.json"
         nonfinite_path.write_text('{"schema_version": 1, "value": NaN}\n', encoding="utf-8")

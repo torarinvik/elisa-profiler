@@ -1351,6 +1351,14 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
             if field in edge:
                 validate_profile_number(edge[field], path, f"{field_prefix}.{field}")
 
+    stack_metric_names = ("call_events", "completed_calls", "self_ns")
+    for index, stack in enumerate(report["stacks"]):
+        field_prefix = f"stacks[{index}]"
+        validate_profile_string(stack.get("stack"), path, f"{field_prefix}.stack", allow_null=False)
+        for field in stack_metric_names:
+            if field in stack:
+                validate_profile_number(stack[field], path, f"{field_prefix}.{field}")
+
     location_metric_names = ("count", "interval_ns", "max_interval_ns")
     for index, location in enumerate(report["locations"]):
         field_prefix = f"locations[{index}]"
@@ -1591,6 +1599,35 @@ def build_comparison_report(
         )
     )
 
+    baseline_stacks = {
+        stack.get("stack"): stack
+        for stack in baseline.get("stacks", [])
+        if isinstance(stack, dict) and isinstance(stack.get("stack"), str)
+    }
+    candidate_stacks = {
+        stack.get("stack"): stack
+        for stack in candidate.get("stacks", [])
+        if isinstance(stack, dict) and isinstance(stack.get("stack"), str)
+    }
+    stack_changes: list[dict[str, Any]] = []
+    for stack_name in sorted(set(baseline_stacks) | set(candidate_stacks)):
+        baseline_stack = baseline_stacks.get(stack_name, {})
+        candidate_stack = candidate_stacks.get(stack_name, {})
+        stack_change: dict[str, Any] = {"stack": stack_name}
+        for metric_name in ("call_events", "completed_calls", "self_ns"):
+            stack_change[metric_name] = comparison_metric(
+                baseline_stack.get(metric_name), candidate_stack.get(metric_name)
+            )
+        stack_changes.append(stack_change)
+    stack_changes.sort(
+        key=lambda change: (
+            -abs(change["self_ns"]["delta"] or 0),
+            -abs(change["call_events"]["delta"] or 0),
+            change["stack"],
+        )
+    )
+
+    candidate_run = candidate["run"]
     regressions: list[dict[str, Any]] = []
     for metric_name in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
         metric = metrics[metric_name]
@@ -1692,7 +1729,34 @@ def build_comparison_report(
                     "message": message,
                 }
             )
-    candidate_run = candidate["run"]
+    stack_metric_name = (
+        "self_ns" if candidate_run.get("location_timing") else "call_events"
+    )
+    stack_metric_label = "self time" if stack_metric_name == "self_ns" else "call events"
+    for stack_change in stack_changes:
+        metric = stack_change[stack_metric_name]
+        percent = metric["percent"]
+        if comparison_increased(metric, threshold_percent):
+            message = (
+                f"stack {stack_change['stack']} became non-zero"
+                if metric["baseline"] in (None, 0)
+                else (
+                    f"stack {stack_change['stack']} {stack_metric_label} increased by more than "
+                    f"{threshold_percent:g}%"
+                )
+            )
+            regressions.append(
+                {
+                    "scope": "stack",
+                    "stack": stack_change["stack"],
+                    "metric": stack_metric_name,
+                    "baseline": metric["baseline"],
+                    "candidate": metric["candidate"],
+                    "delta": metric["delta"],
+                    "percent": percent,
+                    "message": message,
+                }
+            )
     candidate_failed = profile_run_failed(candidate)
     if candidate_failed:
         regressions.append(
@@ -1748,6 +1812,7 @@ def build_comparison_report(
         "functions": function_changes,
         "locations": location_changes,
         "call_edges": call_edge_changes,
+        "stacks": stack_changes,
         "warnings": warnings,
         "regressions": regressions,
         "status": "regression" if regressions else "ok",
@@ -1843,6 +1908,18 @@ def comparison_text(report: dict[str, Any], top: int) -> str:
         )
     if not report["call_edges"]:
         lines.append("  none recorded")
+    lines.extend(
+        [
+            "",
+            f"Call-stack changes (top {min(top, len(report['stacks']))}):",
+        ]
+    )
+    for stack in report["stacks"][:top]:
+        timing = comparison_metric_text(stack["self_ns"], "ns")
+        calls = comparison_metric_text(stack["call_events"])
+        lines.append(f"  {stack['stack']}: self={timing}; calls={calls}")
+    if not report["stacks"]:
+        lines.append("  none recorded")
     if report["warnings"]:
         lines.extend(["", "Warnings:"])
         lines.extend(f"  - {warning}" for warning in report["warnings"])
@@ -1893,6 +1970,15 @@ def comparison_html(report: dict[str, Any], top: int) -> str:
         ]
         for call_edge in report["call_edges"][:top]
     ]
+    stack_rows = [
+        [
+            stack["stack"],
+            comparison_metric_text(stack["self_ns"], "ns"),
+            comparison_metric_text(stack["call_events"]),
+            comparison_metric_text(stack["completed_calls"]),
+        ]
+        for stack in report["stacks"][:top]
+    ]
     sections = [
         html_table("Run metrics", ["Metric", "Baseline → Candidate"], metric_rows),
         html_table(
@@ -1909,6 +1995,11 @@ def comparison_html(report: dict[str, Any], top: int) -> str:
             f"Call-edge changes (top {min(top, len(report['call_edges']))})",
             ["Call edge", "Inclusive", "Calls", "Completed calls"],
             call_edge_rows,
+        ),
+        html_table(
+            f"Call-stack changes (top {min(top, len(report['stacks']))})",
+            ["Stack", "Self time", "Calls", "Completed calls"],
+            stack_rows,
         ),
     ]
     if report["warnings"]:

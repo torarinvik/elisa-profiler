@@ -14,6 +14,7 @@
     "functions",
     "locations",
     "call_edges",
+    "stacks",
     "warnings",
     "regressions",
     "status"
@@ -47,6 +48,10 @@
     "call_edges": {
       "type": "array",
       "items": { "$ref": "#/$defs/call_edge_change" }
+    },
+    "stacks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stack_change" }
     },
     "warnings": {
       "type": "array",
@@ -114,10 +119,11 @@
       "type": "object",
       "required": ["scope", "metric", "baseline", "candidate", "delta", "percent", "message"],
       "properties": {
-        "scope": { "type": "string", "enum": ["run", "function", "location", "call_edge"] },
+        "scope": { "type": "string", "enum": ["run", "function", "location", "call_edge", "stack"] },
         "function": { "type": "string" },
         "caller": { "type": "string" },
         "callee": { "type": "string" },
+        "stack": { "type": "string" },
         "source": { "type": ["string", "null"] },
         "line": { "type": ["integer", "null"], "minimum": 0 },
         "metric": { "type": "string" },
@@ -170,6 +176,17 @@
         "call_events": { "$ref": "#/$defs/metric" },
         "completed_calls": { "$ref": "#/$defs/metric" },
         "inclusive_ns": { "$ref": "#/$defs/metric" }
+      },
+      "additionalProperties": true
+    },
+    "stack_change": {
+      "type": "object",
+      "required": ["stack", "call_events", "completed_calls", "self_ns"],
+      "properties": {
+        "stack": { "type": "string" },
+        "call_events": { "$ref": "#/$defs/metric" },
+        "completed_calls": { "$ref": "#/$defs/metric" },
+        "self_ns": { "$ref": "#/$defs/metric" }
       },
       "additionalProperties": true
     }

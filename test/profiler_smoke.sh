@@ -41,6 +41,7 @@ test -s "$WORK/comparison.html"
 grep -q 'Elisa profile comparison' "$WORK/comparison.html"
 grep -q 'Source-location changes' "$WORK/comparison.html"
 grep -q 'Call-edge changes' "$WORK/comparison.html"
+grep -q 'Call-stack changes' "$WORK/comparison.html"
 grep -q 'DOMContentLoaded' "$WORK/comparison.html"
 python3 - "$WORK/timing.txt" "$WORK/comparison.txt" "$WORK/o2-report.json" "$WORK/comparison.json" "$WORK/hot-loop.speedscope.json" <<'PY'
 import json
@@ -61,6 +62,7 @@ assert "Elisa profile comparison" in comparison_text
 assert "wall mean:" in comparison_text
 assert "Source locations" in comparison_text
 assert "Call-edge changes" in comparison_text
+assert "Call-stack changes" in comparison_text
 o2_report = json.load(open(sys.argv[3], encoding="utf-8"))
 assert o2_report["run"]["opt_level"] == "-O2"
 comparison = json.load(open(sys.argv[4], encoding="utf-8"))
@@ -71,6 +73,8 @@ assert "execution_ms_mean" in comparison["metrics"]
 assert "compile_ms" in comparison["metrics"]
 assert comparison["functions"]
 assert "locations" in comparison
+assert "stacks" in comparison
+assert comparison["stacks"]
 assert comparison["warnings"] == []
 speedscope = json.load(open(sys.argv[5], encoding="utf-8"))
 assert speedscope["activeProfileIndex"] == 0
