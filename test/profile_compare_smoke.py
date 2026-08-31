@@ -50,6 +50,7 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
             "completed_repetitions": 1,
             "successful_repetitions": 1,
             "failed_repetitions": 0,
+            "measurement_basis": "successful",
             "repetitions": [{"timed_out": False}],
         },
         "functions": [
@@ -117,6 +118,7 @@ def main() -> int:
         assert comparison["metrics"]["compile_ms"]["percent"] == 0.0
         assert any("compiler commits" in warning for warning in comparison["warnings"])
         assert not any("successful repetition counts" in warning for warning in comparison["warnings"])
+        assert not any("measurement bases" in warning for warning in comparison["warnings"])
         assert any(item["scope"] == "function" for item in comparison["regressions"])
         assert any(item["scope"] == "location" for item in comparison["regressions"])
         assert comparison["locations"][0]["line"] == 3

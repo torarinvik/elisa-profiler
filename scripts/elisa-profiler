@@ -677,6 +677,7 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"warmups={run['warmup_repetitions']} "
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
             f"successful={run['successful_repetitions']} "
+            f"basis={run['measurement_basis']} "
             f"execution={run['execution_ms']:.3f} ms "
             f"mean={run['execution_ms_mean']:.3f} ms "
             f"compile={run['compile_ms']:.3f} ms "
@@ -1130,6 +1131,7 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">Execution</div><div class="card-value">{run["execution_ms_mean"]:.3f} ms</div></div>',
             f'<div class="card"><div class="card-label">Compile</div><div class="card-value">{escape(compile_time)}</div></div>',
             f'<div class="card"><div class="card-label">Successful runs</div><div class="card-value">{run["successful_repetitions"]}/{run["completed_repetitions"]}</div></div>',
+            f'<div class="card"><div class="card-label">Aggregate basis</div><div class="card-value">{escape(run["measurement_basis"])}</div></div>',
             f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
             f'<div class="card"><div class="card-label">Peak RSS</div><div class="card-value">{escape(peak_rss)}</div></div>',
             f'<div class="card"><div class="card-label">Locations</div><div class="card-value">{summary["locations"]}</div></div>',
@@ -1288,6 +1290,7 @@ def comparison_identity(report: dict[str, Any], path: Path) -> dict[str, Any]:
         "completed_repetitions": run.get("completed_repetitions"),
         "successful_repetitions": run.get("successful_repetitions"),
         "failed_repetitions": run.get("failed_repetitions"),
+        "measurement_basis": run.get("measurement_basis"),
     }
 
 
@@ -1474,6 +1477,14 @@ def build_comparison_report(
         warnings.append(
             "baseline and candidate use different successful repetition counts"
         )
+    baseline_basis = baseline["run"].get("measurement_basis")
+    candidate_basis = candidate_run.get("measurement_basis")
+    if (
+        isinstance(baseline_basis, str)
+        and isinstance(candidate_basis, str)
+        and baseline_basis != candidate_basis
+    ):
+        warnings.append("baseline and candidate use different aggregate measurement bases")
     baseline_compiler = baseline.get("compiler")
     candidate_compiler = candidate.get("compiler")
     if isinstance(baseline_compiler, dict) and isinstance(candidate_compiler, dict):
@@ -1840,6 +1851,7 @@ def build_report(
     )
     execution_times = [record["execution_ms"] for record in measurement_records]
     execution_ms = sum(execution_times)
+    measurement_basis = "successful" if successful_records else "all_completed"
     report: dict[str, Any] = {
         "schema_version": 1,
         "source": str(source),
@@ -1868,6 +1880,8 @@ def build_report(
             "completed_repetitions": len(run_records),
             "successful_repetitions": len(successful_records),
             "failed_repetitions": len(run_records) - len(successful_records),
+            "measurement_repetitions": len(measurement_records),
+            "measurement_basis": measurement_basis,
             "repetitions": run_records,
             "compile_ms": compile_ms,
         },

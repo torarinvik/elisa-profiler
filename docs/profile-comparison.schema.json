@@ -65,7 +65,8 @@
         "location_timing": { "type": ["boolean", "null"] },
         "completed_repetitions": { "type": ["integer", "null"], "minimum": 0 },
         "successful_repetitions": { "type": ["integer", "null"], "minimum": 0 },
-        "failed_repetitions": { "type": ["integer", "null"], "minimum": 0 }
+        "failed_repetitions": { "type": ["integer", "null"], "minimum": 0 },
+        "measurement_basis": { "type": ["string", "null"], "enum": ["successful", "all_completed", null] }
       },
       "additionalProperties": true
     },

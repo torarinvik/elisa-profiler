@@ -88,6 +88,9 @@ be audited run by run.
 Aggregate timing and resource statistics use only successful repetitions when
 at least one exists; failed repetitions remain available with their partial
 trace data and explicit status.
+The run's `measurement_basis` and `measurement_repetitions` fields make that
+choice explicit; an `all_completed` basis means every completed repetition
+failed, so its aggregates are retained only as partial diagnostics.
 On macOS, measured repetitions also record `peak_rss_bytes`, the profiled
 child's peak resident set size; the aggregate field is the largest measured
 repetition. A timed-out child may terminate before the operating-system
@@ -154,7 +157,7 @@ Comparison JSON output follows
 Comparisons warn when the source path, timing mode, or compiler provenance
 differs between the two reports, and retain each profile's successful/failed
 repetition counts. A sample-count warning is emitted when those successful
-counts differ. The baseline must be a successful profile;
+counts or aggregate measurement bases differ. The baseline must be a successful profile;
 failed candidate profiles are retained as explicit comparison regressions.
 Comparison HTML is self-contained and includes sortable-style tables for run,
 function, and source-location changes, plus warnings and regressions.

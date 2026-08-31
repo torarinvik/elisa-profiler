@@ -92,6 +92,8 @@
         "completed_repetitions",
         "successful_repetitions",
         "failed_repetitions",
+        "measurement_repetitions",
+        "measurement_basis",
         "repetitions",
         "compile_ms"
       ],
@@ -117,6 +119,8 @@
         "completed_repetitions": { "type": "integer", "minimum": 1 },
         "successful_repetitions": { "type": "integer", "minimum": 0 },
         "failed_repetitions": { "type": "integer", "minimum": 0 },
+        "measurement_repetitions": { "type": "integer", "minimum": 1 },
+        "measurement_basis": { "type": "string", "enum": ["successful", "all_completed"] },
         "repetitions": {
           "type": "array",
           "minItems": 1,

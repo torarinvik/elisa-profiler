@@ -90,6 +90,8 @@ def main() -> int:
         run = report["run"]
         assert run["successful_repetitions"] == 1
         assert run["failed_repetitions"] == 1
+        assert run["measurement_repetitions"] == 1
+        assert run["measurement_basis"] == "successful"
         assert run["execution_ms"] == 10.0
         assert run["execution_ms_mean"] == 10.0
         assert run["cpu_ms"] == 5.0

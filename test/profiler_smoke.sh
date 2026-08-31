@@ -112,6 +112,8 @@ assert report["run"]["requested_repetitions"] == 2
 assert report["run"]["completed_repetitions"] == 2
 assert report["run"]["successful_repetitions"] == 2
 assert report["run"]["failed_repetitions"] == 0
+assert report["run"]["measurement_repetitions"] == 2
+assert report["run"]["measurement_basis"] == "successful"
 assert report["run"]["location_timing"] is True
 assert report["run"]["opt_level"] == "-O0"
 assert report["run"]["cpu_ms"] is not None
@@ -335,6 +337,8 @@ assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 6
 assert report["run"]["successful_repetitions"] == 0
 assert report["run"]["failed_repetitions"] == 1
+assert report["run"]["measurement_repetitions"] == 1
+assert report["run"]["measurement_basis"] == "all_completed"
 assert report["summary"]["events"] >= 1
 assert report["locations"][-1]["line"] == 2
 assert report["recent_events"]
@@ -371,6 +375,8 @@ assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 15
 assert report["run"]["successful_repetitions"] == 0
 assert report["run"]["failed_repetitions"] == 1
+assert report["run"]["measurement_repetitions"] == 1
+assert report["run"]["measurement_basis"] == "all_completed"
 assert report["run"]["repetitions"][0]["timed_out"] is True
 assert report["run"]["timeout_s"] == 2.0
 assert "peak_rss_bytes" in report["run"]
