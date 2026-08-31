@@ -160,6 +160,12 @@ def main() -> int:
 
         different_clock_candidate = profile(10.0, 1_000, "-O0")
         different_clock_candidate["run"]["timing_clock"] = "cpu"
+        different_clock_candidate["functions"][0]["inclusive_ns"] = 100_000
+        different_clock_candidate["functions"][0]["self_ns"] = 100_000
+        different_clock_candidate["call_edges"][0]["inclusive_ns"] = 100_000
+        different_clock_candidate["stacks"][0]["self_ns"] = 100_000
+        different_clock_candidate["locations"][0]["interval_ns"] = 100_000
+        different_clock_candidate["locations"][0]["max_interval_ns"] = 100_000
         different_clock_path = root / "different-clock-candidate.json"
         different_clock_comparison_path = root / "different-clock-comparison.json"
         different_clock_path.write_text(
@@ -188,6 +194,15 @@ def main() -> int:
         assert "baseline and candidate use different timing clocks" in different_clock_comparison[
             "warnings"
         ]
+        assert different_clock_comparison["status"] == "ok"
+        assert different_clock_comparison["functions"][0]["inclusive_ns"] == {
+            "baseline": None,
+            "candidate": None,
+            "delta": None,
+            "percent": None,
+        }
+        assert different_clock_comparison["functions"][0]["events"]["baseline"] == 100
+        assert different_clock_comparison["stacks"][0]["self_ns"]["baseline"] is None
 
         count_baseline = profile(10.0, 0, "-O0", location_timing=False)
         count_candidate = profile(10.0, 0, "-O0", location_timing=False)

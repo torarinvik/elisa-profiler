@@ -1428,6 +1428,31 @@ def comparison_metric(
     }
 
 
+def unavailable_comparison_metric() -> dict[str, int | float | None]:
+    """Represent a metric whose units are not comparable between reports."""
+    return {"baseline": None, "candidate": None, "delta": None, "percent": None}
+
+
+def effective_timing_clock(run: dict[str, Any]) -> str | None:
+    """Return the clock used by a report, including wall-time legacy reports."""
+    if not run.get("location_timing"):
+        return None
+    # Reports written before timing_clock was added used wall time whenever
+    # location timing was enabled.
+    return run.get("timing_clock") or "wall"
+
+
+def timing_metrics_comparable(
+    baseline_run: dict[str, Any], candidate_run: dict[str, Any]
+) -> bool:
+    return (
+        bool(baseline_run.get("location_timing"))
+        and bool(candidate_run.get("location_timing"))
+        and effective_timing_clock(baseline_run)
+        == effective_timing_clock(candidate_run)
+    )
+
+
 def comparison_increased(metric: dict[str, int | float | None], threshold: float) -> bool:
     baseline = metric["baseline"]
     candidate = metric["candidate"]
@@ -1526,6 +1551,10 @@ def build_comparison_report(
     candidate = load_profile_report(candidate_path)
     if profile_run_failed(baseline):
         raise ProfilerError(f"baseline profile did not complete successfully: {baseline_path}")
+    baseline_run = baseline["run"]
+    candidate_run = candidate["run"]
+    timing_comparable = timing_metrics_comparable(baseline_run, candidate_run)
+    timing_metric_names = {"inclusive_ns", "self_ns", "interval_ns", "max_interval_ns"}
     run_metric_names = {
         "execution_ms_mean": "run",
         "compile_ms": "run",
@@ -1560,8 +1589,12 @@ def build_comparison_report(
         candidate_function = candidate_functions.get(function_name, {})
         function_change: dict[str, Any] = {"function": function_name}
         for metric_name in function_metric_names:
-            function_change[metric_name] = comparison_metric(
-                baseline_function.get(metric_name), candidate_function.get(metric_name)
+            function_change[metric_name] = (
+                unavailable_comparison_metric()
+                if metric_name in timing_metric_names and not timing_comparable
+                else comparison_metric(
+                    baseline_function.get(metric_name), candidate_function.get(metric_name)
+                )
             )
         function_changes.append(function_change)
     function_changes.sort(
@@ -1588,8 +1621,12 @@ def build_comparison_report(
             "signed": signed,
         }
         for metric_name in location_metric_names:
-            location_change[metric_name] = comparison_metric(
-                baseline_location.get(metric_name), candidate_location.get(metric_name)
+            location_change[metric_name] = (
+                unavailable_comparison_metric()
+                if metric_name in timing_metric_names and not timing_comparable
+                else comparison_metric(
+                    baseline_location.get(metric_name), candidate_location.get(metric_name)
+                )
             )
         location_changes.append(location_change)
     location_changes.sort(
@@ -1614,8 +1651,12 @@ def build_comparison_report(
         caller, callee = edge_key
         edge_change: dict[str, Any] = {"caller": caller, "callee": callee}
         for metric_name in call_edge_metric_names:
-            edge_change[metric_name] = comparison_metric(
-                baseline_edge.get(metric_name), candidate_edge.get(metric_name)
+            edge_change[metric_name] = (
+                unavailable_comparison_metric()
+                if metric_name == "inclusive_ns" and not timing_comparable
+                else comparison_metric(
+                    baseline_edge.get(metric_name), candidate_edge.get(metric_name)
+                )
             )
         call_edge_changes.append(edge_change)
     call_edge_changes.sort(
@@ -1643,8 +1684,12 @@ def build_comparison_report(
         candidate_stack = candidate_stacks.get(stack_name, {})
         stack_change: dict[str, Any] = {"stack": stack_name}
         for metric_name in ("call_events", "completed_calls", "self_ns"):
-            stack_change[metric_name] = comparison_metric(
-                baseline_stack.get(metric_name), candidate_stack.get(metric_name)
+            stack_change[metric_name] = (
+                unavailable_comparison_metric()
+                if metric_name == "self_ns" and not timing_comparable
+                else comparison_metric(
+                    baseline_stack.get(metric_name), candidate_stack.get(metric_name)
+                )
             )
         stack_changes.append(stack_change)
     stack_changes.sort(
@@ -1655,7 +1700,6 @@ def build_comparison_report(
         )
     )
 
-    candidate_run = candidate["run"]
     regressions: list[dict[str, Any]] = []
     for metric_name in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
         metric = metrics[metric_name]
@@ -1776,9 +1820,7 @@ def build_comparison_report(
                     "message": message,
                 }
             )
-    stack_metric_name = (
-        "self_ns" if candidate_run.get("location_timing") else "call_events"
-    )
+    stack_metric_name = "self_ns" if timing_comparable else "call_events"
     stack_metric_label = "self time" if stack_metric_name == "self_ns" else "call events"
     for stack_change in stack_changes:
         metric = stack_change[stack_metric_name]
@@ -1834,7 +1876,11 @@ def build_comparison_report(
         warnings.append("baseline and candidate use different source paths")
     if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
         warnings.append("baseline and candidate use different location-timing settings")
-    if baseline["run"].get("timing_clock") != candidate_run.get("timing_clock"):
+    if (
+        baseline_run.get("location_timing")
+        and candidate_run.get("location_timing")
+        and effective_timing_clock(baseline_run) != effective_timing_clock(candidate_run)
+    ):
         warnings.append("baseline and candidate use different timing clocks")
     baseline_successful = baseline["run"].get("successful_repetitions")
     candidate_successful = candidate_run.get("successful_repetitions")

@@ -175,11 +175,13 @@ return a failing status for regressions:
 
 Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
-Comparisons warn when the source path, timing mode, or compiler provenance
-differs between the two reports, and retain each profile's successful/failed
+Comparisons warn when the source path, timing mode, timing clock, or compiler
+provenance differs between the two reports, and retain each profile's successful/failed
 repetition counts. A sample-count warning is emitted when those successful
 counts or aggregate measurement bases differ. The baseline must be a successful profile;
 failed candidate profiles are retained as explicit comparison regressions.
+When timing modes or clocks differ, duration deltas are marked unavailable rather
+than comparing unlike units; event and call-count deltas remain comparable.
 Comparisons warn when either profile dropped trace events or exceeded the tracked call-stack
 depth; a candidate with either quality failure is a regression, so `--fail-on-regression`
 cannot silently accept incomplete measurements.
