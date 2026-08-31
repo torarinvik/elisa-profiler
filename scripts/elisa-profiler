@@ -1188,6 +1188,27 @@ def profile_function_map(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return functions
 
 
+def profile_run_failed(report: dict[str, Any]) -> bool:
+    run = report.get("run")
+    if not isinstance(run, dict):
+        return True
+    if run.get("exit_code") != 0 or run.get("signal") is not None:
+        return True
+    repetitions = run.get("repetitions", [])
+    return any(
+        isinstance(repetition, dict)
+        and (
+            repetition.get("timed_out")
+            or repetition.get("signal") is not None
+            or (
+                repetition.get("exit_code") is not None
+                and repetition.get("exit_code") != 0
+            )
+        )
+        for repetition in repetitions
+    )
+
+
 def comparison_identity(report: dict[str, Any], path: Path) -> dict[str, Any]:
     run = report["run"]
     return {
@@ -1205,6 +1226,8 @@ def build_comparison_report(
 ) -> dict[str, Any]:
     baseline = load_profile_report(baseline_path)
     candidate = load_profile_report(candidate_path)
+    if profile_run_failed(baseline):
+        raise ProfilerError(f"baseline profile did not complete successfully: {baseline_path}")
     run_metric_names = {
         "execution_ms_mean": "run",
         "compile_ms": "run",
@@ -1284,15 +1307,7 @@ def build_comparison_report(
                 }
             )
     candidate_run = candidate["run"]
-    candidate_failed = (
-        candidate_run.get("exit_code") != 0
-        or candidate_run.get("signal") is not None
-        or any(
-            repetition.get("timed_out")
-            for repetition in candidate_run.get("repetitions", [])
-            if isinstance(repetition, dict)
-        )
-    )
+    candidate_failed = profile_run_failed(candidate)
     if candidate_failed:
         regressions.append(
             {

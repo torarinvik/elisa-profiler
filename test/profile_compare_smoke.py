@@ -97,6 +97,25 @@ def main() -> int:
             check=False,
         )
         assert failing.returncode == 1, failing.stdout + failing.stderr
+
+        failed_baseline = profile(10.0, 1_000, "-O0")
+        failed_baseline["run"]["exit_code"] = 134
+        failed_baseline_path = root / "failed-baseline.json"
+        failed_baseline_path.write_text(json.dumps(failed_baseline), encoding="utf-8")
+        rejected = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(failed_baseline_path),
+                str(candidate_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert rejected.returncode == 2
+        assert "baseline profile did not complete successfully" in rejected.stderr
     print("profile compare smoke OK")
     return 0
 

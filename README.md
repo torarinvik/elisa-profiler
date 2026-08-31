@@ -143,7 +143,8 @@ function timing deltas, and can return a failing status for regressions:
 Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
 Comparisons warn when the source path, timing mode, or compiler provenance
-differs between the two reports.
+differs between the two reports. The baseline must be a successful profile;
+failed candidate profiles are retained as explicit comparison regressions.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target
