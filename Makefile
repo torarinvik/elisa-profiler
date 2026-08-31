@@ -5,7 +5,7 @@ SEED_OPT_LEVEL ?= -O0
 SEED_MAX_RSS_KB ?= 8388608
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
 
-.PHONY: compiler-status compiler-seed compiler-smoke profiler-smoke profile-compare-smoke process-group-smoke test
+.PHONY: compiler-status compiler-seed compiler-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -24,10 +24,13 @@ compiler-smoke:
 profiler-smoke:
 	@"$(PROFILER_ROOT)/test/profiler_smoke.sh"
 
+profile-aggregation-smoke:
+	@python3 "$(PROFILER_ROOT)/test/profile_aggregation_smoke.py"
+
 profile-compare-smoke:
 	@python3 "$(PROFILER_ROOT)/test/profile_compare_smoke.py"
 
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-smoke profiler-smoke profile-compare-smoke process-group-smoke
+test: compiler-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke process-group-smoke

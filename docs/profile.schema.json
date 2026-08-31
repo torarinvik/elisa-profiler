@@ -90,6 +90,8 @@
         "warmup_repetitions",
         "requested_repetitions",
         "completed_repetitions",
+        "successful_repetitions",
+        "failed_repetitions",
         "repetitions",
         "compile_ms"
       ],
@@ -113,6 +115,8 @@
         "warmup_repetitions": { "type": "integer", "minimum": 0 },
         "requested_repetitions": { "type": "integer", "minimum": 1 },
         "completed_repetitions": { "type": "integer", "minimum": 1 },
+        "successful_repetitions": { "type": "integer", "minimum": 0 },
+        "failed_repetitions": { "type": "integer", "minimum": 0 },
         "repetitions": {
           "type": "array",
           "minItems": 1,

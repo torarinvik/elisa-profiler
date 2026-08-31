@@ -110,6 +110,8 @@ assert report["run"]["warmup_repetitions"] == 1
 assert report["run"]["warmup_ms"] > 0
 assert report["run"]["requested_repetitions"] == 2
 assert report["run"]["completed_repetitions"] == 2
+assert report["run"]["successful_repetitions"] == 2
+assert report["run"]["failed_repetitions"] == 0
 assert report["run"]["location_timing"] is True
 assert report["run"]["opt_level"] == "-O0"
 assert report["run"]["cpu_ms"] is not None
@@ -331,6 +333,8 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 
 assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 6
+assert report["run"]["successful_repetitions"] == 0
+assert report["run"]["failed_repetitions"] == 1
 assert report["summary"]["events"] >= 1
 assert report["locations"][-1]["line"] == 2
 assert report["recent_events"]
@@ -365,6 +369,8 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 
 assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 15
+assert report["run"]["successful_repetitions"] == 0
+assert report["run"]["failed_repetitions"] == 1
 assert report["run"]["repetitions"][0]["timed_out"] is True
 assert report["run"]["timeout_s"] == 2.0
 assert "peak_rss_bytes" in report["run"]

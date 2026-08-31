@@ -676,6 +676,7 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"opt={run['opt_level']} "
             f"warmups={run['warmup_repetitions']} "
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
+            f"successful={run['successful_repetitions']} "
             f"execution={run['execution_ms']:.3f} ms "
             f"mean={run['execution_ms_mean']:.3f} ms "
             f"compile={run['compile_ms']:.3f} ms "
@@ -1128,6 +1129,7 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">Events</div><div class="card-value">{summary["events"]}</div></div>',
             f'<div class="card"><div class="card-label">Execution</div><div class="card-value">{run["execution_ms_mean"]:.3f} ms</div></div>',
             f'<div class="card"><div class="card-label">Compile</div><div class="card-value">{escape(compile_time)}</div></div>',
+            f'<div class="card"><div class="card-label">Successful runs</div><div class="card-value">{run["successful_repetitions"]}/{run["completed_repetitions"]}</div></div>',
             f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
             f'<div class="card"><div class="card-label">Peak RSS</div><div class="card-value">{escape(peak_rss)}</div></div>',
             f'<div class="card"><div class="card-label">Locations</div><div class="card-value">{summary["locations"]}</div></div>',
@@ -1784,17 +1786,27 @@ def build_report(
             function_stats.items(), key=lambda item: (-item[1]["events"], item[0])
         )
     ]
+    successful_records = [
+        record
+        for record in run_records
+        if record["exit_code"] == 0
+        and record["signal"] is None
+        and not record["timed_out"]
+    ]
+    measurement_records = successful_records or run_records
     cpu_user_values = [
-        record["cpu_user_ms"] for record in run_records if record["cpu_user_ms"] is not None
+        record["cpu_user_ms"]
+        for record in measurement_records
+        if record["cpu_user_ms"] is not None
     ]
     cpu_system_values = [
         record["cpu_system_ms"]
-        for record in run_records
+        for record in measurement_records
         if record["cpu_system_ms"] is not None
     ]
     peak_rss_values = [
         record["peak_rss_bytes"]
-        for record in run_records
+        for record in measurement_records
         if record["peak_rss_bytes"] is not None
     ]
     cpu_user_ms = sum(cpu_user_values) if cpu_user_values else None
@@ -1804,7 +1816,7 @@ def build_report(
         if cpu_user_ms is not None and cpu_system_ms is not None
         else None
     )
-    execution_times = [record["execution_ms"] for record in run_records]
+    execution_times = [record["execution_ms"] for record in measurement_records]
     execution_ms = sum(execution_times)
     report: dict[str, Any] = {
         "schema_version": 1,
@@ -1832,6 +1844,8 @@ def build_report(
             "warmup_repetitions": warmup_repetitions,
             "requested_repetitions": run_records[-1]["requested_repetitions"],
             "completed_repetitions": len(run_records),
+            "successful_repetitions": len(successful_records),
+            "failed_repetitions": len(run_records) - len(successful_records),
             "repetitions": run_records,
             "compile_ms": compile_ms,
         },

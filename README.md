@@ -85,6 +85,9 @@ from wall-clock execution time.
 Each repetition also records its trace event/location totals, traced-thread
 count, dropped-event count, and stack-depth diagnostics, so merged reports can
 be audited run by run.
+Aggregate timing and resource statistics use only successful repetitions when
+at least one exists; failed repetitions remain available with their partial
+trace data and explicit status.
 On macOS, measured repetitions also record `peak_rss_bytes`, the profiled
 child's peak resident set size; the aggregate field is the largest measured
 repetition. A timed-out child may terminate before the operating-system
