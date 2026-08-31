@@ -91,8 +91,14 @@ def signal_process_group(process: subprocess.Popen[bytes], signal_number: int) -
     process.send_signal(signal_number)
 
 
-def measured_resource_file(temp_root: Path, repetition: int) -> Path | None:
-    if sys.platform != "darwin" or not os.access("/usr/bin/time", os.X_OK):
+def measured_resource_file(
+    temp_root: Path, repetition: int, timeout: float | None
+) -> Path | None:
+    if (
+        timeout is not None
+        or sys.platform != "darwin"
+        or not os.access("/usr/bin/time", os.X_OK)
+    ):
         return None
     return temp_root / f"run-{repetition}.time"
 
@@ -315,12 +321,14 @@ def parse_profile(
     list[dict[str, Any]],
     str,
     list[dict[str, Any]],
+    dict[str, Any] | None,
 ]:
     meta: dict[str, int] | None = None
     locations: list[dict[str, Any]] = []
     call_edges: list[dict[str, Any]] = []
     stacks: list[dict[str, Any]] = []
     recent_events: list[dict[str, Any]] = []
+    active_stack: dict[str, Any] | None = None
     program_stderr: list[str] = []
     for line in stderr.splitlines():
         if not line.startswith("ELISA_PROFILE\t"):
@@ -354,6 +362,13 @@ def parse_profile(
                     "value": int(fields[9]),
                 }
             )
+            continue
+        if len(fields) == 6 and fields[2] == "active":
+            active_stack = {
+                "tracked_depth": int(fields[3]),
+                "overflow_depth": int(fields[4]),
+                "stack": [] if fields[5] == "-" else fields[5].split(";"),
+            }
             continue
         if len(fields) == 8 and fields[2] == "call":
             call_edges.append(
@@ -420,6 +435,7 @@ def parse_profile(
                 [],
                 stderr,
                 recent_events,
+                active_stack,
             )
         raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
     return (
@@ -429,6 +445,7 @@ def parse_profile(
         stacks,
         "\n".join(program_stderr) + ("\n" if program_stderr else ""),
         recent_events,
+        active_stack,
     )
 
 
@@ -441,6 +458,7 @@ def merge_profiles(
             list[dict[str, Any]],
             str,
             list[dict[str, Any]],
+            dict[str, Any] | None,
         ]
     ],
 ) -> tuple[
@@ -450,6 +468,7 @@ def merge_profiles(
     list[dict[str, Any]],
     str,
     list[dict[str, Any]],
+    dict[str, Any] | None,
 ]:
     merged: dict[tuple[str, str, int, str | None, bool], dict[str, Any]] = {}
     merged_call_edges: dict[tuple[str, str], dict[str, Any]] = {}
@@ -459,8 +478,9 @@ def merge_profiles(
     max_stack_depth = 0
     stack_overflow_entries = 0
     recent_events: list[dict[str, Any]] = []
+    active_stack: dict[str, Any] | None = None
     program_stderr: list[str] = []
-    for repetition, (meta, locations, call_edges, stacks, stderr, path) in enumerate(results, start=1):
+    for repetition, (meta, locations, call_edges, stacks, stderr, path, current_stack) in enumerate(results, start=1):
         events += meta["events"]
         dropped += meta["dropped"]
         max_stack_depth = max(max_stack_depth, meta.get("max_stack_depth", 0))
@@ -469,6 +489,8 @@ def merge_profiles(
             program_stderr.append(f"run {repetition}:\n{stderr.rstrip()}")
         if path:
             recent_events = path
+        if current_stack is not None:
+            active_stack = current_stack
         for location in locations:
             key = (
                 location["kind"],
@@ -556,6 +578,7 @@ def merge_profiles(
         stacks,
         "\n\n".join(program_stderr) + ("\n" if program_stderr else ""),
         recent_events,
+        active_stack,
     )
 
 
@@ -752,6 +775,19 @@ def text_report(report: dict[str, Any], top: int) -> str:
             if source_text:
                 label += f"  {source_text.strip()}"
             lines.append(f"  {label}")
+    active_stack = report.get("active_stack")
+    if active_stack is not None:
+        stack_label = ";".join(active_stack["stack"]) or "<empty>"
+        lines.extend(
+            [
+                "",
+                "Active call stack at termination:",
+                (
+                    f"  tracked={active_stack['tracked_depth']} "
+                    f"overflow={active_stack['overflow_depth']}  {stack_label}"
+                ),
+            ]
+        )
     if report.get("program_stderr"):
         lines.extend(["", "Program stderr:", report["program_stderr"].rstrip()])
     return "\n".join(lines) + "\n"
@@ -941,6 +977,15 @@ def html_report(report: dict[str, Any], top: int) -> str:
                 recent_rows,
             )
         )
+    active_stack = report.get("active_stack")
+    if active_stack is not None:
+        stack_label = ";".join(active_stack["stack"]) or "<empty>"
+        sections.append(
+            "<section><h2>Active call stack at termination</h2>"
+            f"<p>Tracked depth: {active_stack['tracked_depth']} · "
+            f"overflow depth: {active_stack['overflow_depth']}</p>"
+            f"<pre>{escape(stack_label)}</pre></section>"
+        )
     stderr = report.get("program_stderr")
     if stderr:
         sections.append(
@@ -1051,6 +1096,7 @@ def build_report(
     program_stderr: str,
     temp_root: Path | None,
     recent_events: list[dict[str, Any]],
+    active_stack: dict[str, Any] | None,
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
@@ -1189,6 +1235,8 @@ def build_report(
         report["program_stderr"] = program_stderr
     if recent_events:
         report["recent_events"] = recent_events
+    if active_stack is not None:
+        report["active_stack"] = active_stack
     if temp_root is not None:
         report["artifacts"] = {"build_directory": str(temp_root)}
     return report
@@ -1360,6 +1408,7 @@ def profile(args: argparse.Namespace) -> int:
                 list[dict[str, Any]],
                 str,
                 list[dict[str, Any]],
+                dict[str, Any] | None,
             ]
         ] = []
         run_records: list[dict[str, Any]] = []
@@ -1368,7 +1417,7 @@ def profile(args: argparse.Namespace) -> int:
         for repetition in range(1, args.repeat + 1):
             execution_start = time.perf_counter_ns()
             cpu_before = child_cpu_usage()
-            resource_path = measured_resource_file(temp_root, repetition)
+            resource_path = measured_resource_file(temp_root, repetition, args.timeout)
             run_status, run_stdout_bytes, run_stderr_bytes, run_timed_out, resources = execute_program(
                 executable_path, args.timeout, resource_path
             )
@@ -1377,7 +1426,15 @@ def profile(args: argparse.Namespace) -> int:
             peak_rss_bytes = resources.get("peak_rss_bytes")
             execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
             stderr = run_stderr_bytes.decode("utf-8", errors="replace")
-            meta, locations, call_edges, stacks, program_stderr, recent_events = parse_profile(
+            (
+                meta,
+                locations,
+                call_edges,
+                stacks,
+                program_stderr,
+                recent_events,
+                active_stack,
+            ) = parse_profile(
                 stderr,
                 allow_missing=run_status < 0 or run_timed_out,
             )
@@ -1394,13 +1451,31 @@ def profile(args: argparse.Namespace) -> int:
                 "peak_rss_bytes": peak_rss_bytes,
             }
             run_records.append(run_record)
-            profile_results.append((meta, locations, call_edges, stacks, program_stderr, recent_events))
+            profile_results.append(
+                (
+                    meta,
+                    locations,
+                    call_edges,
+                    stacks,
+                    program_stderr,
+                    recent_events,
+                    active_stack,
+                )
+            )
             run_stdout.append(run_stdout_bytes.decode("utf-8", errors="replace"))
             run_stderr.append(program_stderr)
             if run_status != 0 or run_timed_out:
                 break
 
-        meta, locations, call_edges, stacks, program_stderr, recent_events = merge_profiles(profile_results)
+        (
+            meta,
+            locations,
+            call_edges,
+            stacks,
+            program_stderr,
+            recent_events,
+            active_stack,
+        ) = merge_profiles(profile_results)
         failed_run = next(
             (
                 record
@@ -1438,6 +1513,7 @@ def profile(args: argparse.Namespace) -> int:
             program_stderr="" if args.show_output else program_stderr,
             temp_root=temp_root if args.keep_temp else None,
             recent_events=recent_events,
+            active_stack=active_stack,
         )
         if args.format == "json":
             rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"

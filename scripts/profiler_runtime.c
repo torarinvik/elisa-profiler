@@ -772,6 +772,25 @@ static void profile_dump_recent_path(void) {
     }
 }
 
+static void profile_dump_active_stack(void) {
+    if (profile_call_depth == 0 && profile_call_overflow_depth == 0) {
+        return;
+    }
+    fprintf(stderr, "ELISA_PROFILE\t1\tactive\t%zu\t%zu\t",
+            profile_call_depth, profile_call_overflow_depth);
+    if (profile_call_depth == 0) {
+        fputc('-', stderr);
+    } else {
+        for (size_t index = 0; index < profile_call_depth; ++index) {
+            if (index != 0) {
+                fputc(';', stderr);
+            }
+            profile_print_field(profile_call_stack[index].function_name);
+        }
+    }
+    fputc('\n', stderr);
+}
+
 static void profile_crash_handler(int signal_number) {
     if (!profile_crash_dumped) {
         profile_crash_dumped = 1;
@@ -815,6 +834,7 @@ static void profile_dump_body(void) {
                 profile_max_call_depth, profile_stack_overflow_entries);
         if (profile_crash_dumped) {
             profile_dump_recent_path();
+            profile_dump_active_stack();
         }
         return;
     }
@@ -908,6 +928,7 @@ static void profile_dump_body(void) {
     free(entries);
     if (profile_crash_dumped) {
         profile_dump_recent_path();
+        profile_dump_active_stack();
     }
 }
 

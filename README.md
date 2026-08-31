@@ -85,7 +85,9 @@ whether that mapping succeeded. A nonzero target exit status is reported and
 returned by the profiler. Use --show-output to forward the target's
 stdout/stderr. JSON reports also include call_edges with observed and completed
 caller-to-callee calls. A panic or timeout report also includes the last 256
-trace events in execution order, when the collector received the terminating signal.
+trace events in execution order, when the collector received the terminating signal,
+plus `active_stack` with the tracked function names and any untracked overflow
+depth at termination.
 
 Useful controls:
 

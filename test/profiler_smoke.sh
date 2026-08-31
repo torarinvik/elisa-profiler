@@ -266,6 +266,11 @@ assert report["locations"][-1]["line"] == 2
 assert report["recent_events"]
 assert report["recent_events"][-1]["function"] == "main"
 assert report["recent_events"][-1]["line"] == 2
+assert report["active_stack"] == {
+    "tracked_depth": 1,
+    "overflow_depth": 0,
+    "stack": ["main"],
+}
 crash_main = next(function for function in report["functions"] if function["function"] == "main")
 assert crash_main["call_events"] == 1
 assert crash_main["completed_calls"] == 0
@@ -276,7 +281,7 @@ print("crash capture OK")
 PY
 
 set +e
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/timeout.elisa" --timeout 0.1 --format json --output "$WORK/timeout-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/timeout.elisa" --timeout 0.5 --format json --output "$WORK/timeout-report.json"
 timeout_status=$?
 set -e
 test "$timeout_status" -eq 143
@@ -291,8 +296,13 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 15
 assert report["run"]["repetitions"][0]["timed_out"] is True
-assert report["run"]["timeout_s"] == 0.1
+assert report["run"]["timeout_s"] == 0.5
 assert "peak_rss_bytes" in report["run"]
 assert "peak_rss_bytes" in report["run"]["repetitions"][0]
+assert report["active_stack"] == {
+    "tracked_depth": 1,
+    "overflow_depth": 0,
+    "stack": ["main"],
+}
 print("timeout capture OK")
 PY
