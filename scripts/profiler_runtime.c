@@ -114,6 +114,34 @@ static uint64_t profile_thread_count;
 
 #define PROFILE_CALL_STACK_CAPACITY 1024
 
+/* Trace strings are ABI data, not guaranteed to be interned by the compiler. */
+static int profile_strings_equal(const char *left, const char *right) {
+    if (left == right) {
+        return 1;
+    }
+    if (left == NULL || right == NULL) {
+        return 0;
+    }
+    return strcmp(left, right) == 0;
+}
+
+static uint64_t profile_hash_string(uint64_t hash, const char *value) {
+    if (value == NULL) {
+        hash ^= UINT64_C(255);
+        hash *= UINT64_C(1099511628211);
+        return hash;
+    }
+    for (const unsigned char *cursor = (const unsigned char *)value;
+         *cursor != 0;
+         ++cursor) {
+        hash ^= *cursor;
+        hash *= UINT64_C(1099511628211);
+    }
+    /* Apply one FNV step for the NUL terminator as a field separator. */
+    hash *= UINT64_C(1099511628211);
+    return hash;
+}
+
 typedef struct {
     const char *function_name;
     const char *caller_name;
@@ -142,13 +170,9 @@ static uint64_t profile_now_ns(void) {
 
 static uint64_t profile_hash(const char *function_name, const char *variable_name,
                              uint32_t line, uint8_t kind, uint8_t is_signed) {
-    uintptr_t function_bits = (uintptr_t)function_name;
-    uintptr_t variable_bits = (uintptr_t)variable_name;
     uint64_t hash = UINT64_C(1469598103934665603);
-    hash ^= (uint64_t)function_bits;
-    hash *= UINT64_C(1099511628211);
-    hash ^= (uint64_t)variable_bits;
-    hash *= UINT64_C(1099511628211);
+    hash = profile_hash_string(hash, function_name);
+    hash = profile_hash_string(hash, variable_name);
     hash ^= line;
     hash *= UINT64_C(1099511628211);
     hash ^= kind;
@@ -160,7 +184,8 @@ static uint64_t profile_hash(const char *function_name, const char *variable_nam
 static int profile_key_matches(const profile_entry *entry, const char *function_name,
                                const char *variable_name, uint32_t line, uint8_t kind,
                                uint8_t is_signed) {
-    return entry->function_name == function_name && entry->variable_name == variable_name &&
+    return profile_strings_equal(entry->function_name, function_name) &&
+           profile_strings_equal(entry->variable_name, variable_name) &&
            entry->line == line && entry->kind == kind && entry->is_signed == is_signed;
 }
 
@@ -187,10 +212,8 @@ static profile_entry *profile_find_locked(const char *function_name,
 
 static uint64_t profile_call_edge_hash(const char *caller_name, const char *callee_name) {
     uint64_t hash = UINT64_C(1469598103934665603);
-    hash ^= (uint64_t)(uintptr_t)caller_name;
-    hash *= UINT64_C(1099511628211);
-    hash ^= (uint64_t)(uintptr_t)callee_name;
-    hash *= UINT64_C(1099511628211);
+    hash = profile_hash_string(hash, caller_name);
+    hash = profile_hash_string(hash, callee_name);
     return hash;
 }
 
@@ -206,7 +229,8 @@ static profile_call_edge *profile_find_call_edge_locked(const char *caller_name,
         if (edge->caller_name == NULL) {
             return NULL;
         }
-        if (edge->caller_name == caller_name && edge->callee_name == callee_name) {
+        if (profile_strings_equal(edge->caller_name, caller_name) &&
+            profile_strings_equal(edge->callee_name, callee_name)) {
             return edge;
         }
         slot = (slot + 1) & (profile_call_edge_capacity - 1);
@@ -255,8 +279,8 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
     size_t slot = profile_call_edge_hash(caller_name, callee_name) &
                   (profile_call_edge_capacity - 1);
     while (profile_call_edges[slot].caller_name != NULL &&
-           !(profile_call_edges[slot].caller_name == caller_name &&
-             profile_call_edges[slot].callee_name == callee_name)) {
+           !(profile_strings_equal(profile_call_edges[slot].caller_name, caller_name) &&
+             profile_strings_equal(profile_call_edges[slot].callee_name, callee_name))) {
         slot = (slot + 1) & (profile_call_edge_capacity - 1);
     }
     profile_call_edge *edge = &profile_call_edges[slot];
@@ -301,9 +325,7 @@ static uint64_t profile_call_path_hash(const profile_call_path *parent,
     uint64_t hash = UINT64_C(1469598103934665603);
     hash ^= (uint64_t)(uintptr_t)parent;
     hash *= UINT64_C(1099511628211);
-    hash ^= (uint64_t)(uintptr_t)function_name;
-    hash *= UINT64_C(1099511628211);
-    return hash;
+    return profile_hash_string(hash, function_name);
 }
 
 static int profile_grow_call_paths_locked(void) {
@@ -349,7 +371,7 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
                   (profile_call_path_capacity - 1);
     while (profile_call_paths[slot] != NULL &&
            !(profile_call_paths[slot]->parent == parent &&
-             profile_call_paths[slot]->function_name == function_name)) {
+             profile_strings_equal(profile_call_paths[slot]->function_name, function_name))) {
         slot = (slot + 1) & (profile_call_path_capacity - 1);
     }
     profile_call_path *path = profile_call_paths[slot];
@@ -617,7 +639,7 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         return;
     }
     profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
-    if (frame->function_name != function_name) {
+    if (!profile_strings_equal(frame->function_name, function_name)) {
         /* A missing/foreign exit must not poison every later frame. */
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
@@ -661,7 +683,7 @@ static void profile_record_untimed_function_exit(const char *function_name, uint
         return;
     }
     profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
-    if (frame->function_name != function_name) {
+    if (!profile_strings_equal(frame->function_name, function_name)) {
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
         profile_record_completed_function(function_name, line);
