@@ -3,7 +3,7 @@ COMPILER_WORKTREE ?= $(abspath ../elisa-compiler-worktrees/profiler)
 STAGE0_CORE ?= $(abspath ../../Go projects/structpy-tree)
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
 
-.PHONY: compiler-status compiler-seed compiler-smoke profiler-smoke
+.PHONY: compiler-status compiler-seed compiler-smoke profiler-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -19,3 +19,5 @@ compiler-smoke:
 
 profiler-smoke:
 	@"$(PROFILER_ROOT)/test/profiler_smoke.sh"
+
+test: compiler-smoke profiler-smoke

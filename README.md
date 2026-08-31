@@ -23,6 +23,7 @@ make compiler-status
 make compiler-seed
 make compiler-smoke
 make profiler-smoke
+make test
 
 scripts/elisa-compiler -o build/hello.o examples/hello.elisa
 ```
