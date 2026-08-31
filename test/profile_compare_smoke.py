@@ -135,6 +135,39 @@ def main() -> int:
         assert comparison["locations"][0]["interval_ns"]["percent"] is None
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])
 
+        baseline_without_edge = profile(10.0, 1_000, "-O0")
+        baseline_without_edge["call_edges"] = []
+        baseline_without_edge_path = root / "baseline-without-edge.json"
+        baseline_without_edge_path.write_text(
+            json.dumps(baseline_without_edge), encoding="utf-8"
+        )
+        new_edge_comparison_path = root / "new-edge-comparison.json"
+        new_edge = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_without_edge_path),
+                str(candidate_path),
+                "--format",
+                "json",
+                "--output",
+                str(new_edge_comparison_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert new_edge.returncode == 0, new_edge.stderr
+        new_edge_comparison = json.loads(
+            new_edge_comparison_path.read_text(encoding="utf-8")
+        )
+        assert new_edge_comparison["call_edges"][0]["inclusive_ns"]["baseline"] is None
+        assert any(
+            item["scope"] == "call_edge" and "became non-zero" in item["message"]
+            for item in new_edge_comparison["regressions"]
+        )
+
         candidate_with_different_sample_count = profile(20.0, 2_000, "-O2")
         candidate_with_different_sample_count["run"]["successful_repetitions"] = 0
         candidate_with_different_sample_count["run"]["failed_repetitions"] = 2

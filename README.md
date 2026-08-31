@@ -53,7 +53,7 @@ the local stage1 compiler using -ftrace -g, links a small host collector, runs
 the program, and reports function-entry, statement, and scalar-value events:
 
     scripts/elisa-profiler profile examples/hot_loop.elisa
-    scripts/elisa-profiler examples/hot_loop.elisa --format json -o profiles/hot-loop.json
+    scripts/elisa-profiler profile examples/hot_loop.elisa --format json -o profiles/hot-loop.json
     scripts/elisa-profiler profile examples/hot_loop.elisa --format folded \
         -o profiles/hot-loop.folded
     scripts/elisa-profiler profile examples/hot_loop.elisa --format speedscope \

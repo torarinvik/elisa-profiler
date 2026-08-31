@@ -1400,8 +1400,10 @@ def comparison_increased(metric: dict[str, int | float | None], threshold: float
     baseline = metric["baseline"]
     candidate = metric["candidate"]
     percent = metric["percent"]
-    if baseline is None or candidate is None:
+    if candidate is None:
         return False
+    if baseline is None:
+        return candidate > 0
     if baseline == 0:
         return candidate > 0
     return percent is not None and percent > threshold
@@ -1596,7 +1598,7 @@ def build_comparison_report(
         if comparison_increased(metric, threshold_percent):
             message = (
                 f"run {metric_name} became non-zero"
-                if metric["baseline"] == 0
+                if metric["baseline"] in (None, 0)
                 else f"run {metric_name} increased by more than {threshold_percent:g}%"
             )
             regressions.append(
@@ -1616,7 +1618,7 @@ def build_comparison_report(
         if comparison_increased(metric, threshold_percent):
             message = (
                 f"function {function_change['function']} became non-zero"
-                if metric["baseline"] == 0
+                if metric["baseline"] in (None, 0)
                 else (
                     f"function {function_change['function']} inclusive time increased "
                     f"by more than {threshold_percent:g}%"
@@ -1643,7 +1645,7 @@ def build_comparison_report(
             )
             message = (
                 f"location {location_label} became non-zero"
-                if metric["baseline"] == 0
+                if metric["baseline"] in (None, 0)
                 else (
                     f"location {location_label} interval increased by more than "
                     f"{threshold_percent:g}%"
@@ -1671,7 +1673,7 @@ def build_comparison_report(
             edge_label = f"{call_edge_change['caller']} -> {call_edge_change['callee']}"
             message = (
                 f"call edge {edge_label} became non-zero"
-                if metric["baseline"] == 0
+                if metric["baseline"] in (None, 0)
                 else (
                     f"call edge {edge_label} inclusive time increased by more than "
                     f"{threshold_percent:g}%"
@@ -2189,7 +2191,7 @@ def parse_compare_arguments(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("-o", "--output", type=Path, help="write the comparison to this file")
     parser.add_argument(
-        "--top", type=int, default=20, help="number of function and location changes in text output"
+        "--top", type=int, default=20, help="number of function, edge, and location changes in text output"
     )
     parser.add_argument(
         "--threshold",
@@ -2200,7 +2202,7 @@ def parse_compare_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--fail-on-regression",
         action="store_true",
-        help="return status 1 when a metric, function, or location exceeds the threshold",
+        help="return status 1 when a metric, function, edge, or location exceeds the threshold",
     )
     args = parser.parse_args(argv)
     if args.top < 1:
