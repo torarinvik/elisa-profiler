@@ -86,7 +86,7 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
-    --location-timing      attribute wall time between trace events to locations
+--location-timing      attribute wall time between trace events to locations
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable
@@ -110,4 +110,6 @@ The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.
 Panics and timed-out children retain their partial trace when the process
-reaches the collector's exit/signal handler.
+reaches the collector's exit/signal handler. Timed-out targets run in an
+isolated process group; the profiler terminates that group so forked target
+children do not survive the profiling command.
