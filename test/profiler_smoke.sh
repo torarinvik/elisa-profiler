@@ -12,6 +12,14 @@ test -s "$WORK/report.json"
     --repeat 2 --location-timing --format folded --output "$WORK/hot-loop.folded"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --location-timing --format text --output "$WORK/timing.txt"
+python3 - "$WORK/timing.txt" <<'PY'
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+assert text.index("main (calls=") < text.index("accumulate (calls=")
+PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
 test -s "$WORK/included-report.json"

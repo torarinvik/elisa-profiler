@@ -66,6 +66,9 @@ interpretation instead of being reported as raw u64 bit patterns.
 Function timing also includes mean inclusive/self duration and percentages of
 the root function's inclusive time, so the JSON report is useful without a
 separate post-processing step.
+When `--location-timing` is enabled, the text report ranks locations by
+attributed wall time and functions by inclusive duration; without timing it
+retains event-count ordering.
 Each measured repetition also records child user/system CPU time when the host
 provides Python's `resource` interface; aggregate CPU time is kept separate
 from wall-clock execution time.

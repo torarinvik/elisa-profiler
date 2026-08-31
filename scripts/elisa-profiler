@@ -590,9 +590,21 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f" cpu={run['cpu_ms']:.3f} ms"
             f" (user={run['cpu_user_ms']:.3f}, sys={run['cpu_system_ms']:.3f})"
         )
-    if report["locations"]:
-        lines.append(f"Hot locations (top {min(top, len(report['locations']))}):")
-        for location in report["locations"][:top]:
+    display_locations = report["locations"]
+    if run["location_timing"]:
+        display_locations = sorted(
+            display_locations,
+            key=lambda location: (
+                -location["interval_ns"],
+                -location["max_interval_ns"],
+                -location["count"],
+                location["line"],
+                location["function"],
+            ),
+        )
+    if display_locations:
+        lines.append(f"Hot locations (top {min(top, len(display_locations))}):")
+        for location in display_locations[:top]:
             label = f"{location['function']}:{location['line']} {location['kind']}"
             if location["kind"] == "value":
                 label += f" {location.get('variable') or '<value>'}"
@@ -615,7 +627,18 @@ def text_report(report: dict[str, Any], top: int) -> str:
         lines.append("Hot locations: none recorded")
 
     lines.extend(["", "Function totals:"])
-    for function in report["functions"]:
+    display_functions = report["functions"]
+    if run["location_timing"]:
+        display_functions = sorted(
+            display_functions,
+            key=lambda function: (
+                -function["inclusive_ns"],
+                -function["self_ns"],
+                -function["events"],
+                function["function"],
+            ),
+        )
+    for function in display_functions:
         lines.append(
             f"  {function['events']:>12}  {function['function']}"
             f" (calls={function['call_events']}, completed={function['completed_calls']})"
