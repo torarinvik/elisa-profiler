@@ -47,7 +47,15 @@ assert report["functions"][0]["locations"] == 11
 assert report["functions"][0]["statement_events"] == 50
 assert report["functions"][0]["value_events"] == 44
 assert report["functions"][0]["call_events"] == 2
+assert report["functions"][0]["completed_calls"] == 2
+assert report["functions"][0]["inclusive_ns"] > 0
+assert report["functions"][0]["inclusive_ns"] >= report["functions"][0]["self_ns"]
 assert report["functions"][0]["events"] == 96
+main_function = next(function for function in report["functions"] if function["function"] == "main")
+assert main_function["completed_calls"] == main_function["call_events"] == 2
+assert main_function["inclusive_ns"] > 0
+assert main_function["inclusive_ns"] >= main_function["self_ns"]
+assert main_function["inclusive_ns"] >= report["functions"][0]["inclusive_ns"]
 assert report["source_mapping"]["mode"] == "include-aware"
 assert report["source_mapping"]["unmapped_locations"] == 0
 
@@ -113,6 +121,10 @@ assert any(
 
 with open(sys.argv[3], encoding="utf-8") as stream:
     signed_report = json.load(stream)
+signed_main = next(function for function in signed_report["functions"] if function["function"] == "main")
+assert signed_main["completed_calls"] == signed_main["call_events"] == 2
+assert signed_main["inclusive_ns"] == 0
+assert signed_main["self_ns"] == 0
 signed_values = [
     location for location in signed_report["locations"]
     if location["kind"] == "value" and location["function"] == "main"
@@ -162,6 +174,9 @@ assert report["locations"][-1]["line"] == 2
 assert report["recent_events"]
 assert report["recent_events"][-1]["function"] == "main"
 assert report["recent_events"][-1]["line"] == 2
+crash_main = next(function for function in report["functions"] if function["function"] == "main")
+assert crash_main["call_events"] == 1
+assert crash_main["completed_calls"] == 0
 print("crash capture OK")
 PY
 

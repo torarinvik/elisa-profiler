@@ -89,7 +89,11 @@ report retains every completed repetition, including min/mean/median/max and
 population standard deviation for measured execution time. With
 --location-timing, locations also receive attributed wall time and their
 largest observed gap to the next trace event; function summaries aggregate the
-same measurements. This is an opt-in diagnostic estimate: it includes collector
+same measurements and add inclusive/self wall time plus completed-call counts.
+Function call-events count observed entries, while completed-call counts include
+only functions whose return hook was observed; panic and timeout reports can
+therefore contain incomplete calls. Inclusive/self timings are available with
+--location-timing. This is an opt-in diagnostic estimate: it includes collector
 overhead and is not statistical CPU sampling.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler.

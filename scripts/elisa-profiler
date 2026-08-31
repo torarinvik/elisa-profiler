@@ -211,12 +211,23 @@ def prepare_target(
         for symbol in ("_elisa_trace_function_entry", "elisa_trace_function_entry")
         if symbol in runtime_symbols
     ]
+    trace_exit_symbols = [
+        symbol
+        for symbol in ("_elisa_trace_function_exit", "elisa_trace_function_exit")
+        if symbol in runtime_symbols
+    ]
     trace_install_symbols = [
         symbol
         for symbol in ("_elisa_trace_install_fault_handler", "elisa_trace_install_fault_handler")
         if symbol in runtime_symbols
     ]
-    localize = trace_symbols + trace_value_symbols + trace_entry_symbols + trace_install_symbols
+    localize = (
+        trace_symbols
+        + trace_value_symbols
+        + trace_entry_symbols
+        + trace_exit_symbols
+        + trace_install_symbols
+    )
     if not localize:
         raise ProfilerError(f"runtime object has no trace callbacks: {runtime_object}")
     command = [objcopy]
@@ -287,6 +298,12 @@ def parse_profile(
             location["maximum"] = int(fields[10])
             location["sum"] = None if fields[11] == "overflow" else int(fields[11])
             location["last"] = int(fields[12])
+        elif kind == 3:
+            # Function locations reuse the fixed-width collector record: fields 9–11
+            # carry inclusive duration, self duration, and completed return count.
+            location["inclusive_ns"] = int(fields[9])
+            location["self_ns"] = int(fields[10])
+            location["completed_calls"] = int(fields[11])
         locations.append(location)
     if meta is None:
         if allow_missing:
@@ -340,6 +357,10 @@ def merge_profiles(
                     combined["sum"] = None
                 else:
                     combined["sum"] += location["sum"]
+            elif location["kind"] == "function":
+                combined["inclusive_ns"] += location["inclusive_ns"]
+                combined["self_ns"] += location["self_ns"]
+                combined["completed_calls"] += location["completed_calls"]
     locations = sorted(
         merged.values(),
         key=lambda location: (
@@ -465,10 +486,12 @@ def text_report(report: dict[str, Any], top: int) -> str:
     for function in report["functions"]:
         lines.append(
             f"  {function['events']:>12}  {function['function']}"
-            f" (calls={function['call_events']})"
+            f" (calls={function['call_events']}, completed={function['completed_calls']})"
         )
         if run["location_timing"]:
             lines[-1] += (
+                f", inclusive={function['inclusive_ns'] / 1_000_000:.3f} ms"
+                f", self={function['self_ns'] / 1_000_000:.3f} ms"
                 f", attributed={function['interval_ns'] / 1_000_000:.3f} ms"
                 f", max-gap={function['max_interval_ns'] / 1_000_000:.3f} ms"
             )
@@ -526,6 +549,9 @@ def build_report(
             "locations": 0,
             "interval_ns": 0,
             "max_interval_ns": 0,
+            "inclusive_ns": 0,
+            "self_ns": 0,
+            "completed_calls": 0,
         }
     )
     for location in locations:
@@ -540,6 +566,9 @@ def build_report(
             stats["value_events"] += location["count"]
         elif location["kind"] == "function":
             stats["call_events"] += location["count"]
+            stats["inclusive_ns"] += location["inclusive_ns"]
+            stats["self_ns"] += location["self_ns"]
+            stats["completed_calls"] += location["completed_calls"]
         else:
             stats["statement_events"] += location["count"]
     summary = dict(meta)

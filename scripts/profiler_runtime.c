@@ -30,6 +30,9 @@ typedef struct {
     uint64_t minimum;
     uint64_t maximum;
     uint64_t last;
+    uint64_t inclusive_ns;
+    uint64_t self_ns;
+    uint64_t completed_calls;
     __uint128_t sum;
     __int128_t signed_sum;
     uint64_t interval_ns;
@@ -64,6 +67,18 @@ static profile_recent_entry profile_recent[PROFILE_RECENT_CAPACITY];
 static uint64_t profile_recent_position;
 
 #if ELISA_PROFILE_TIMING
+#define PROFILE_CALL_STACK_CAPACITY 1024
+
+typedef struct {
+    const char *function_name;
+    uint64_t start_ns;
+    uint64_t child_ns;
+} profile_call_frame;
+
+static _Thread_local profile_call_frame profile_call_stack[PROFILE_CALL_STACK_CAPACITY];
+static _Thread_local size_t profile_call_depth;
+static _Thread_local size_t profile_call_overflow_depth;
+
 static const char *profile_timing_function_name;
 static const char *profile_timing_variable_name;
 static uint32_t profile_timing_line;
@@ -106,7 +121,6 @@ static int profile_key_matches(const profile_entry *entry, const char *function_
            entry->line == line && entry->kind == kind && entry->is_signed == is_signed;
 }
 
-#if ELISA_PROFILE_TIMING
 static profile_entry *profile_find_locked(const char *function_name,
                                           const char *variable_name, uint32_t line,
                                           uint8_t kind, uint8_t is_signed) {
@@ -128,6 +142,7 @@ static profile_entry *profile_find_locked(const char *function_name,
     return NULL;
 }
 
+#if ELISA_PROFILE_TIMING
 static void profile_account_previous_locked(uint64_t now_ns) {
     if (!profile_timing_have_last || now_ns == 0 || profile_timing_last_ns == 0 ||
         now_ns < profile_timing_last_ns) {
@@ -260,7 +275,81 @@ void elisa_trace_record(const char *function_name, uint32_t line) {
 }
 
 void elisa_trace_function_entry(const char *function_name, uint32_t line) {
+#if ELISA_PROFILE_TIMING
+    if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
+        profile_call_stack[profile_call_depth] = (profile_call_frame){
+            .function_name = function_name,
+            .start_ns = profile_now_ns(),
+            .child_ns = 0,
+        };
+        ++profile_call_depth;
+    } else {
+        ++profile_call_overflow_depth;
+    }
+#endif
     profile_record(function_name, line, NULL, 0, PROFILE_KIND_FUNCTION, 0);
+}
+
+static void profile_record_completed_function(const char *function_name, uint32_t line) {
+    pthread_mutex_lock(&profile_lock);
+    profile_entry *entry = profile_find_locked(
+        function_name, NULL, line, PROFILE_KIND_FUNCTION, 0);
+    if (entry != NULL) {
+        ++entry->completed_calls;
+    }
+    pthread_mutex_unlock(&profile_lock);
+}
+
+#if ELISA_PROFILE_TIMING
+static uint64_t profile_saturating_add(uint64_t left, uint64_t right) {
+    return UINT64_MAX - left < right ? UINT64_MAX : left + right;
+}
+
+static void profile_record_timed_function_exit(const char *function_name, uint32_t line) {
+    if (profile_call_overflow_depth > 0) {
+        --profile_call_overflow_depth;
+        profile_record_completed_function(function_name, line);
+        return;
+    }
+    if (profile_call_depth == 0) {
+        profile_record_completed_function(function_name, line);
+        return;
+    }
+    profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
+    if (frame->function_name != function_name) {
+        /* A missing/foreign exit must not poison every later frame. */
+        profile_call_depth = 0;
+        profile_call_overflow_depth = 0;
+        profile_record_completed_function(function_name, line);
+        return;
+    }
+    uint64_t now_ns = profile_now_ns();
+    uint64_t inclusive_ns = now_ns >= frame->start_ns ? now_ns - frame->start_ns : 0;
+    uint64_t self_ns = inclusive_ns >= frame->child_ns ? inclusive_ns - frame->child_ns : 0;
+    --profile_call_depth;
+    if (profile_call_depth > 0) {
+        profile_call_frame *parent = &profile_call_stack[profile_call_depth - 1];
+        parent->child_ns = profile_saturating_add(parent->child_ns, inclusive_ns);
+    }
+
+    pthread_mutex_lock(&profile_lock);
+    profile_entry *entry = profile_find_locked(
+        function_name, NULL, line, PROFILE_KIND_FUNCTION, 0);
+    if (entry != NULL) {
+        ++entry->completed_calls;
+        entry->inclusive_ns = profile_saturating_add(entry->inclusive_ns, inclusive_ns);
+        entry->self_ns = profile_saturating_add(entry->self_ns, self_ns);
+    }
+    pthread_mutex_unlock(&profile_lock);
+}
+#endif
+
+void elisa_trace_function_exit(const char *function_name, uint32_t line) {
+#if ELISA_PROFILE_TIMING
+    profile_record_timed_function_exit(function_name, line);
+#else
+    profile_record_completed_function(function_name, line);
+#endif
 }
 
 void elisa_trace_record_value(const char *function_name, uint32_t line,
@@ -408,7 +497,10 @@ static void profile_dump_body(void) {
         fprintf(stderr, "\t%" PRIu32 "\t%" PRIu64 "\t", entry->line, entry->count);
         profile_print_field(entry->variable_name);
         fprintf(stderr, "\t%u\t", entry->is_signed);
-        if (entry->is_signed) {
+        if (entry->kind == PROFILE_KIND_FUNCTION) {
+            fprintf(stderr, "%" PRIu64 "\t%" PRIu64 "\t%" PRIu64,
+                    entry->inclusive_ns, entry->self_ns, entry->completed_calls);
+        } else if (entry->is_signed) {
             fprintf(stderr, "%" PRId64 "\t%" PRId64 "\t",
                     (int64_t)entry->minimum, (int64_t)entry->maximum);
             if (entry->signed_sum > (__int128_t)INT64_MAX ||
