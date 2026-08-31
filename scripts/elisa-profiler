@@ -31,6 +31,7 @@ DEFAULT_COMPILER_ROOT = ROOT.parent / "elisa-compiler-worktrees" / "profiler"
 DEFAULT_STAGE0_CORE = ROOT.parent.parent / "Go projects" / "structpy-tree"
 INCLUDE_RE = re.compile(r'^[ \t]*(?:#\s*)?include[ \t]+"([^"]+)"[ \t]*$')
 MAX_RSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size\s*$")
+LINUX_MAX_RSS_RE = re.compile(r"^\s*Maximum resident set size \(kbytes\):\s*(\d+)\s*$")
 
 
 class ProfilerError(Exception):
@@ -95,11 +96,9 @@ def signal_process_group(process: subprocess.Popen[bytes], signal_number: int) -
 def measured_resource_file(
     temp_root: Path, repetition: int, timeout: float | None
 ) -> Path | None:
-    if (
-        timeout is not None
-        or sys.platform != "darwin"
-        or not os.access("/usr/bin/time", os.X_OK)
-    ):
+    if timeout is not None or not os.access("/usr/bin/time", os.X_OK):
+        return None
+    if sys.platform not in {"darwin", "linux"}:
         return None
     return temp_root / f"run-{repetition}.time"
 
@@ -112,7 +111,19 @@ def parse_resource_report(resource_path: Path | None) -> dict[str, float | int]:
         match = MAX_RSS_RE.match(line)
         if match:
             resources["peak_rss_bytes"] = int(match.group(1))
+            continue
+        match = LINUX_MAX_RSS_RE.match(line)
+        if match:
+            resources["peak_rss_bytes"] = int(match.group(1)) * 1024
     return resources
+
+
+def resource_time_options() -> list[str]:
+    if sys.platform == "darwin":
+        return ["-l"]
+    if sys.platform == "linux":
+        return ["-v"]
+    return []
 
 
 def execute_program(
@@ -123,7 +134,13 @@ def execute_program(
 ) -> tuple[int, bytes, bytes, bool, dict[str, float | int]]:
     command = [str(executable_path)]
     if resource_path is not None:
-        command = ["/usr/bin/time", "-l", "-o", str(resource_path), *command]
+        command = [
+            "/usr/bin/time",
+            *resource_time_options(),
+            "-o",
+            str(resource_path),
+            *command,
+        ]
     process = subprocess.Popen(
         command,
         env=env,

@@ -102,9 +102,9 @@ trace data and explicit status.
 The run's `measurement_basis` and `measurement_repetitions` fields make that
 choice explicit; an `all_completed` basis means every completed repetition
 failed, so its aggregates are retained only as partial diagnostics.
-On macOS, measured repetitions also record `peak_rss_bytes`, the profiled
-child's peak resident set size; the aggregate field is the largest measured
-repetition. A timed-out child may terminate before the operating-system
+On macOS and Linux, measured repetitions also record `peak_rss_bytes`, the
+profiled child's peak resident set size; the aggregate field is the largest
+measured repetition. A timed-out child may terminate before the operating-system
 resource wrapper can write this optional value.
 Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
