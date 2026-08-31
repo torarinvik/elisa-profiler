@@ -126,11 +126,13 @@ def main() -> int:
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])
 
         candidate_with_different_sample_count = profile(20.0, 2_000, "-O2")
-        candidate_with_different_sample_count["run"]["successful_repetitions"] = 2
+        candidate_with_different_sample_count["run"]["successful_repetitions"] = 0
+        candidate_with_different_sample_count["run"]["failed_repetitions"] = 2
+        candidate_with_different_sample_count["run"]["measurement_basis"] = "all_completed"
         candidate_with_different_sample_count["run"]["completed_repetitions"] = 2
         candidate_with_different_sample_count["run"]["repetitions"] = [
-            {"timed_out": False},
-            {"timed_out": False},
+            {"timed_out": True},
+            {"timed_out": True},
         ]
         different_sample_path = root / "different-sample-count.json"
         different_sample_path.write_text(
@@ -159,6 +161,10 @@ def main() -> int:
         )
         assert any(
             "successful repetition counts" in warning
+            for warning in different_sample_comparison["warnings"]
+        )
+        assert any(
+            "measurement bases" in warning
             for warning in different_sample_comparison["warnings"]
         )
 
