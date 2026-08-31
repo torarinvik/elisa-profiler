@@ -618,6 +618,13 @@ def add_source_context(source: Path, locations: list[dict[str, Any]]) -> dict[st
     return mapping
 
 
+def function_definition_label(function: dict[str, Any]) -> str:
+    return ", ".join(
+        f"{Path(definition['source']).name}:{definition['line']}"
+        for definition in function.get("definitions", [])
+    )
+
+
 def text_report(report: dict[str, Any], top: int) -> str:
     summary = report["summary"]
     run = report["run"]
@@ -695,10 +702,13 @@ def text_report(report: dict[str, Any], top: int) -> str:
             ),
         )
     for function in display_functions:
+        definition_label = function_definition_label(function)
         lines.append(
             f"  {function['events']:>12}  {function['function']}"
             f" (calls={function['call_events']}, completed={function['completed_calls']})"
         )
+        if definition_label:
+            lines[-1] += f" [defined at {definition_label}]"
         if run["location_timing"]:
             lines[-1] += (
                 f", inclusive={function['inclusive_ns'] / 1_000_000:.3f} ms"
@@ -843,6 +853,7 @@ def html_report(report: dict[str, Any], top: int) -> str:
                 function["events"],
                 function["call_events"],
                 function["completed_calls"],
+                function_definition_label(function),
                 timing,
                 self_timing,
                 (
@@ -899,7 +910,16 @@ def html_report(report: dict[str, Any], top: int) -> str:
         ),
         html_table(
             "Function totals",
-            ["Function", "Events", "Calls", "Completed", "Inclusive", "Self", "Root %"],
+            [
+                "Function",
+                "Events",
+                "Calls",
+                "Completed",
+                "Definition",
+                "Inclusive",
+                "Self",
+                "Root %",
+            ],
             function_rows,
         ),
         html_table(
@@ -1046,6 +1066,7 @@ def build_report(
             "inclusive_ns": 0,
             "self_ns": 0,
             "completed_calls": 0,
+            "definitions": [],
         }
     )
     for location in locations:
@@ -1063,6 +1084,14 @@ def build_report(
             stats["inclusive_ns"] += location["inclusive_ns"]
             stats["self_ns"] += location["self_ns"]
             stats["completed_calls"] += location["completed_calls"]
+            definition = {
+                "source": location["source"],
+                "line": location["line"],
+                "compiler_line": location["compiler_line"],
+                "source_text": location.get("source_text"),
+            }
+            if definition not in stats["definitions"]:
+                stats["definitions"].append(definition)
         else:
             stats["statement_events"] += location["count"]
     summary = dict(meta)

@@ -19,6 +19,7 @@ grep -q '<table data-sortable>' "$WORK/hot-loop.html"
 grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
 grep -q 'main;accumulate' "$WORK/hot-loop.html"
 grep -q 'Max stack depth' "$WORK/hot-loop.html"
+grep -q 'Definition' "$WORK/hot-loop.html"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --location-timing --format text --output "$WORK/timing.txt"
 python3 - "$WORK/timing.txt" <<'PY'
@@ -27,6 +28,7 @@ import sys
 text = open(sys.argv[1], encoding="utf-8").read()
 assert text.index("main (calls=") < text.index("accumulate (calls=")
 assert "stack-depth=2 stack-overflow=0" in text
+assert "defined at hot_loop.elisa:9" in text
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
@@ -172,10 +174,18 @@ assert any(
     and Path(location["source"]) == helper_source
     for location in helper_locations
 )
-assert next(
+included_function = next(
     function for function in included_report["functions"]
     if function["function"] == "included_work"
-)["call_events"] == 1
+)
+assert included_function["definitions"] == [
+    {
+        "source": str(helper_source),
+        "line": 1,
+        "compiler_line": 1,
+        "source_text": "def included_work(limit: i64) -> i64:",
+    }
+]
 included_edge = next(
     edge
     for edge in included_report["call_edges"]
