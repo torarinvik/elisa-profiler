@@ -1150,8 +1150,31 @@ def load_profile_report(path: Path) -> dict[str, Any]:
         raise ProfilerError(f"profile report is not an object: {path}")
     if value.get("schema_version") != 1:
         raise ProfilerError(f"unsupported profile schema in {path}: {value.get('schema_version')!r}")
+    required_sections = (
+        "source",
+        "compiler",
+        "summary",
+        "source_mapping",
+        "run",
+        "functions",
+        "call_edges",
+        "stacks",
+        "locations",
+    )
+    missing = [section for section in required_sections if section not in value]
+    if missing:
+        raise ProfilerError(
+            f"profile report is missing required sections in {path}: {', '.join(missing)}"
+        )
     if not isinstance(value.get("run"), dict):
         raise ProfilerError(f"profile report has no run object: {path}")
+    if not isinstance(value.get("summary"), dict):
+        raise ProfilerError(f"profile report has no summary object: {path}")
+    if not isinstance(value.get("compiler"), dict):
+        raise ProfilerError(f"profile report has no compiler object: {path}")
+    for section in ("functions", "call_edges", "stacks", "locations"):
+        if not isinstance(value.get(section), list):
+            raise ProfilerError(f"profile report section {section!r} is not an array: {path}")
     return value
 
 

@@ -20,6 +20,7 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
         "source": "demo.elisa",
         "compiler": {"commit": f"compiler-{opt_level}"},
         "summary": {"events": 100},
+        "source_mapping": {},
         "run": {
             "exit_code": 0,
             "signal": None,
@@ -43,6 +44,9 @@ def profile(execution_ms: float, inclusive_ns: int, opt_level: str) -> dict[str,
                 "max_interval_ns": 0,
             }
         ],
+        "call_edges": [],
+        "stacks": [],
+        "locations": [],
     }
 
 
@@ -116,6 +120,23 @@ def main() -> int:
         )
         assert rejected.returncode == 2
         assert "baseline profile did not complete successfully" in rejected.stderr
+
+        malformed_path = root / "malformed.json"
+        malformed_path.write_text(json.dumps({"schema_version": 1, "run": {}}), encoding="utf-8")
+        malformed = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(malformed_path),
+                str(candidate_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert malformed.returncode == 2
+        assert "missing required sections" in malformed.stderr
     print("profile compare smoke OK")
     return 0
 
