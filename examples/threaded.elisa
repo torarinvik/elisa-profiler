@@ -1,0 +1,24 @@
+# Small real-thread target used by the profiler smoke test. Each worker traces
+# independently and writes its own cell; joining both workers makes the result
+# deterministic without requiring a shared mutable cell.
+extern pthread_create(thread: mutable uintptr&, attr: void&?, start_routine: void&, arg: void&?) -> int can[Thread.Spawn]
+extern pthread_join(thread: uintptr, retval: mutable void&?) -> int can[Thread.Join]
+
+def worker(arg: void&?) -> void&? can[Unsafe.PointerCast]:
+    if arg is present:
+        cell: mutable i64& = present.cast[mutable i64&] can Unsafe.PointerCast
+        for i in 0..<20:
+            cell[0] <- cell[0] + 1
+    return null
+
+def main() -> i64 can[Thread.Spawn, Thread.Join, Unsafe.PointerCast]:
+    h1: mutable uintptr = 0.uintptr()
+    h2: mutable uintptr = 0.uintptr()
+    a: mutable i64 = 1
+    b: mutable i64 = 1
+    entry: void& = worker.cast[void&] can Unsafe.PointerCast
+    _ = pthread_create(&h1, null, entry, (&a).cast[void&?] can Unsafe.PointerCast)
+    _ = pthread_create(&h2, null, entry, (&b).cast[void&?] can Unsafe.PointerCast)
+    _ = pthread_join(h1, null)
+    _ = pthread_join(h2, null)
+    return a + b - 42

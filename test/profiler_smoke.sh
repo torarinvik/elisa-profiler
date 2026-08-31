@@ -69,6 +69,9 @@ test -s "$WORK/recursive-report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/deep_recursion.elisa" \
     --format json --output "$WORK/deep-recursion-report.json"
 test -s "$WORK/deep-recursion-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/threaded.elisa" \
+    --repeat 2 --location-timing --format json --output "$WORK/threaded-report.json"
+test -s "$WORK/threaded-report.json"
 
 python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
 import json
@@ -271,6 +274,24 @@ assert any(
 )
 
 print("profiler smoke OK")
+PY
+
+python3 - "$WORK/threaded-report.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+
+assert report["run"]["exit_code"] == 0
+assert report["run"]["completed_repetitions"] == 2
+assert report["summary"]["dropped"] == 0
+assert report["summary"]["max_stack_depth"] == 1
+worker = next(function for function in report["functions"] if function["function"] == "worker")
+assert worker["call_events"] == worker["completed_calls"] == 4
+assert worker["inclusive_ns"] > 0
+assert any(location["function"] == "worker" for location in report["locations"])
+print("threaded profiling OK")
 PY
 
 set +e

@@ -110,13 +110,15 @@ static _Thread_local size_t profile_call_depth;
 static _Thread_local size_t profile_call_overflow_depth;
 
 #if ELISA_PROFILE_TIMING
-static const char *profile_timing_function_name;
-static const char *profile_timing_variable_name;
-static uint32_t profile_timing_line;
-static uint8_t profile_timing_kind;
-static uint8_t profile_timing_is_signed;
-static uint64_t profile_timing_last_ns;
-static int profile_timing_have_last;
+/* Location timing is accumulated in the process-wide table, but the cursor
+ * between consecutive trace events belongs to the thread producing them. */
+static _Thread_local const char *profile_timing_function_name;
+static _Thread_local const char *profile_timing_variable_name;
+static _Thread_local uint32_t profile_timing_line;
+static _Thread_local uint8_t profile_timing_kind;
+static _Thread_local uint8_t profile_timing_is_signed;
+static _Thread_local uint64_t profile_timing_last_ns;
+static _Thread_local int profile_timing_have_last;
 
 static uint64_t profile_now_ns(void) {
     struct timespec timestamp;
