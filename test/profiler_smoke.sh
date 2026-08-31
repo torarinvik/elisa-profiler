@@ -293,6 +293,11 @@ worker = next(function for function in report["functions"] if function["function
 assert worker["call_events"] == worker["completed_calls"] == 4
 assert worker["inclusive_ns"] > 0
 assert any(location["function"] == "worker" for location in report["locations"])
+worker_tail = next(
+    location for location in report["locations"]
+    if location["function"] == "worker" and "usleep" in (location.get("source_text") or "")
+)
+assert worker_tail["max_interval_ns"] >= 1_000_000
 print("threaded profiling OK")
 PY
 

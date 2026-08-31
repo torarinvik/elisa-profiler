@@ -78,7 +78,6 @@ static size_t profile_capacity;
 static size_t profile_size;
 static uint64_t profile_event_count;
 static uint64_t profile_dropped_count;
-static uint64_t profile_thread_count;
 static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t profile_crash_dumped;
 static volatile sig_atomic_t profile_dumped;
@@ -93,6 +92,24 @@ static size_t profile_call_path_capacity;
 static size_t profile_call_path_size;
 static size_t profile_max_call_depth;
 static uint64_t profile_stack_overflow_entries;
+
+typedef struct profile_thread_state profile_thread_state;
+
+struct profile_thread_state {
+    profile_thread_state *next;
+#if ELISA_PROFILE_TIMING
+    const char *timing_function_name;
+    const char *timing_variable_name;
+    uint32_t timing_line;
+    uint8_t timing_kind;
+    uint8_t timing_is_signed;
+    uint64_t timing_last_ns;
+    int timing_have_last;
+#endif
+};
+
+static profile_thread_state *profile_threads;
+static uint64_t profile_thread_count;
 
 #define PROFILE_CALL_STACK_CAPACITY 1024
 
@@ -109,19 +126,9 @@ typedef struct {
 static _Thread_local profile_call_frame profile_call_stack[PROFILE_CALL_STACK_CAPACITY];
 static _Thread_local size_t profile_call_depth;
 static _Thread_local size_t profile_call_overflow_depth;
-static _Thread_local int profile_thread_seen;
+static _Thread_local profile_thread_state *profile_current_thread;
 
 #if ELISA_PROFILE_TIMING
-/* Location timing is accumulated in the process-wide table, but the cursor
- * between consecutive trace events belongs to the thread producing them. */
-static _Thread_local const char *profile_timing_function_name;
-static _Thread_local const char *profile_timing_variable_name;
-static _Thread_local uint32_t profile_timing_line;
-static _Thread_local uint8_t profile_timing_kind;
-static _Thread_local uint8_t profile_timing_is_signed;
-static _Thread_local uint64_t profile_timing_last_ns;
-static _Thread_local int profile_timing_have_last;
-
 static uint64_t profile_now_ns(void) {
     struct timespec timestamp;
     if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0) {
@@ -376,24 +383,43 @@ static void profile_record_completed_call_path(profile_call_path *path,
     pthread_mutex_unlock(&profile_lock);
 }
 
+static profile_thread_state *profile_get_thread_locked(void) {
+    if (profile_current_thread != NULL) {
+        return profile_current_thread;
+    }
+    profile_thread_state *thread = calloc(1, sizeof(*thread));
+    if (thread == NULL) {
+        return NULL;
+    }
+    thread->next = profile_threads;
+    profile_threads = thread;
+    profile_current_thread = thread;
+    ++profile_thread_count;
+    return thread;
+}
+
 #if ELISA_PROFILE_TIMING
-static void profile_account_previous_locked(uint64_t now_ns) {
-    if (!profile_timing_have_last || now_ns == 0 || profile_timing_last_ns == 0 ||
-        now_ns < profile_timing_last_ns) {
-        profile_timing_last_ns = now_ns;
+static void profile_account_previous_locked(profile_thread_state *thread,
+                                             uint64_t now_ns) {
+    if (thread == NULL) {
+        return;
+    }
+    if (!thread->timing_have_last || now_ns == 0 || thread->timing_last_ns == 0 ||
+        now_ns < thread->timing_last_ns) {
+        thread->timing_last_ns = now_ns;
         return;
     }
     profile_entry *previous = profile_find_locked(
-        profile_timing_function_name, profile_timing_variable_name,
-        profile_timing_line, profile_timing_kind, profile_timing_is_signed);
+        thread->timing_function_name, thread->timing_variable_name,
+        thread->timing_line, thread->timing_kind, thread->timing_is_signed);
     if (previous != NULL) {
-        uint64_t interval_ns = now_ns - profile_timing_last_ns;
+        uint64_t interval_ns = now_ns - thread->timing_last_ns;
         previous->interval_ns += interval_ns;
         if (interval_ns > previous->max_interval_ns) {
             previous->max_interval_ns = interval_ns;
         }
     }
-    profile_timing_last_ns = now_ns;
+    thread->timing_last_ns = now_ns;
 }
 #endif
 
@@ -428,10 +454,10 @@ static void profile_record(const char *function_name, uint32_t line,
                            uint8_t is_signed, size_t call_depth,
                            int stack_overflowed) {
     pthread_mutex_lock(&profile_lock);
-    if (!profile_thread_seen) {
-        ++profile_thread_count;
-        profile_thread_seen = 1;
-    }
+    profile_thread_state *thread = profile_get_thread_locked();
+#if !ELISA_PROFILE_TIMING
+    (void)thread;
+#endif
     if (call_depth > profile_max_call_depth) {
         profile_max_call_depth = call_depth;
     }
@@ -439,7 +465,7 @@ static void profile_record(const char *function_name, uint32_t line,
         ++profile_stack_overflow_entries;
     }
 #if ELISA_PROFILE_TIMING
-    profile_account_previous_locked(profile_now_ns());
+    profile_account_previous_locked(thread, profile_now_ns());
 #endif
     ++profile_event_count;
     profile_recent[profile_recent_position % PROFILE_RECENT_CAPACITY] =
@@ -457,7 +483,9 @@ static void profile_record(const char *function_name, uint32_t line,
         if (!profile_grow_locked()) {
             ++profile_dropped_count;
 #if ELISA_PROFILE_TIMING
-            profile_timing_have_last = 0;
+            if (thread != NULL) {
+                thread->timing_have_last = 0;
+            }
 #endif
             pthread_mutex_unlock(&profile_lock);
             return;
@@ -505,12 +533,14 @@ static void profile_record(const char *function_name, uint32_t line,
         entry->last = value;
     }
 #if ELISA_PROFILE_TIMING
-    profile_timing_function_name = entry->function_name;
-    profile_timing_variable_name = entry->variable_name;
-    profile_timing_line = entry->line;
-    profile_timing_kind = entry->kind;
-    profile_timing_is_signed = entry->is_signed;
-    profile_timing_have_last = 1;
+    if (thread != NULL) {
+        thread->timing_function_name = entry->function_name;
+        thread->timing_variable_name = entry->variable_name;
+        thread->timing_line = entry->line;
+        thread->timing_kind = entry->kind;
+        thread->timing_is_signed = entry->is_signed;
+        thread->timing_have_last = 1;
+    }
 #endif
     pthread_mutex_unlock(&profile_lock);
 }
@@ -829,7 +859,14 @@ static void profile_dump_body(void) {
         return;
     }
 #if ELISA_PROFILE_TIMING
-    profile_account_previous_locked(profile_now_ns());
+    /* A worker can finish after its final trace event. Keep every thread's
+     * cursor alive so its trailing interval is attributed before shutdown. */
+    uint64_t now_ns = profile_now_ns();
+    for (profile_thread_state *thread = profile_threads;
+         thread != NULL;
+         thread = thread->next) {
+        profile_account_previous_locked(thread, now_ns);
+    }
 #endif
     profile_dumped = 1;
     size_t count = profile_size;

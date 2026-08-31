@@ -3,12 +3,14 @@
 # deterministic without requiring a shared mutable cell.
 extern pthread_create(thread: mutable uintptr&, attr: void&?, start_routine: void&, arg: void&?) -> int can[Thread.Spawn]
 extern pthread_join(thread: uintptr, retval: mutable void&?) -> int can[Thread.Join]
+extern usleep(usec: u32) -> int can[Thread.Sleep]
 
-def worker(arg: void&?) -> void&? can[Unsafe.PointerCast]:
+def worker(arg: void&?) -> void&? can[Thread.Sleep, Unsafe.PointerCast]:
     if arg is present:
         cell: mutable i64& = present.cast[mutable i64&] can Unsafe.PointerCast
         for i in 0..<20:
             cell[0] <- cell[0] + 1
+    _ = usleep(10000.u32())
     return null
 
 def main() -> i64 can[Thread.Spawn, Thread.Join, Unsafe.PointerCast]:
