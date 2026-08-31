@@ -13,6 +13,9 @@ test -s "$WORK/report.json"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --repeat 2 --location-timing --format speedscope --output "$WORK/hot-loop.speedscope.json"
+test -s "$WORK/hot-loop.speedscope.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format html --top 5 --output "$WORK/hot-loop.html"
 test -s "$WORK/hot-loop.html"
 grep -q '<table data-sortable>' "$WORK/hot-loop.html"
@@ -38,7 +41,7 @@ test -s "$WORK/comparison.html"
 grep -q 'Elisa profile comparison' "$WORK/comparison.html"
 grep -q 'Source-location changes' "$WORK/comparison.html"
 grep -q 'DOMContentLoaded' "$WORK/comparison.html"
-python3 - "$WORK/timing.txt" "$WORK/comparison.txt" "$WORK/o2-report.json" "$WORK/comparison.json" <<'PY'
+python3 - "$WORK/timing.txt" "$WORK/comparison.txt" "$WORK/o2-report.json" "$WORK/comparison.json" "$WORK/hot-loop.speedscope.json" <<'PY'
 import json
 import sys
 
@@ -67,6 +70,12 @@ assert "compile_ms" in comparison["metrics"]
 assert comparison["functions"]
 assert "locations" in comparison
 assert comparison["warnings"] == []
+speedscope = json.load(open(sys.argv[5], encoding="utf-8"))
+assert speedscope["activeProfileIndex"] == 0
+assert speedscope["shared"]["frames"]
+assert speedscope["profiles"][0]["unit"] == "nanoseconds"
+assert speedscope["profiles"][0]["samples"]
+assert sum(speedscope["profiles"][0]["weights"]) > 0
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"

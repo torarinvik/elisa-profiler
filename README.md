@@ -56,6 +56,8 @@ the program, and reports function-entry, statement, and scalar-value events:
     scripts/elisa-profiler examples/hot_loop.elisa --format json -o profiles/hot-loop.json
     scripts/elisa-profiler profile examples/hot_loop.elisa --format folded \
         -o profiles/hot-loop.folded
+    scripts/elisa-profiler profile examples/hot_loop.elisa --format speedscope \
+        -o profiles/hot-loop.speedscope.json
     scripts/elisa-profiler profile examples/hot_loop.elisa --format html \
         -o profiles/hot-loop.html
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
@@ -108,7 +110,7 @@ depth at termination.
 
 Useful controls:
 
-    --format text|json|folded|html  choose the profile report format (default: text)
+    --format text|json|folded|html|speedscope  choose the profile report format (default: text)
     --opt-level 0..3       choose the compiler optimization level (default: 0)
     --top N                number of locations in the text report (default: 20)
     --warmup N             execute N unreported startup runs (default: 0)
@@ -142,6 +144,9 @@ overhead and is not statistical CPU sampling.
 The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.
+The `speedscope` format emits a self-contained sampled-profile JSON document
+using the same stack weights, ready to open in Speedscope or another compatible
+viewer.
 The HTML format is a self-contained local report with summary cards, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies.

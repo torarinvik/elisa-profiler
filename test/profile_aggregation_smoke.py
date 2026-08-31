@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from importlib.machinery import SourceFileLoader
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 
@@ -98,6 +99,15 @@ def main() -> int:
         assert run["peak_rss_bytes"] == 1000
         assert report["summary"]["events"] == 2
         assert report["locations"][0]["interval_ns"] == 400
+
+        count_profile = {
+            "source": "count-only.elisa",
+            "run": {"location_timing": False},
+            "stacks": [{"stack": "main;worker", "call_events": 3, "self_ns": 0}],
+        }
+        speedscope = json.loads(profiler.speedscope_report(count_profile))
+        assert speedscope["profiles"][0]["unit"] == "none"
+        assert speedscope["profiles"][0]["weights"] == [3]
     print("profile aggregation smoke OK")
     return 0
 

@@ -1163,6 +1163,48 @@ def folded_report(report: dict[str, Any]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def speedscope_report(report: dict[str, Any]) -> str:
+    """Render aggregate stacks as a Speedscope sampled profile."""
+    frame_indexes: dict[str, int] = {}
+    frames: list[dict[str, str]] = []
+    samples: list[list[int]] = []
+    weights: list[int] = []
+    timing = report["run"]["location_timing"]
+    for stack in report["stacks"]:
+        weight = stack["self_ns"] if timing else stack["call_events"]
+        if weight <= 0:
+            continue
+        stack_frames: list[int] = []
+        for function in stack["stack"].split(";"):
+            if function not in frame_indexes:
+                frame_indexes[function] = len(frames)
+                frames.append({"name": function})
+            stack_frames.append(frame_indexes[function])
+        if stack_frames:
+            samples.append(stack_frames)
+            weights.append(weight)
+    profile = {
+        "type": "sampled",
+        "name": str(report["source"]),
+        "unit": "nanoseconds" if timing else "none",
+        "startValue": 0,
+        "endValue": sum(weights),
+        "samples": samples,
+        "weights": weights,
+    }
+    return json.dumps(
+        {
+            "$schema": "https://www.speedscope.app/file-format-schema.json",
+            "name": str(report["source"]),
+            "activeProfileIndex": 0,
+            "exporter": "elisa-profiler",
+            "shared": {"frames": frames},
+            "profiles": [profile],
+        },
+        indent=2,
+    ) + "\n"
+
+
 def load_profile_report(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -1958,7 +2000,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("source", type=Path, help="Elisa source file containing main() -> i64")
     parser.add_argument("-o", "--output", type=Path, help="write the report to this file")
     parser.add_argument(
-        "--format", choices=("text", "json", "folded", "html"), default="text"
+        "--format", choices=("text", "json", "folded", "html", "speedscope"), default="text"
     )
     parser.add_argument("--top", type=int, default=20, help="number of hot locations in text output")
     parser.add_argument("--repeat", type=int, default=1, help="number of measured executions (default: 1)")
@@ -2233,6 +2275,8 @@ def profile(args: argparse.Namespace) -> int:
             rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"
         elif args.format == "folded":
             rendered = folded_report(report)
+        elif args.format == "speedscope":
+            rendered = speedscope_report(report)
         elif args.format == "html":
             rendered = html_report(report, args.top)
         else:
