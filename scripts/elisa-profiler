@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from html import escape
 from pathlib import Path
@@ -1129,6 +1130,245 @@ def folded_report(report: dict[str, Any]) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def load_profile_report(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ProfilerError(f"could not read profile report {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise ProfilerError(f"profile report is not an object: {path}")
+    if value.get("schema_version") != 1:
+        raise ProfilerError(f"unsupported profile schema in {path}: {value.get('schema_version')!r}")
+    if not isinstance(value.get("run"), dict):
+        raise ProfilerError(f"profile report has no run object: {path}")
+    return value
+
+
+def profile_numeric_value(report: dict[str, Any], section: str, name: str) -> int | float | None:
+    values = report.get(section)
+    if not isinstance(values, dict):
+        return None
+    value = values.get(name)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def comparison_metric(
+    baseline: int | float | None, candidate: int | float | None
+) -> dict[str, int | float | None]:
+    if baseline is None or candidate is None:
+        return {"baseline": baseline, "candidate": candidate, "delta": None, "percent": None}
+    delta = candidate - baseline
+    percent = delta * 100.0 / abs(baseline) if baseline != 0 else None
+    return {
+        "baseline": baseline,
+        "candidate": candidate,
+        "delta": delta,
+        "percent": percent,
+    }
+
+
+def profile_function_map(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    functions: dict[str, dict[str, Any]] = {}
+    for function in report.get("functions", []):
+        if isinstance(function, dict) and isinstance(function.get("function"), str):
+            functions[function["function"]] = function
+    return functions
+
+
+def comparison_identity(report: dict[str, Any], path: Path) -> dict[str, Any]:
+    run = report["run"]
+    return {
+        "path": str(path.resolve()),
+        "source": report.get("source"),
+        "compiler": report.get("compiler", {}),
+        "opt_level": run.get("opt_level"),
+        "location_timing": run.get("location_timing"),
+        "completed_repetitions": run.get("completed_repetitions"),
+    }
+
+
+def build_comparison_report(
+    baseline_path: Path, candidate_path: Path, threshold_percent: float
+) -> dict[str, Any]:
+    baseline = load_profile_report(baseline_path)
+    candidate = load_profile_report(candidate_path)
+    run_metric_names = {
+        "execution_ms_mean": "run",
+        "compile_ms": "run",
+        "cpu_ms": "run",
+        "peak_rss_bytes": "run",
+        "events": "summary",
+    }
+    metrics = {
+        name: comparison_metric(
+            profile_numeric_value(baseline, section, name),
+            profile_numeric_value(candidate, section, name),
+        )
+        for name, section in run_metric_names.items()
+    }
+    function_metric_names = (
+        "events",
+        "call_events",
+        "completed_calls",
+        "inclusive_ns",
+        "self_ns",
+        "interval_ns",
+        "max_interval_ns",
+    )
+    baseline_functions = profile_function_map(baseline)
+    candidate_functions = profile_function_map(candidate)
+    function_changes: list[dict[str, Any]] = []
+    for function_name in sorted(set(baseline_functions) | set(candidate_functions)):
+        baseline_function = baseline_functions.get(function_name, {})
+        candidate_function = candidate_functions.get(function_name, {})
+        function_change: dict[str, Any] = {"function": function_name}
+        for metric_name in function_metric_names:
+            function_change[metric_name] = comparison_metric(
+                baseline_function.get(metric_name), candidate_function.get(metric_name)
+            )
+        function_changes.append(function_change)
+    function_changes.sort(
+        key=lambda change: (
+            -abs(change["inclusive_ns"]["delta"] or 0),
+            -abs(change["events"]["delta"] or 0),
+            change["function"],
+        )
+    )
+
+    regressions: list[dict[str, Any]] = []
+    for metric_name in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
+        metric = metrics[metric_name]
+        percent = metric["percent"]
+        if percent is not None and percent > threshold_percent:
+            regressions.append(
+                {
+                    "scope": "run",
+                    "metric": metric_name,
+                    "baseline": metric["baseline"],
+                    "candidate": metric["candidate"],
+                    "delta": metric["delta"],
+                    "percent": percent,
+                    "message": f"run {metric_name} increased by more than {threshold_percent:g}%",
+                }
+            )
+    for function_change in function_changes:
+        metric = function_change["inclusive_ns"]
+        percent = metric["percent"]
+        if percent is not None and percent > threshold_percent:
+            regressions.append(
+                {
+                    "scope": "function",
+                    "function": function_change["function"],
+                    "metric": "inclusive_ns",
+                    "baseline": metric["baseline"],
+                    "candidate": metric["candidate"],
+                    "delta": metric["delta"],
+                    "percent": percent,
+                    "message": (
+                        f"function {function_change['function']} inclusive time increased "
+                        f"by more than {threshold_percent:g}%"
+                    ),
+                }
+            )
+    candidate_run = candidate["run"]
+    candidate_failed = (
+        candidate_run.get("exit_code") != 0
+        or candidate_run.get("signal") is not None
+        or any(
+            repetition.get("timed_out")
+            for repetition in candidate_run.get("repetitions", [])
+            if isinstance(repetition, dict)
+        )
+    )
+    if candidate_failed:
+        regressions.append(
+            {
+                "scope": "run",
+                "metric": "status",
+                "baseline": baseline["run"].get("exit_code"),
+                "candidate": candidate_run.get("exit_code"),
+                "delta": None,
+                "percent": None,
+                "message": "candidate profile did not complete successfully",
+            }
+        )
+    warnings: list[str] = []
+    if baseline.get("source") != candidate.get("source"):
+        warnings.append("baseline and candidate use different source paths")
+    if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
+        warnings.append("baseline and candidate use different location-timing settings")
+    return {
+        "schema_version": 1,
+        "kind": "profile_comparison",
+        "baseline": comparison_identity(baseline, baseline_path),
+        "candidate": comparison_identity(candidate, candidate_path),
+        "threshold_percent": threshold_percent,
+        "metrics": metrics,
+        "functions": function_changes,
+        "warnings": warnings,
+        "regressions": regressions,
+        "status": "regression" if regressions else "ok",
+    }
+
+
+def comparison_metric_text(metric: dict[str, Any], unit: str = "") -> str:
+    baseline = metric["baseline"]
+    candidate = metric["candidate"]
+    delta = metric["delta"]
+    percent = metric["percent"]
+    if baseline is None or candidate is None:
+        return "unavailable"
+    percent_text = "n/a" if percent is None else f"{percent:+.1f}%"
+    if unit == "MiB":
+        baseline_text = f"{baseline / (1024 * 1024):.2f} MiB"
+        candidate_text = f"{candidate / (1024 * 1024):.2f} MiB"
+        delta_text = f"{delta / (1024 * 1024):+.2f} MiB"
+    elif unit:
+        baseline_text = f"{baseline:.3f} {unit}"
+        candidate_text = f"{candidate:.3f} {unit}"
+        delta_text = f"{delta:+.3f} {unit}"
+    else:
+        baseline_text = f"{baseline:g}"
+        candidate_text = f"{candidate:g}"
+        delta_text = f"{delta:+g}"
+    return f"{baseline_text} -> {candidate_text} ({delta_text}, {percent_text})"
+
+
+def comparison_text(report: dict[str, Any], top: int) -> str:
+    baseline = report["baseline"]
+    candidate = report["candidate"]
+    lines = [
+        "Elisa profile comparison",
+        f"baseline: {baseline['path']} ({baseline.get('opt_level') or 'unknown opt level'})",
+        f"candidate: {candidate['path']} ({candidate.get('opt_level') or 'unknown opt level'})",
+        f"status: {report['status']} (threshold {report['threshold_percent']:g}%)",
+        "",
+        "Run metrics:",
+        f"  wall mean: {comparison_metric_text(report['metrics']['execution_ms_mean'], 'ms')}",
+        f"  compile: {comparison_metric_text(report['metrics']['compile_ms'], 'ms')}",
+        f"  CPU: {comparison_metric_text(report['metrics']['cpu_ms'], 'ms')}",
+        f"  peak RSS: {comparison_metric_text(report['metrics']['peak_rss_bytes'], 'MiB')}",
+        f"  events: {comparison_metric_text(report['metrics']['events'])}",
+        "",
+        f"Function changes (top {min(top, len(report['functions']))}):",
+    ]
+    for function in report["functions"][:top]:
+        timing = comparison_metric_text(function["inclusive_ns"], "ns")
+        events = comparison_metric_text(function["events"])
+        lines.append(f"  {function['function']}: inclusive={timing}; events={events}")
+    if not report["functions"]:
+        lines.append("  none recorded")
+    if report["warnings"]:
+        lines.extend(["", "Warnings:"])
+        lines.extend(f"  - {warning}" for warning in report["warnings"])
+    if report["regressions"]:
+        lines.extend(["", "Regressions:"])
+        lines.extend(f"  - {regression['message']}" for regression in report["regressions"])
+    return "\n".join(lines) + "\n"
+
+
 def build_report(
     source: Path,
     compiler: dict[str, Any],
@@ -1296,7 +1536,47 @@ def build_report(
     return report
 
 
+def parse_compare_arguments(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="elisa-profiler compare",
+        description="Compare two JSON profiler reports for performance regressions.",
+    )
+    parser.add_argument("baseline", type=Path, help="baseline JSON profile")
+    parser.add_argument("candidate", type=Path, help="candidate JSON profile")
+    parser.add_argument(
+        "--format", choices=("text", "json"), default="text", help="comparison output format"
+    )
+    parser.add_argument("-o", "--output", type=Path, help="write the comparison to this file")
+    parser.add_argument(
+        "--top", type=int, default=20, help="number of function changes in text output"
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=10.0,
+        help="percentage increase that counts as a regression (default: 10)",
+    )
+    parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="return status 1 when a metric or function exceeds the threshold",
+    )
+    args = parser.parse_args(argv)
+    if args.top < 1:
+        parser.error("--top must be positive")
+    if not math.isfinite(args.threshold) or args.threshold < 0:
+        parser.error("--threshold must be a finite non-negative number")
+    args.baseline = args.baseline.resolve()
+    args.candidate = args.candidate.resolve()
+    if args.output is not None:
+        args.output = args.output.resolve()
+    args.command = "compare"
+    return args
+
+
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
+    if argv and argv[0] == "compare":
+        return parse_compare_arguments(argv[1:])
     if argv and argv[0] == "profile":
         argv = argv[1:]
     parser = argparse.ArgumentParser(
@@ -1345,6 +1625,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         args.runtime_object = args.compiler_root / "build" / "runtime" / "elisacore_runtime.o"
     else:
         args.runtime_object = args.runtime_object.resolve()
+    args.command = "profile"
     return args
 
 
@@ -1598,9 +1879,27 @@ def profile(args: argparse.Namespace) -> int:
             shutil.rmtree(temp_root, ignore_errors=True)
 
 
+def compare_profiles(args: argparse.Namespace) -> int:
+    comparison = build_comparison_report(args.baseline, args.candidate, args.threshold)
+    if args.format == "json":
+        rendered = json.dumps(comparison, indent=2, sort_keys=False) + "\n"
+    else:
+        rendered = comparison_text(comparison, args.top)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    else:
+        sys.stdout.write(rendered)
+    if args.fail_on_regression and comparison["status"] != "ok":
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_arguments(sys.argv[1:] if argv is None else argv)
+        if args.command == "compare":
+            return compare_profiles(args)
         return profile(args)
     except ProfilerError as error:
         print(f"elisa-profiler: {error}", file=sys.stderr)

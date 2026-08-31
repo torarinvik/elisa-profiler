@@ -26,11 +26,17 @@ grep -q 'run 2' "$WORK/hot-loop.html"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format text --output "$WORK/timing.txt"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
-    --opt-level 2 --format text --output "$WORK/o2.txt"
-python3 - "$WORK/timing.txt" "$WORK/o2.txt" <<'PY'
+    --opt-level 2 --repeat 2 --location-timing --format json --output "$WORK/o2-report.json"
+"$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
+    --format text --top 3 --output "$WORK/comparison.txt"
+"$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
+    --format json --output "$WORK/comparison.json"
+python3 - "$WORK/timing.txt" "$WORK/comparison.txt" "$WORK/o2-report.json" "$WORK/comparison.json" <<'PY'
+import json
 import sys
 
 text = open(sys.argv[1], encoding="utf-8").read()
+comparison_text = open(sys.argv[2], encoding="utf-8").read()
 assert text.index("main (calls=") < text.index("accumulate (calls=")
 assert "stack-depth=2 stack-overflow=0" in text
 assert "defined at hot_loop.elisa:9" in text
@@ -38,7 +44,18 @@ assert "Measured repetitions:" in text
 assert "run 1: exit 0" in text
 assert "run 2: exit 0" in text
 assert "opt=-O0" in text
-assert "opt=-O2" in open(sys.argv[2], encoding="utf-8").read()
+assert "Elisa profile comparison" in comparison_text
+assert "wall mean:" in comparison_text
+o2_report = json.load(open(sys.argv[3], encoding="utf-8"))
+assert o2_report["run"]["opt_level"] == "-O2"
+comparison = json.load(open(sys.argv[4], encoding="utf-8"))
+assert comparison["kind"] == "profile_comparison"
+assert comparison["baseline"]["opt_level"] == "-O0"
+assert comparison["candidate"]["opt_level"] == "-O2"
+assert "execution_ms_mean" in comparison["metrics"]
+assert "compile_ms" in comparison["metrics"]
+assert comparison["functions"]
+assert comparison["warnings"] == []
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
@@ -292,7 +309,7 @@ print("crash capture OK")
 PY
 
 set +e
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/timeout.elisa" --timeout 0.5 --format json --output "$WORK/timeout-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/timeout.elisa" --timeout 2 --format json --output "$WORK/timeout-report.json"
 timeout_status=$?
 set -e
 test "$timeout_status" -eq 143
@@ -307,7 +324,7 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 15
 assert report["run"]["repetitions"][0]["timed_out"] is True
-assert report["run"]["timeout_s"] == 0.5
+assert report["run"]["timeout_s"] == 2.0
 assert "peak_rss_bytes" in report["run"]
 assert "peak_rss_bytes" in report["run"]["repetitions"][0]
 assert report["active_stack"] == {
@@ -322,3 +339,5 @@ python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile.schema.json" \
     "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" \
     "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" \
     "$WORK/crash-report.json" "$WORK/timeout-report.json"
+python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile-comparison.schema.json" \
+    "$WORK/comparison.json"

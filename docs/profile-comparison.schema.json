@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elisa-lang.org/schemas/profile-comparison-v1.json",
+  "title": "Elisa profiler comparison",
+  "description": "Machine-readable output from scripts/elisa-profiler compare.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "kind",
+    "baseline",
+    "candidate",
+    "threshold_percent",
+    "metrics",
+    "functions",
+    "warnings",
+    "regressions",
+    "status"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "const": "profile_comparison" },
+    "baseline": { "$ref": "#/$defs/identity" },
+    "candidate": { "$ref": "#/$defs/identity" },
+    "threshold_percent": { "type": "number", "minimum": 0 },
+    "metrics": {
+      "type": "object",
+      "required": ["execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes", "events"],
+      "properties": {
+        "execution_ms_mean": { "$ref": "#/$defs/metric" },
+        "compile_ms": { "$ref": "#/$defs/metric" },
+        "cpu_ms": { "$ref": "#/$defs/metric" },
+        "peak_rss_bytes": { "$ref": "#/$defs/metric" },
+        "events": { "$ref": "#/$defs/metric" }
+      },
+      "additionalProperties": true
+    },
+    "functions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/function_change" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "regressions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/regression" }
+    },
+    "status": { "type": "string", "enum": ["ok", "regression"] }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["path", "source", "compiler", "opt_level", "completed_repetitions"],
+      "properties": {
+        "path": { "type": "string" },
+        "source": { "type": ["string", "null"] },
+        "compiler": { "type": "object", "additionalProperties": true },
+        "opt_level": { "type": ["string", "null"] },
+        "location_timing": { "type": ["boolean", "null"] },
+        "completed_repetitions": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "metric": {
+      "type": "object",
+      "required": ["baseline", "candidate", "delta", "percent"],
+      "properties": {
+        "baseline": { "type": ["number", "null"] },
+        "candidate": { "type": ["number", "null"] },
+        "delta": { "type": ["number", "null"] },
+        "percent": { "type": ["number", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "function_change": {
+      "type": "object",
+      "required": [
+        "function",
+        "events",
+        "call_events",
+        "completed_calls",
+        "inclusive_ns",
+        "self_ns",
+        "interval_ns",
+        "max_interval_ns"
+      ],
+      "properties": {
+        "function": { "type": "string" },
+        "events": { "$ref": "#/$defs/metric" },
+        "call_events": { "$ref": "#/$defs/metric" },
+        "completed_calls": { "$ref": "#/$defs/metric" },
+        "inclusive_ns": { "$ref": "#/$defs/metric" },
+        "self_ns": { "$ref": "#/$defs/metric" },
+        "interval_ns": { "$ref": "#/$defs/metric" },
+        "max_interval_ns": { "$ref": "#/$defs/metric" }
+      },
+      "additionalProperties": true
+    },
+    "regression": {
+      "type": "object",
+      "required": ["scope", "metric", "baseline", "candidate", "delta", "percent", "message"],
+      "properties": {
+        "scope": { "type": "string", "enum": ["run", "function"] },
+        "function": { "type": "string" },
+        "metric": { "type": "string" },
+        "baseline": { "type": ["number", "null"] },
+        "candidate": { "type": ["number", "null"] },
+        "delta": { "type": ["number", "null"] },
+        "percent": { "type": ["number", "null"] },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
