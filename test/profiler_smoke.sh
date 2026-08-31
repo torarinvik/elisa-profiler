@@ -20,8 +20,10 @@ grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
 grep -q 'main;accumulate' "$WORK/hot-loop.html"
 grep -q 'Max stack depth' "$WORK/hot-loop.html"
 grep -q 'Definition' "$WORK/hot-loop.html"
+grep -q 'Measured repetitions' "$WORK/hot-loop.html"
+grep -q 'run 2' "$WORK/hot-loop.html"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
-    --location-timing --format text --output "$WORK/timing.txt"
+    --repeat 2 --location-timing --format text --output "$WORK/timing.txt"
 python3 - "$WORK/timing.txt" <<'PY'
 import sys
 
@@ -29,6 +31,9 @@ text = open(sys.argv[1], encoding="utf-8").read()
 assert text.index("main (calls=") < text.index("accumulate (calls=")
 assert "stack-depth=2 stack-overflow=0" in text
 assert "defined at hot_loop.elisa:9" in text
+assert "Measured repetitions:" in text
+assert "run 1: exit 0" in text
+assert "run 2: exit 0" in text
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"

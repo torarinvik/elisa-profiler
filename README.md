@@ -112,6 +112,8 @@ population standard deviation for measured execution time. With
 --location-timing, locations also receive attributed wall time and their
 largest observed gap to the next trace event; function summaries aggregate the
 same measurements and add inclusive/self wall time plus completed-call counts.
+Text and HTML reports also list every measured repetition with its status, wall
+time, CPU time, and peak RSS when available.
 The summary also records the maximum call-stack depth tracked by the collector
 and the number of entries beyond its 1024-frame capacity; a nonzero
 `stack_overflow_entries` value means folded paths are necessarily incomplete.

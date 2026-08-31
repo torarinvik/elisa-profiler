@@ -648,6 +648,14 @@ def function_definition_label(function: dict[str, Any]) -> str:
     )
 
 
+def repetition_status(repetition: dict[str, Any]) -> str:
+    if repetition["timed_out"]:
+        return "timeout"
+    if repetition["signal"] is not None:
+        return f"signal {repetition['signal']}"
+    return f"exit {repetition['exit_code']}"
+
+
 def text_report(report: dict[str, Any], top: int) -> str:
     summary = report["summary"]
     run = report["run"]
@@ -657,7 +665,12 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"exit={run['exit_code'] if run['exit_code'] is not None else 'signal ' + str(run['signal'])} "
             f"warmups={run['warmup_repetitions']} "
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
-            f"execution={run['execution_ms']:.3f} ms mean={run['execution_ms_mean']:.3f} ms "
+            f"execution={run['execution_ms']:.3f} ms "
+            f"mean={run['execution_ms_mean']:.3f} ms "
+            f"min={run['execution_ms_min']:.3f} ms "
+            f"median={run['execution_ms_median']:.3f} ms "
+            f"max={run['execution_ms_max']:.3f} ms "
+            f"stdev={run['execution_ms_stdev']:.3f} ms "
             f"events={summary['events']} "
             f"(statement={summary['statement_events']}, value={summary['value_events']}, "
             f"function={summary['function_events']}) "
@@ -676,6 +689,19 @@ def text_report(report: dict[str, Any], top: int) -> str:
         )
     if run["peak_rss_bytes"] is not None:
         lines[1] += f" peak-rss={run['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
+    lines.extend(["", "Measured repetitions:"])
+    for repetition in run["repetitions"]:
+        detail = (
+            f"  run {repetition['repetition']}: {repetition_status(repetition)}, "
+            f"wall={repetition['execution_ms']:.3f} ms"
+        )
+        if repetition["cpu_ms"] is not None:
+            detail += f", cpu={repetition['cpu_ms']:.3f} ms"
+        if repetition["peak_rss_bytes"] is not None:
+            detail += (
+                f", peak-rss={repetition['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
+            )
+        lines.append(detail)
     display_locations = report["locations"]
     if run["location_timing"]:
         display_locations = sorted(
@@ -938,7 +964,31 @@ def html_report(report: dict[str, Any], top: int) -> str:
         ]
         for event in report.get("recent_events", [])[-top:]
     ]
+    repetition_rows = []
+    for repetition in run["repetitions"]:
+        repetition_rows.append(
+            [
+                f"run {repetition['repetition']}",
+                repetition_status(repetition),
+                f"{repetition['execution_ms']:.3f} ms",
+                (
+                    f"{repetition['cpu_ms']:.3f} ms"
+                    if repetition["cpu_ms"] is not None
+                    else "unavailable"
+                ),
+                (
+                    f"{repetition['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
+                    if repetition["peak_rss_bytes"] is not None
+                    else "unavailable"
+                ),
+            ]
+        )
     sections = [
+        html_table(
+            "Measured repetitions",
+            ["Run", "Status", "Wall time", "CPU", "Peak RSS"],
+            repetition_rows,
+        ),
         html_table(
             f"Hot locations (top {min(top, len(display_locations))})",
             ["Function", "Line", "Kind", "Variable", "Events", "Attributed", "Source"],
