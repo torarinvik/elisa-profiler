@@ -17,6 +17,11 @@ import time
 from collections import defaultdict
 from typing import Any
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - resource is unavailable on some platforms.
+    resource = None  # type: ignore[assignment]
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COMPILER_ROOT = ROOT.parent / "elisa-compiler-worktrees" / "profiler"
@@ -85,6 +90,24 @@ def execute_program(executable_path: Path, timeout: float | None) -> tuple[int, 
             process.kill()
             stdout, stderr = process.communicate()
     return process.returncode, stdout, stderr, timed_out
+
+
+def child_cpu_usage() -> tuple[float, float] | None:
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime, usage.ru_stime
+
+
+def child_cpu_delta(
+    before: tuple[float, float] | None, after: tuple[float, float] | None
+) -> tuple[float, float] | None:
+    if before is None or after is None:
+        return None
+    return (
+        max(0.0, (after[0] - before[0]) * 1000.0),
+        max(0.0, (after[1] - before[1]) * 1000.0),
+    )
 
 
 def git_value(root: Path, *arguments: str, fallback: str = "unknown") -> str:
@@ -544,6 +567,11 @@ def text_report(report: dict[str, Any], top: int) -> str:
     ]
     if run["timeout_s"] is not None:
         lines[1] += f" timeout={run['timeout_s']}s"
+    if run["cpu_ms"] is not None:
+        lines[1] += (
+            f" cpu={run['cpu_ms']:.3f} ms"
+            f" (user={run['cpu_user_ms']:.3f}, sys={run['cpu_system_ms']:.3f})"
+        )
     if report["locations"]:
         lines.append(f"Hot locations (top {min(top, len(report['locations']))}):")
         for location in report["locations"][:top]:
@@ -721,6 +749,21 @@ def build_report(
             function_stats.items(), key=lambda item: (-item[1]["events"], item[0])
         )
     ]
+    cpu_user_values = [
+        record["cpu_user_ms"] for record in run_records if record["cpu_user_ms"] is not None
+    ]
+    cpu_system_values = [
+        record["cpu_system_ms"]
+        for record in run_records
+        if record["cpu_system_ms"] is not None
+    ]
+    cpu_user_ms = sum(cpu_user_values) if cpu_user_values else None
+    cpu_system_ms = sum(cpu_system_values) if cpu_system_values else None
+    cpu_ms = (
+        cpu_user_ms + cpu_system_ms
+        if cpu_user_ms is not None and cpu_system_ms is not None
+        else None
+    )
     execution_times = [record["execution_ms"] for record in run_records]
     execution_ms = sum(execution_times)
     report: dict[str, Any] = {
@@ -740,6 +783,9 @@ def build_report(
             "execution_ms_max": max(execution_times),
             "execution_ms_median": statistics.median(execution_times),
             "execution_ms_stdev": statistics.pstdev(execution_times),
+            "cpu_user_ms": cpu_user_ms,
+            "cpu_system_ms": cpu_system_ms,
+            "cpu_ms": cpu_ms,
             "warmup_ms": warmup_ms,
             "warmup_repetitions": warmup_repetitions,
             "requested_repetitions": run_records[-1]["requested_repetitions"],
@@ -930,9 +976,12 @@ def profile(args: argparse.Namespace) -> int:
         run_stderr: list[str] = []
         for repetition in range(1, args.repeat + 1):
             execution_start = time.perf_counter_ns()
+            cpu_before = child_cpu_usage()
             run_status, run_stdout_bytes, run_stderr_bytes, run_timed_out = execute_program(
                 executable_path, args.timeout
             )
+            cpu_after = child_cpu_usage()
+            cpu_delta = child_cpu_delta(cpu_before, cpu_after)
             execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
             stderr = run_stderr_bytes.decode("utf-8", errors="replace")
             meta, locations, call_edges, stacks, program_stderr, recent_events = parse_profile(
@@ -946,6 +995,9 @@ def profile(args: argparse.Namespace) -> int:
                 "signal": -run_status if run_status < 0 else None,
                 "execution_ms": execution_ms,
                 "timed_out": run_timed_out,
+                "cpu_user_ms": cpu_delta[0] if cpu_delta is not None else None,
+                "cpu_system_ms": cpu_delta[1] if cpu_delta is not None else None,
+                "cpu_ms": sum(cpu_delta) if cpu_delta is not None else None,
             }
             run_records.append(run_record)
             profile_results.append((meta, locations, call_edges, stacks, program_stderr, recent_events))

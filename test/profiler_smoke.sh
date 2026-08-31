@@ -46,6 +46,10 @@ assert report["run"]["warmup_ms"] > 0
 assert report["run"]["requested_repetitions"] == 2
 assert report["run"]["completed_repetitions"] == 2
 assert report["run"]["location_timing"] is True
+assert report["run"]["cpu_ms"] is not None
+assert report["run"]["cpu_ms"] >= 0
+assert all(repetition["cpu_ms"] is not None for repetition in report["run"]["repetitions"])
+assert all(repetition["cpu_ms"] >= 0 for repetition in report["run"]["repetitions"])
 assert max(location["max_interval_ns"] for location in report["locations"]) > 0
 assert report["functions"][0]["function"] == "accumulate"
 assert report["functions"][0]["interval_ns"] > 0
