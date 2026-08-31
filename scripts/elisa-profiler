@@ -2061,6 +2061,15 @@ def build_report(
                 stats["definitions"].append(definition)
         else:
             stats["statement_events"] += location["count"]
+    call_edges = sorted(
+        call_edges,
+        key=lambda edge: (
+            -edge["inclusive_ns"] if location_timing else -edge["call_events"],
+            -edge["call_events"] if location_timing else -edge["inclusive_ns"],
+            edge["caller"],
+            edge["callee"],
+        ),
+    )
     summary = dict(meta)
     summary["statement_events"] = sum(
         location["count"] for location in locations if location["kind"] == "statement"

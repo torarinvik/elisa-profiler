@@ -37,6 +37,22 @@ def main() -> int:
             "interval_ns": 400,
             "max_interval_ns": 300,
         }
+        call_edges = [
+            {
+                "caller": "main",
+                "callee": "frequent",
+                "call_events": 100,
+                "completed_calls": 100,
+                "inclusive_ns": 100,
+            },
+            {
+                "caller": "main",
+                "callee": "hot",
+                "call_events": 1,
+                "completed_calls": 1,
+                "inclusive_ns": 1_000,
+            },
+        ]
         run_records = [
             {
                 "exit_code": 0,
@@ -71,7 +87,7 @@ def main() -> int:
                 "thread_count": 1,
             },
             [location],
-            [],
+            call_edges,
             [],
             exit_code=None,
             signal=15,
@@ -99,6 +115,39 @@ def main() -> int:
         assert run["peak_rss_bytes"] == 1000
         assert report["summary"]["events"] == 2
         assert report["locations"][0]["interval_ns"] == 400
+        assert [edge["callee"] for edge in report["call_edges"]] == ["hot", "frequent"]
+
+        count_only_report = profiler.build_report(
+            source,
+            {"commit": "test"},
+            {
+                "events": 2,
+                "locations": 1,
+                "dropped": 0,
+                "max_stack_depth": 1,
+                "stack_overflow_entries": 0,
+                "thread_count": 1,
+            },
+            [location],
+            call_edges,
+            [],
+            exit_code=0,
+            signal=None,
+            run_records=[dict(run_records[0], requested_repetitions=1)],
+            warmup_ms=0.0,
+            warmup_repetitions=0,
+            timeout_s=None,
+            location_timing=False,
+            opt_level="-O0",
+            compile_ms=1.0,
+            program_stderr="",
+            temp_root=None,
+            recent_events=[],
+            active_stack=None,
+        )
+        assert [edge["callee"] for edge in count_only_report["call_edges"]] == [
+            "frequent", "hot"
+        ]
 
         count_profile = {
             "source": "count-only.elisa",

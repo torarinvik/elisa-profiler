@@ -87,6 +87,8 @@ separate post-processing step.
 When `--location-timing` is enabled, the text report ranks locations by
 attributed wall time and functions by inclusive duration; without timing it
 retains event-count ordering.
+Timed reports also rank call-graph edges by inclusive duration; count-only
+reports rank them by observed call events.
 Each measured repetition also records child user/system CPU time when the host
 provides Python's `resource` interface; aggregate CPU time is kept separate
 from wall-clock execution time.
