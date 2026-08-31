@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from html import escape
 from pathlib import Path
 import re
 import shutil
@@ -718,6 +719,259 @@ def text_report(report: dict[str, Any], top: int) -> str:
     return "\n".join(lines) + "\n"
 
 
+def html_table(title: str, headers: list[str], rows: list[list[object]]) -> str:
+    if not rows:
+        return (
+            f"<section><h2>{escape(title)}</h2>"
+            '<p class="muted">No data recorded.</p></section>'
+        )
+    header_html = "".join(f"<th>{escape(header)}</th>" for header in headers)
+    row_html = []
+    for row in rows:
+        cells = "".join(f"<td>{escape(str(cell))}</td>" for cell in row)
+        row_html.append(f"<tr>{cells}</tr>")
+    return (
+        f"<section><h2>{escape(title)}</h2>"
+        '<div class="table-wrap"><table data-sortable><thead><tr>'
+        f"{header_html}</tr></thead><tbody>{''.join(row_html)}</tbody></table></div></section>"
+    )
+
+
+def html_report(report: dict[str, Any], top: int) -> str:
+    summary = report["summary"]
+    run = report["run"]
+    status = (
+        str(run["exit_code"])
+        if run["exit_code"] is not None
+        else f"signal {run['signal']}"
+    )
+    if any(repetition["timed_out"] for repetition in run["repetitions"]):
+        status = "timed out"
+    cpu = (
+        "unavailable"
+        if run["cpu_ms"] is None
+        else f"{run['cpu_ms']:.3f} ms"
+    )
+    peak_rss = (
+        "unavailable"
+        if run["peak_rss_bytes"] is None
+        else f"{run['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
+    )
+    display_locations = list(report["locations"])
+    if run["location_timing"]:
+        display_locations.sort(
+            key=lambda location: (
+                -location["interval_ns"],
+                -location["max_interval_ns"],
+                -location["count"],
+                location["line"],
+                location["function"],
+            )
+        )
+    display_functions = list(report["functions"])
+    if run["location_timing"]:
+        display_functions.sort(
+            key=lambda function: (
+                -function["inclusive_ns"],
+                -function["self_ns"],
+                -function["events"],
+                function["function"],
+            )
+        )
+    location_rows = []
+    for location in display_locations[:top]:
+        variable = location.get("variable") or ""
+        timing = (
+            f"{location['interval_ns'] / 1_000_000:.3f} ms"
+            if run["location_timing"]
+            else ""
+        )
+        location_rows.append(
+            [
+                location["function"],
+                location["line"],
+                location["kind"],
+                variable,
+                location["count"],
+                timing,
+                location.get("source_text") or location.get("source", ""),
+            ]
+        )
+    function_rows = []
+    for function in display_functions:
+        timing = (
+            f"{function['inclusive_ns'] / 1_000_000:.3f} ms"
+            if run["location_timing"]
+            else ""
+        )
+        self_timing = (
+            f"{function['self_ns'] / 1_000_000:.3f} ms"
+            if run["location_timing"]
+            else ""
+        )
+        function_rows.append(
+            [
+                function["function"],
+                function["events"],
+                function["call_events"],
+                function["completed_calls"],
+                timing,
+                self_timing,
+                (
+                    f"{function['inclusive_percent']:.1f}%"
+                    if run["location_timing"]
+                    else ""
+                ),
+            ]
+        )
+    edge_rows = [
+        [
+            edge["caller"],
+            edge["callee"],
+            edge["call_events"],
+            edge["completed_calls"],
+            (
+                f"{edge['inclusive_ns'] / 1_000_000:.3f} ms"
+                if run["location_timing"]
+                else ""
+            ),
+        ]
+        for edge in report["call_edges"][:top]
+    ]
+    stack_rows = [
+        [
+            stack["stack"],
+            stack["call_events"],
+            stack["completed_calls"],
+            (
+                f"{stack['self_ns'] / 1_000_000:.3f} ms"
+                if run["location_timing"]
+                else ""
+            ),
+        ]
+        for stack in report["stacks"][:top]
+    ]
+    recent_rows = [
+        [
+            event["sequence"],
+            event["function"],
+            event["line"],
+            event["kind"],
+            event.get("variable") or "",
+            event["value"],
+            event.get("source_text") or "",
+        ]
+        for event in report.get("recent_events", [])[-top:]
+    ]
+    sections = [
+        html_table(
+            f"Hot locations (top {min(top, len(display_locations))})",
+            ["Function", "Line", "Kind", "Variable", "Events", "Attributed", "Source"],
+            location_rows,
+        ),
+        html_table(
+            "Function totals",
+            ["Function", "Events", "Calls", "Completed", "Inclusive", "Self", "Root %"],
+            function_rows,
+        ),
+        html_table(
+            f"Call graph (top {min(top, len(report['call_edges']))})",
+            ["Caller", "Callee", "Calls", "Completed", "Inclusive"],
+            edge_rows,
+        ),
+        html_table(
+            f"Folded stacks (top {min(top, len(report['stacks']))})",
+            ["Stack", "Calls", "Completed", "Self"],
+            stack_rows,
+        ),
+    ]
+    if recent_rows:
+        sections.append(
+            html_table(
+                f"Recent execution path (last {len(recent_rows)} events)",
+                ["Sequence", "Function", "Line", "Kind", "Variable", "Value", "Source"],
+                recent_rows,
+            )
+        )
+    stderr = report.get("program_stderr")
+    if stderr:
+        sections.append(
+            f"<section><h2>Program stderr</h2><pre>{escape(stderr.rstrip())}</pre></section>"
+        )
+    compiler = report["compiler"]
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="en"><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            f"<title>Elisa profile — {escape(report['source'])}</title>",
+            """<style>
+:root { color-scheme: light dark; font: 15px/1.45 -apple-system, BlinkMacSystemFont, sans-serif; }
+body { margin: 0; background: #f5f7fa; color: #182230; }
+main { max-width: 1500px; margin: 0 auto; padding: 28px; }
+h1 { margin: 0 0 4px; font-size: 26px; }
+h2 { margin: 28px 0 10px; font-size: 18px; }
+.subtitle, .muted { color: #667085; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 22px 0; }
+.card { background: white; border: 1px solid #d8dee8; border-radius: 10px; padding: 14px; }
+.card-label { color: #667085; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.card-value { font-size: 20px; font-weight: 650; margin-top: 4px; }
+.table-wrap { overflow-x: auto; background: white; border: 1px solid #d8dee8; border-radius: 10px; }
+table { border-collapse: collapse; min-width: 720px; width: 100%; }
+th, td { border-bottom: 1px solid #e9edf3; padding: 9px 11px; text-align: left; vertical-align: top; }
+th { background: #eef2f7; cursor: pointer; position: sticky; top: 0; }
+tbody tr:last-child td { border-bottom: 0; }
+td:nth-child(2), td:nth-child(3), td:nth-child(5), td:nth-child(6) { white-space: nowrap; }
+pre { background: #111827; color: #e5e7eb; border-radius: 10px; padding: 14px; overflow: auto; }
+footer { border-top: 1px solid #d8dee8; margin-top: 30px; padding-top: 14px; color: #667085; font-size: 12px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #111827; color: #e5e7eb; }
+  .card, .table-wrap { background: #1f2937; border-color: #374151; }
+  th { background: #374151; }
+  th, td { border-color: #374151; }
+  .subtitle, .muted, .card-label, footer { color: #9ca3af; }
+}
+</style>""",
+            """<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("table[data-sortable]").forEach(table => {
+    const body = table.tBodies[0];
+    table.querySelectorAll("th").forEach((header, index) => {
+      header.addEventListener("click", () => {
+        const direction = header.dataset.direction === "ascending" ? -1 : 1;
+        header.dataset.direction = direction === 1 ? "ascending" : "descending";
+        [...body.rows].sort((left, right) => {
+          const a = left.cells[index].textContent.trim();
+          const b = right.cells[index].textContent.trim();
+          const an = Number(a.replace(/[^0-9.+-]/g, ""));
+          const bn = Number(b.replace(/[^0-9.+-]/g, ""));
+          if (Number.isFinite(an) && Number.isFinite(bn) && a !== "" && b !== "") {
+            return (an - bn) * direction;
+          }
+          return a.localeCompare(b) * direction;
+        }).forEach(row => body.appendChild(row));
+      });
+    });
+  });
+});
+</script>""",
+            "</head><body><main>",
+            f"<h1>Elisa profile</h1><p class=\"subtitle\">{escape(report['source'])}</p>",
+            '<div class="cards">',
+            f'<div class="card"><div class="card-label">Status</div><div class="card-value">{escape(status)}</div></div>',
+            f'<div class="card"><div class="card-label">Events</div><div class="card-value">{summary["events"]}</div></div>',
+            f'<div class="card"><div class="card-label">Execution</div><div class="card-value">{run["execution_ms_mean"]:.3f} ms</div></div>',
+            f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
+            f'<div class="card"><div class="card-label">Peak RSS</div><div class="card-value">{escape(peak_rss)}</div></div>',
+            f'<div class="card"><div class="card-label">Locations</div><div class="card-value">{summary["locations"]}</div></div>',
+            "</div>",
+            *sections,
+            f"<footer>Schema {report['schema_version']} · compiler {escape(compiler['commit'])} · timing {'enabled' if run['location_timing'] else 'disabled'}</footer>",
+            "</main></body></html>",
+        ]
+    ) + "\n"
+
+
 def folded_report(report: dict[str, Any]) -> str:
     """Render stack aggregates in the collapsed-stack format used by flamegraphs."""
     lines: list[str] = []
@@ -890,7 +1144,9 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("source", type=Path, help="Elisa source file containing main() -> i64")
     parser.add_argument("-o", "--output", type=Path, help="write the report to this file")
-    parser.add_argument("--format", choices=("text", "json", "folded"), default="text")
+    parser.add_argument(
+        "--format", choices=("text", "json", "folded", "html"), default="text"
+    )
     parser.add_argument("--top", type=int, default=20, help="number of hot locations in text output")
     parser.add_argument("--repeat", type=int, default=1, help="number of measured executions (default: 1)")
     parser.add_argument("--warmup", type=int, default=0, help="number of unreported executions before measuring")
@@ -1128,6 +1384,8 @@ def profile(args: argparse.Namespace) -> int:
             rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"
         elif args.format == "folded":
             rendered = folded_report(report)
+        elif args.format == "html":
+            rendered = html_report(report, args.top)
         else:
             rendered = text_report(report, args.top)
         if args.output:

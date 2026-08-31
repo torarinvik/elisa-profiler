@@ -13,6 +13,12 @@ test -s "$WORK/report.json"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --repeat 2 --location-timing --format html --top 5 --output "$WORK/hot-loop.html"
+test -s "$WORK/hot-loop.html"
+grep -q '<table data-sortable>' "$WORK/hot-loop.html"
+grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
+grep -q 'main;accumulate' "$WORK/hot-loop.html"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --location-timing --format text --output "$WORK/timing.txt"
 python3 - "$WORK/timing.txt" <<'PY'
 import sys
