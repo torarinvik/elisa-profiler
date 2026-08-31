@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,8 @@ static size_t profile_size;
 static uint64_t profile_event_count;
 static uint64_t profile_dropped_count;
 static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile sig_atomic_t profile_crash_dumped;
+static volatile sig_atomic_t profile_dumped;
 
 static uint64_t profile_hash(const char *function_name, const char *variable_name,
                              uint32_t line, uint8_t kind) {
@@ -135,6 +138,11 @@ void elisa_trace_record_value(const char *function_name, uint32_t line,
     profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE);
 }
 
+/* The instrumented program asks the normal runtime to install its crash
+ * handler at function entry. The profiler owns that handler so it can dump
+ * the full collector state instead of the runtime's bounded trace ring. */
+void elisa_trace_install_fault_handler(void) {}
+
 static int profile_entry_compare(const void *left_pointer, const void *right_pointer) {
     const profile_entry *left = *(const profile_entry *const *)left_pointer;
     const profile_entry *right = *(const profile_entry *const *)right_pointer;
@@ -162,13 +170,43 @@ static void profile_print_field(const char *value) {
     }
 }
 
-static void profile_dump(void) {
-    pthread_mutex_lock(&profile_lock);
+static void profile_dump(void);
+static void profile_dump_from_signal(void);
+
+static void profile_crash_handler(int signal_number) {
+    if (!profile_crash_dumped) {
+        profile_crash_dumped = 1;
+        /*
+         * This path is intentionally diagnostic rather than async-signal-safe:
+         * preserving the trace is more useful than losing all profile data on
+         * a target fault. The handler immediately restores the default action
+         * and re-raises the original signal after dumping.
+         */
+        profile_dump_from_signal();
+    }
+    signal(signal_number, SIG_DFL);
+    raise(signal_number);
+}
+
+static void profile_install_crash_handlers(void) {
+    signal(SIGABRT, profile_crash_handler);
+    signal(SIGFPE, profile_crash_handler);
+    signal(SIGILL, profile_crash_handler);
+    signal(SIGSEGV, profile_crash_handler);
+    signal(SIGBUS, profile_crash_handler);
+    signal(SIGTERM, profile_crash_handler);
+    signal(SIGINT, profile_crash_handler);
+}
+
+static void profile_dump_body(void) {
+    if (profile_dumped) {
+        return;
+    }
+    profile_dumped = 1;
     size_t count = profile_size;
     profile_entry **entries = calloc(count == 0 ? 1 : count, sizeof(*entries));
     if (entries == NULL) {
         ++profile_dropped_count;
-        pthread_mutex_unlock(&profile_lock);
         fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t0\t%" PRIu64 "\n",
                 profile_event_count, profile_dropped_count);
         return;
@@ -198,12 +236,37 @@ static void profile_dump(void) {
         fprintf(stderr, "\t%" PRIu64 "\n", entry->last);
     }
     free(entries);
+}
+
+static void profile_dump(void) {
+    pthread_mutex_lock(&profile_lock);
+    profile_dump_body();
     pthread_mutex_unlock(&profile_lock);
+}
+
+static void profile_dump_from_signal(void) {
+    if (profile_dumped) {
+        return;
+    }
+    /*
+     * A timeout or fault may interrupt the collector while it owns the mutex.
+     * Never wait for that mutex from a signal handler. The unlocked fallback
+     * can observe one in-flight update, but preserves a usable partial report
+     * and then restores the original signal disposition.
+     */
+    if (pthread_mutex_trylock(&profile_lock) == 0) {
+        profile_dump_body();
+        pthread_mutex_unlock(&profile_lock);
+    } else {
+        profile_dump_body();
+    }
 }
 
 extern int64_t elisa_profile_target_main(void);
 
 int main(void) {
+    profile_install_crash_handlers();
+    atexit(profile_dump);
     int64_t result = elisa_profile_target_main();
     profile_dump();
     return (int)(result & 0xff);

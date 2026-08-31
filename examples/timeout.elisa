@@ -1,0 +1,5 @@
+def main() -> i64:
+    index: mutable i64 = 0
+    while true |index|:
+        index <- index + 1
+    return index
