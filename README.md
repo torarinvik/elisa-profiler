@@ -67,6 +67,8 @@ with source snippets, function call-event counts, aggregate caller-to-callee
 edges, folded call stacks, and scalar value statistics
 (minimum, maximum, sum, and last). Signed scalar values retain their signed
 interpretation instead of being reported as raw u64 bit patterns.
+The summary includes the number of distinct threads that emitted trace events,
+which makes worker activity visible in threaded targets.
 The machine-readable contract is published at
 [`docs/profile.schema.json`](docs/profile.schema.json).
 Function timing also includes mean inclusive/self duration and percentages of
@@ -132,8 +134,8 @@ entries as weights.
 The HTML format is a self-contained local report with summary cards, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies.
-The `compare` command accepts two JSON reports, shows wall/CPU/RSS and function
-timing deltas, and can return a failing status for regressions:
+The `compare` command accepts two JSON reports, shows compile/wall/CPU/RSS and
+function timing deltas, and can return a failing status for regressions:
 
     scripts/elisa-profiler compare baseline.json candidate.json \
         --threshold 10 --fail-on-regression
