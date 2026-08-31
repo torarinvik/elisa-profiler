@@ -204,6 +204,42 @@ def main() -> int:
         assert rejected.returncode == 2
         assert "baseline profile did not complete successfully" in rejected.stderr
 
+        invalid_metric = profile(20.0, 2_000, "-O2")
+        invalid_metric["functions"][0]["inclusive_ns"] = "slow"
+        invalid_metric_path = root / "invalid-metric.json"
+        invalid_metric_path.write_text(json.dumps(invalid_metric), encoding="utf-8")
+        invalid_metric_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(invalid_metric_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert invalid_metric_result.returncode == 2
+        assert "functions[0].inclusive_ns must be a finite number or null" in invalid_metric_result.stderr
+
+        nonfinite_path = root / "nonfinite.json"
+        nonfinite_path.write_text('{"schema_version": 1, "value": NaN}\n', encoding="utf-8")
+        nonfinite_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(nonfinite_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert nonfinite_result.returncode == 2
+        assert "non-finite JSON number NaN" in nonfinite_result.stderr
+
         malformed_path = root / "malformed.json"
         malformed_path.write_text(json.dumps({"schema_version": 1, "run": {}}), encoding="utf-8")
         malformed = subprocess.run(

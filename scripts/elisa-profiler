@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 from collections import defaultdict
-from typing import Any
+from typing import Any, NoReturn
 
 try:
     import resource
@@ -1211,8 +1211,11 @@ def speedscope_report(report: dict[str, Any]) -> str:
 
 def load_profile_report(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=reject_json_constant,
+        )
+    except (OSError, UnicodeError, ValueError) as error:
         raise ProfilerError(f"could not read profile report {path}: {error}") from error
     if not isinstance(value, dict):
         raise ProfilerError(f"profile report is not an object: {path}")
@@ -1243,7 +1246,120 @@ def load_profile_report(path: Path) -> dict[str, Any]:
     for section in ("functions", "call_edges", "stacks", "locations"):
         if not isinstance(value.get(section), list):
             raise ProfilerError(f"profile report section {section!r} is not an array: {path}")
+    validate_profile_report(value, path)
     return value
+
+
+def reject_json_constant(value: str) -> Any:
+    raise ValueError(f"non-finite JSON number {value}")
+
+
+def invalid_profile_field(path: Path, field: str, expected: str) -> NoReturn:
+    raise ProfilerError(f"invalid profile report {path}: {field} must be {expected}")
+
+
+def validate_profile_integer(
+    value: Any, path: Path, field: str, *, allow_null: bool = True
+) -> None:
+    if value is None and allow_null:
+        return
+    if not isinstance(value, int) or isinstance(value, bool):
+        invalid_profile_field(path, field, "an integer or null" if allow_null else "an integer")
+
+
+def validate_profile_number(value: Any, path: Path, field: str) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        invalid_profile_field(path, field, "a finite number or null")
+    if isinstance(value, float) and not math.isfinite(value):
+        invalid_profile_field(path, field, "a finite number or null")
+
+
+def validate_profile_string(value: Any, path: Path, field: str, *, allow_null: bool = True) -> None:
+    if value is None and allow_null:
+        return
+    if not isinstance(value, str):
+        invalid_profile_field(path, field, "a string or null" if allow_null else "a string")
+
+
+def validate_profile_report(report: dict[str, Any], path: Path) -> None:
+    if not isinstance(report.get("source"), str):
+        invalid_profile_field(path, "source", "a string")
+
+    for field in ("events",):
+        if field in report["summary"]:
+            validate_profile_integer(report["summary"][field], path, f"summary.{field}", allow_null=False)
+
+    run = report["run"]
+    for field in ("exit_code", "signal"):
+        if field in run:
+            validate_profile_integer(run[field], path, f"run.{field}")
+    for field in ("completed_repetitions", "successful_repetitions", "failed_repetitions"):
+        if field in run:
+            validate_profile_integer(run[field], path, f"run.{field}", allow_null=False)
+    for field in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
+        if field in run:
+            validate_profile_number(run[field], path, f"run.{field}")
+    if "opt_level" in run:
+        validate_profile_string(run["opt_level"], path, "run.opt_level")
+    if "measurement_basis" in run:
+        validate_profile_string(run["measurement_basis"], path, "run.measurement_basis")
+    if "location_timing" in run and not isinstance(run["location_timing"], bool):
+        invalid_profile_field(path, "run.location_timing", "a boolean")
+    repetitions = run.get("repetitions")
+    if "repetitions" in run:
+        if not isinstance(repetitions, list):
+            invalid_profile_field(path, "run.repetitions", "an array")
+        for index, repetition in enumerate(repetitions):
+            field_prefix = f"run.repetitions[{index}]"
+            if not isinstance(repetition, dict):
+                invalid_profile_field(path, field_prefix, "an object")
+            for field in ("exit_code", "signal"):
+                if field in repetition:
+                    validate_profile_integer(repetition[field], path, f"{field_prefix}.{field}")
+            if "timed_out" in repetition and not isinstance(repetition["timed_out"], bool):
+                invalid_profile_field(path, f"{field_prefix}.timed_out", "a boolean")
+
+    for section in ("functions", "call_edges", "stacks", "locations"):
+        for index, item in enumerate(report[section]):
+            if not isinstance(item, dict):
+                invalid_profile_field(path, f"{section}[{index}]", "an object")
+
+    function_metric_names = (
+        "events",
+        "call_events",
+        "completed_calls",
+        "inclusive_ns",
+        "self_ns",
+        "interval_ns",
+        "max_interval_ns",
+    )
+    for index, function in enumerate(report["functions"]):
+        field_prefix = f"functions[{index}]"
+        validate_profile_string(function.get("function"), path, f"{field_prefix}.function", allow_null=False)
+        for field in function_metric_names:
+            if field in function:
+                validate_profile_number(function[field], path, f"{field_prefix}.{field}")
+
+    location_metric_names = ("count", "interval_ns", "max_interval_ns")
+    for index, location in enumerate(report["locations"]):
+        field_prefix = f"locations[{index}]"
+        validate_profile_string(location.get("source"), path, f"{field_prefix}.source")
+        validate_profile_string(location.get("function"), path, f"{field_prefix}.function", allow_null=False)
+        validate_profile_string(location.get("kind"), path, f"{field_prefix}.kind", allow_null=False)
+        if location.get("kind") not in ("statement", "value", "function"):
+            invalid_profile_field(path, f"{field_prefix}.kind", "a known location kind")
+        for field in ("line", "compiler_line"):
+            if field in location:
+                validate_profile_integer(location[field], path, f"{field_prefix}.{field}", allow_null=False)
+        if "variable" in location:
+            validate_profile_string(location["variable"], path, f"{field_prefix}.variable")
+        if "signed" in location and not isinstance(location["signed"], bool):
+            invalid_profile_field(path, f"{field_prefix}.signed", "a boolean")
+        for field in location_metric_names:
+            if field in location:
+                validate_profile_number(location[field], path, f"{field_prefix}.{field}")
 
 
 def profile_numeric_value(report: dict[str, Any], section: str, name: str) -> int | float | None:
