@@ -83,6 +83,7 @@
         "compiler": { "type": "object", "additionalProperties": true },
         "opt_level": { "type": ["string", "null"] },
         "location_timing": { "type": ["boolean", "null"] },
+        "timing_clock": { "type": ["string", "null"], "enum": ["wall", "cpu", null] },
         "completed_repetitions": { "type": ["integer", "null"], "minimum": 0 },
         "successful_repetitions": { "type": ["integer", "null"], "minimum": 0 },
         "failed_repetitions": { "type": ["integer", "null"], "minimum": 0 },

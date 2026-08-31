@@ -128,7 +128,8 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
-    --location-timing      attribute wall time between trace events to locations
+    --location-timing      attribute selected clock time between trace events to locations
+    --timing-clock wall|cpu choose wall time or per-thread CPU time for location timing
     --recent-path          include the last 256 trace events in each measured run
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
@@ -141,9 +142,9 @@ arguments; richer argument/benchmark control can be added without changing the
 report schema. Repeated runs stop after the first nonzero target status and the
 report retains every completed repetition, including min/mean/median/max and
 population standard deviation for measured execution time. With
---location-timing, locations also receive attributed wall time and their
+--location-timing, locations also receive attributed time from the selected timing clock and their
 largest observed gap to the next trace event; function summaries aggregate the
-same measurements and add inclusive/self wall time plus completed-call counts.
+same measurements and add inclusive/self timing plus completed-call counts.
 Text and HTML reports also list every measured repetition with its status, wall
 time, CPU time, and peak RSS when available.
 The summary also records the maximum call-stack depth tracked by the collector
@@ -153,7 +154,9 @@ Function call-events count observed entries, while completed-call counts include
 only functions whose return hook was observed; panic and timeout reports can
 therefore contain incomplete calls. Inclusive/self timings are available with
 --location-timing. This is an opt-in diagnostic estimate: it includes collector
-overhead and is not statistical CPU sampling.
+overhead and is not statistical CPU sampling. Wall timing includes sleeps and waits;
+`--timing-clock cpu` uses each thread's CPU clock, which is often a better signal for
+compute hotspots in threaded programs.
 The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.

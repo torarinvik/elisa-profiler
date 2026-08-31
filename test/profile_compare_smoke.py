@@ -49,6 +49,7 @@ def profile(
             "exit_code": 0,
             "signal": None,
             "location_timing": location_timing,
+            "timing_clock": "wall" if location_timing else None,
             "opt_level": opt_level,
             "execution_ms_mean": execution_ms,
             "compile_ms": 1.0,
@@ -156,6 +157,37 @@ def main() -> int:
         assert comparison["locations"][0]["line"] == 3
         assert comparison["locations"][0]["interval_ns"]["percent"] is None
         assert any("became non-zero" in item["message"] for item in comparison["regressions"])
+
+        different_clock_candidate = profile(10.0, 1_000, "-O0")
+        different_clock_candidate["run"]["timing_clock"] = "cpu"
+        different_clock_path = root / "different-clock-candidate.json"
+        different_clock_comparison_path = root / "different-clock-comparison.json"
+        different_clock_path.write_text(
+            json.dumps(different_clock_candidate), encoding="utf-8"
+        )
+        different_clock_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(different_clock_path),
+                "--format",
+                "json",
+                "--output",
+                str(different_clock_comparison_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert different_clock_result.returncode == 0, different_clock_result.stderr
+        different_clock_comparison = json.loads(
+            different_clock_comparison_path.read_text(encoding="utf-8")
+        )
+        assert "baseline and candidate use different timing clocks" in different_clock_comparison[
+            "warnings"
+        ]
 
         count_baseline = profile(10.0, 0, "-O0", location_timing=False)
         count_candidate = profile(10.0, 0, "-O0", location_timing=False)

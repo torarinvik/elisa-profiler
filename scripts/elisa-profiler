@@ -708,6 +708,8 @@ def text_report(report: dict[str, Any], top: int) -> str:
     ]
     if run["timeout_s"] is not None:
         lines[1] += f" timeout={run['timeout_s']}s"
+    if run.get("timing_clock") is not None:
+        lines[1] += f" timing-clock={run['timing_clock']}"
     if run["cpu_ms"] is not None:
         lines[1] += (
             f" cpu={run['cpu_ms']:.3f} ms"
@@ -1144,6 +1146,7 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">Successful runs</div><div class="card-value">{run["successful_repetitions"]}/{run["completed_repetitions"]}</div></div>',
             f'<div class="card"><div class="card-label">Aggregate basis</div><div class="card-value">{escape(run["measurement_basis"])}</div></div>',
             f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
+            f'<div class="card"><div class="card-label">Timing clock</div><div class="card-value">{escape(run.get("timing_clock") or "disabled")}</div></div>',
             f'<div class="card"><div class="card-label">Peak RSS</div><div class="card-value">{escape(peak_rss)}</div></div>',
             f'<div class="card"><div class="card-label">Locations</div><div class="card-value">{summary["locations"]}</div></div>',
             f'<div class="card"><div class="card-label">Threads</div><div class="card-value">{summary["thread_count"]}</div></div>',
@@ -1303,6 +1306,10 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
             validate_profile_number(run[field], path, f"run.{field}")
     if "opt_level" in run:
         validate_profile_string(run["opt_level"], path, "run.opt_level")
+    if "timing_clock" in run:
+        validate_profile_string(run["timing_clock"], path, "run.timing_clock")
+        if run["timing_clock"] not in (None, "wall", "cpu"):
+            invalid_profile_field(path, "run.timing_clock", "'wall', 'cpu', or null")
     if "measurement_basis" in run:
         validate_profile_string(run["measurement_basis"], path, "run.measurement_basis")
     if "location_timing" in run and not isinstance(run["location_timing"], bool):
@@ -1487,6 +1494,7 @@ def comparison_identity(report: dict[str, Any], path: Path) -> dict[str, Any]:
         "compiler": report.get("compiler", {}),
         "opt_level": run.get("opt_level"),
         "location_timing": run.get("location_timing"),
+        "timing_clock": run.get("timing_clock"),
         "completed_repetitions": run.get("completed_repetitions"),
         "successful_repetitions": run.get("successful_repetitions"),
         "failed_repetitions": run.get("failed_repetitions"),
@@ -1809,6 +1817,8 @@ def build_comparison_report(
         warnings.append("baseline and candidate use different source paths")
     if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
         warnings.append("baseline and candidate use different location-timing settings")
+    if baseline["run"].get("timing_clock") != candidate_run.get("timing_clock"):
+        warnings.append("baseline and candidate use different timing clocks")
     baseline_successful = baseline["run"].get("successful_repetitions")
     candidate_successful = candidate_run.get("successful_repetitions")
     if (
@@ -2143,6 +2153,7 @@ def build_report(
     temp_root: Path | None,
     recent_events: list[dict[str, Any]],
     active_stack: dict[str, Any] | None,
+    timing_clock: str | None = None,
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
@@ -2278,6 +2289,7 @@ def build_report(
             "exit_code": exit_code,
             "signal": signal,
             "location_timing": location_timing,
+            "timing_clock": timing_clock,
             "opt_level": opt_level,
             "execution_ms": execution_ms,
             "timeout_s": timeout_s,
@@ -2376,7 +2388,13 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--location-timing",
         action="store_true",
-        help="attribute wall time between trace events to source locations",
+        help="attribute time between trace events to source locations",
+    )
+    parser.add_argument(
+        "--timing-clock",
+        choices=("wall", "cpu"),
+        default="wall",
+        help="clock for --location-timing: wall time or per-thread CPU time (default: wall)",
     )
     parser.add_argument(
         "--recent-path",
@@ -2476,6 +2494,11 @@ def profile(args: argparse.Namespace) -> int:
                 "-std=c11",
                 "-O2",
                 *(["-DELISA_PROFILE_TIMING=1"] if args.location_timing else []),
+                *(
+                    ["-DELISA_PROFILE_CPU_TIMING=1"]
+                    if args.location_timing and args.timing_clock == "cpu"
+                    else []
+                ),
                 "-fno-builtin",
                 "-pthread",
                 "-c",
@@ -2639,6 +2662,7 @@ def profile(args: argparse.Namespace) -> int:
             warmup_repetitions=args.warmup,
             timeout_s=args.timeout,
             location_timing=args.location_timing,
+            timing_clock=args.timing_clock if args.location_timing else None,
             opt_level=f"-O{args.opt_level}",
             compile_ms=compile_ms,
             program_stderr="" if args.show_output else program_stderr,

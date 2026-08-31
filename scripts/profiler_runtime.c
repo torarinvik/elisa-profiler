@@ -10,6 +10,10 @@
 #define ELISA_PROFILE_TIMING 0
 #endif
 
+#ifndef ELISA_PROFILE_CPU_TIMING
+#define ELISA_PROFILE_CPU_TIMING 0
+#endif
+
 #if ELISA_PROFILE_TIMING
 #include <time.h>
 #endif
@@ -160,7 +164,11 @@ static _Thread_local profile_thread_state *profile_current_thread;
 #if ELISA_PROFILE_TIMING
 static uint64_t profile_now_ns(void) {
     struct timespec timestamp;
+#if ELISA_PROFILE_CPU_TIMING
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &timestamp) != 0) {
+#else
     if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0) {
+#endif
         return 0;
     }
     return (uint64_t)timestamp.tv_sec * UINT64_C(1000000000) +
@@ -422,6 +430,20 @@ static profile_thread_state *profile_get_thread_locked(void) {
 }
 
 #if ELISA_PROFILE_TIMING
+static uint64_t profile_now_ns_for_thread(const profile_thread_state *thread) {
+#if ELISA_PROFILE_CPU_TIMING
+    /* macOS does not expose pthread_getcpuclockid. Never use the dumping
+     * thread's CPU clock to flush a different thread's timing cursor. */
+    if (thread != profile_current_thread) {
+        return 0;
+    }
+    return profile_now_ns();
+#else
+    (void)thread;
+    return profile_now_ns();
+#endif
+}
+
 static void profile_account_previous_locked(profile_thread_state *thread,
                                              uint64_t now_ns) {
     if (thread == NULL) {
@@ -884,11 +906,10 @@ static void profile_dump_body(void) {
 #if ELISA_PROFILE_TIMING
     /* A worker can finish after its final trace event. Keep every thread's
      * cursor alive so its trailing interval is attributed before shutdown. */
-    uint64_t now_ns = profile_now_ns();
     for (profile_thread_state *thread = profile_threads;
          thread != NULL;
          thread = thread->next) {
-        profile_account_previous_locked(thread, now_ns);
+        profile_account_previous_locked(thread, profile_now_ns_for_thread(thread));
     }
 #endif
     profile_dumped = 1;

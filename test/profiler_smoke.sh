@@ -13,6 +13,22 @@ test -s "$WORK/report.json"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --repeat 2 --location-timing --timing-clock cpu --format json \
+    --output "$WORK/cpu-timing-report.json"
+python3 - "$WORK/cpu-timing-report.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    cpu_report = json.load(stream)
+
+assert cpu_report["run"]["location_timing"] is True
+assert cpu_report["run"]["timing_clock"] == "cpu"
+assert cpu_report["run"]["execution_ms_mean"] > 0
+assert any(function["inclusive_ns"] > 0 for function in cpu_report["functions"])
+print("CPU timing smoke OK")
+PY
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format speedscope --output "$WORK/hot-loop.speedscope.json"
 test -s "$WORK/hot-loop.speedscope.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
@@ -23,6 +39,7 @@ grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
 grep -q 'main;accumulate' "$WORK/hot-loop.html"
 grep -q 'Max stack depth' "$WORK/hot-loop.html"
 grep -q 'Optimization' "$WORK/hot-loop.html"
+grep -q 'Timing clock' "$WORK/hot-loop.html"
 grep -q 'Compile' "$WORK/hot-loop.html"
 grep -q 'Definition' "$WORK/hot-loop.html"
 grep -q 'Measured repetitions' "$WORK/hot-loop.html"
@@ -59,6 +76,7 @@ assert "run 2: exit 0" in text
 assert "compile=" in text
 assert "trace=" in text
 assert "opt=-O0" in text
+assert "timing-clock=wall" in text
 assert "Elisa profile comparison" in comparison_text
 assert "wall mean:" in comparison_text
 assert "Source locations" in comparison_text
@@ -105,6 +123,9 @@ test -s "$WORK/deep-recursion-report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/threaded.elisa" \
     --repeat 2 --location-timing --format json --output "$WORK/threaded-report.json"
 test -s "$WORK/threaded-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/threaded.elisa" \
+    --location-timing --timing-clock cpu --format json --output "$WORK/threaded-cpu-report.json"
+test -s "$WORK/threaded-cpu-report.json"
 
 python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
 import json
@@ -352,6 +373,25 @@ assert worker_tail["max_interval_ns"] >= 1_000_000
 print("threaded profiling OK")
 PY
 
+python3 - "$WORK/threaded-cpu-report.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+
+assert report["run"]["location_timing"] is True
+assert report["run"]["timing_clock"] == "cpu"
+worker = next(function for function in report["functions"] if function["function"] == "worker")
+assert worker["inclusive_ns"] > 0
+worker_tail = next(
+    location for location in report["locations"]
+    if location["function"] == "worker" and "usleep" in (location.get("source_text") or "")
+)
+assert worker_tail["max_interval_ns"] < 1_000_000
+print("threaded CPU timing OK")
+PY
+
 set +e
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/crash.elisa" \
     --format json --output "$WORK/crash-report.json"
@@ -423,8 +463,8 @@ print("timeout capture OK")
 PY
 
 python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile.schema.json" \
-    "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" \
+    "$WORK/report.json" "$WORK/cpu-timing-report.json" "$WORK/included-report.json" "$WORK/signed-report.json" \
     "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" \
-    "$WORK/crash-report.json" "$WORK/timeout-report.json"
+    "$WORK/threaded-cpu-report.json" "$WORK/crash-report.json" "$WORK/timeout-report.json"
 python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile-comparison.schema.json" \
     "$WORK/comparison.json"
