@@ -467,6 +467,11 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"  {function['events']:>12}  {function['function']}"
             f" (calls={function['call_events']})"
         )
+        if run["location_timing"]:
+            lines[-1] += (
+                f", attributed={function['interval_ns'] / 1_000_000:.3f} ms"
+                f", max-gap={function['max_interval_ns'] / 1_000_000:.3f} ms"
+            )
     recent_events = report.get("recent_events", [])
     if recent_events:
         shown_events = recent_events[-top:]
@@ -519,12 +524,18 @@ def build_report(
             "value_events": 0,
             "call_events": 0,
             "locations": 0,
+            "interval_ns": 0,
+            "max_interval_ns": 0,
         }
     )
     for location in locations:
         stats = function_stats[location["function"]]
         stats["events"] += location["count"]
         stats["locations"] += 1
+        stats["interval_ns"] += location["interval_ns"]
+        stats["max_interval_ns"] = max(
+            stats["max_interval_ns"], location["max_interval_ns"]
+        )
         if location["kind"] == "value":
             stats["value_events"] += location["count"]
         elif location["kind"] == "function":

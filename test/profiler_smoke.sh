@@ -41,6 +41,8 @@ assert report["run"]["completed_repetitions"] == 2
 assert report["run"]["location_timing"] is True
 assert max(location["max_interval_ns"] for location in report["locations"]) > 0
 assert report["functions"][0]["function"] == "accumulate"
+assert report["functions"][0]["interval_ns"] > 0
+assert report["functions"][0]["max_interval_ns"] > 0
 assert report["functions"][0]["locations"] == 11
 assert report["functions"][0]["statement_events"] == 50
 assert report["functions"][0]["value_events"] == 44

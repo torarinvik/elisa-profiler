@@ -75,7 +75,7 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
-    --location-timing      attribute wall time between trace events to locations
+--location-timing      attribute wall time between trace events to locations
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable
@@ -88,7 +88,8 @@ report schema. Repeated runs stop after the first nonzero target status and the
 report retains every completed repetition, including min/mean/median/max and
 population standard deviation for measured execution time. With
 --location-timing, locations also receive attributed wall time and their
-largest observed gap to the next trace event. This is an opt-in diagnostic
-estimate: it includes collector overhead and is not statistical CPU sampling.
+largest observed gap to the next trace event; function summaries aggregate the
+same measurements. This is an opt-in diagnostic estimate: it includes collector
+overhead and is not statistical CPU sampling.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler.
