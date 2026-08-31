@@ -191,7 +191,11 @@
         "trace_dropped": { "type": "integer", "minimum": 0 },
         "trace_threads": { "type": "integer", "minimum": 0 },
         "trace_max_stack_depth": { "type": "integer", "minimum": 0 },
-        "trace_stack_overflow_entries": { "type": "integer", "minimum": 0 }
+        "trace_stack_overflow_entries": { "type": "integer", "minimum": 0 },
+        "recent_events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/recent_event" }
+        }
       },
       "additionalProperties": true
     },

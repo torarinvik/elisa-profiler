@@ -1912,6 +1912,10 @@ def build_report(
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
+    for record in run_records:
+        record_recent_events = record.get("recent_events")
+        if isinstance(record_recent_events, list) and record_recent_events is not recent_events:
+            add_source_context(source, record_recent_events)
     function_stats: defaultdict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "events": 0,
@@ -2134,7 +2138,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--recent-path",
         action="store_true",
-        help="include the last 256 trace events for successful runs",
+        help="include the last 256 trace events for each measured run",
     )
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
     parser.add_argument(
@@ -2331,6 +2335,8 @@ def profile(args: argparse.Namespace) -> int:
                 "trace_max_stack_depth": meta.get("max_stack_depth", 0),
                 "trace_stack_overflow_entries": meta.get("stack_overflow_entries", 0),
             }
+            if recent_events:
+                run_record["recent_events"] = recent_events
             run_records.append(run_record)
             profile_results.append(
                 (

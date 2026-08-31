@@ -127,6 +127,15 @@ assert report["run"]["location_timing"] is True
 assert report["run"]["opt_level"] == "-O0"
 assert report["recent_events"]
 assert report["recent_events"][-1]["function"] == "main"
+assert all(repetition["recent_events"] for repetition in report["run"]["repetitions"])
+assert report["run"]["repetitions"][-1]["recent_events"] == report["recent_events"]
+assert all(
+    "compiler_line" in event
+    and "source" in event
+    and "source_text" in event
+    for repetition in report["run"]["repetitions"]
+    for event in repetition["recent_events"]
+)
 assert report["run"]["cpu_ms"] is not None
 assert report["run"]["cpu_ms"] >= 0
 assert all(repetition["cpu_ms"] is not None for repetition in report["run"]["repetitions"])
