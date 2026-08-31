@@ -45,7 +45,7 @@ def main() -> int:
         )
         target.chmod(0o755)
 
-        status, stdout, stderr, timed_out = profiler.execute_program(target, 1.0)
+        status, stdout, stderr, timed_out, _ = profiler.execute_program(target, 1.0)
         assert timed_out is True, (status, stdout, stderr)
         assert child_pid_file.is_file(), "target did not launch its child before timeout"
         child_pid = int(child_pid_file.read_text(encoding="utf-8"))

@@ -72,6 +72,10 @@ retains event-count ordering.
 Each measured repetition also records child user/system CPU time when the host
 provides Python's `resource` interface; aggregate CPU time is kept separate
 from wall-clock execution time.
+On macOS, measured repetitions also record `peak_rss_bytes`, the profiled
+child's peak resident set size; the aggregate field is the largest measured
+repetition. A timed-out child may terminate before the operating-system
+resource wrapper can write this optional value.
 Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records
@@ -89,7 +93,7 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
---location-timing      attribute wall time between trace events to locations
+    --location-timing      attribute wall time between trace events to locations
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable

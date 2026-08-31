@@ -58,6 +58,11 @@ assert report["run"]["cpu_ms"] is not None
 assert report["run"]["cpu_ms"] >= 0
 assert all(repetition["cpu_ms"] is not None for repetition in report["run"]["repetitions"])
 assert all(repetition["cpu_ms"] >= 0 for repetition in report["run"]["repetitions"])
+assert "peak_rss_bytes" in report["run"]
+assert all("peak_rss_bytes" in repetition for repetition in report["run"]["repetitions"])
+if sys.platform == "darwin":
+    assert report["run"]["peak_rss_bytes"] > 0
+    assert all(repetition["peak_rss_bytes"] > 0 for repetition in report["run"]["repetitions"])
 assert max(location["max_interval_ns"] for location in report["locations"]) > 0
 assert report["functions"][0]["function"] == "accumulate"
 assert report["functions"][0]["interval_ns"] > 0
@@ -259,5 +264,7 @@ assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 15
 assert report["run"]["repetitions"][0]["timed_out"] is True
 assert report["run"]["timeout_s"] == 0.1
+assert "peak_rss_bytes" in report["run"]
+assert "peak_rss_bytes" in report["run"]["repetitions"][0]
 print("timeout capture OK")
 PY
