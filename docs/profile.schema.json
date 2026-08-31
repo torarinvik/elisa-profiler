@@ -41,7 +41,8 @@
         "value_events",
         "function_events",
         "max_stack_depth",
-        "stack_overflow_entries"
+        "stack_overflow_entries",
+        "thread_count"
       ],
       "properties": {
         "events": { "type": "integer", "minimum": 0 },
@@ -51,7 +52,8 @@
         "value_events": { "type": "integer", "minimum": 0 },
         "function_events": { "type": "integer", "minimum": 0 },
         "max_stack_depth": { "type": "integer", "minimum": 0 },
-        "stack_overflow_entries": { "type": "integer", "minimum": 0 }
+        "stack_overflow_entries": { "type": "integer", "minimum": 0 },
+        "thread_count": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": true
     },

@@ -86,6 +86,7 @@ assert report["summary"]["events"] == 104
 assert report["summary"]["dropped"] == 0
 assert report["summary"]["max_stack_depth"] == 2
 assert report["summary"]["stack_overflow_entries"] == 0
+assert report["summary"]["thread_count"] == 1
 assert (
     report["summary"]["statement_events"]
     + report["summary"]["value_events"]
@@ -287,6 +288,7 @@ assert report["run"]["exit_code"] == 0
 assert report["run"]["completed_repetitions"] == 2
 assert report["summary"]["dropped"] == 0
 assert report["summary"]["max_stack_depth"] == 1
+assert report["summary"]["thread_count"] >= 3
 worker = next(function for function in report["functions"] if function["function"] == "worker")
 assert worker["call_events"] == worker["completed_calls"] == 4
 assert worker["inclusive_ns"] > 0

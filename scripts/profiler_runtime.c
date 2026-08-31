@@ -78,6 +78,7 @@ static size_t profile_capacity;
 static size_t profile_size;
 static uint64_t profile_event_count;
 static uint64_t profile_dropped_count;
+static uint64_t profile_thread_count;
 static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t profile_crash_dumped;
 static volatile sig_atomic_t profile_dumped;
@@ -108,6 +109,7 @@ typedef struct {
 static _Thread_local profile_call_frame profile_call_stack[PROFILE_CALL_STACK_CAPACITY];
 static _Thread_local size_t profile_call_depth;
 static _Thread_local size_t profile_call_overflow_depth;
+static _Thread_local int profile_thread_seen;
 
 #if ELISA_PROFILE_TIMING
 /* Location timing is accumulated in the process-wide table, but the cursor
@@ -426,6 +428,10 @@ static void profile_record(const char *function_name, uint32_t line,
                            uint8_t is_signed, size_t call_depth,
                            int stack_overflowed) {
     pthread_mutex_lock(&profile_lock);
+    if (!profile_thread_seen) {
+        ++profile_thread_count;
+        profile_thread_seen = 1;
+    }
     if (call_depth > profile_max_call_depth) {
         profile_max_call_depth = call_depth;
     }
@@ -831,9 +837,10 @@ static void profile_dump_body(void) {
     if (entries == NULL) {
         ++profile_dropped_count;
         fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t0\t%" PRIu64
-                        "\t%zu\t%" PRIu64 "\n",
+                        "\t%zu\t%" PRIu64 "\t%" PRIu64 "\n",
                 profile_event_count, profile_dropped_count,
-                profile_max_call_depth, profile_stack_overflow_entries);
+                profile_max_call_depth, profile_stack_overflow_entries,
+                profile_thread_count);
         if (profile_crash_dumped) {
             profile_dump_recent_path();
             profile_dump_active_stack();
@@ -849,9 +856,10 @@ static void profile_dump_body(void) {
     }
     qsort(entries, output_count, sizeof(*entries), profile_entry_compare);
     fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t%zu\t%" PRIu64
-                    "\t%zu\t%" PRIu64 "\n",
+                    "\t%zu\t%" PRIu64 "\t%" PRIu64 "\n",
             profile_event_count, output_count, profile_dropped_count,
-            profile_max_call_depth, profile_stack_overflow_entries);
+            profile_max_call_depth, profile_stack_overflow_entries,
+            profile_thread_count);
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];
         fprintf(stderr, "ELISA_PROFILE\t1\tlocation\t%u\t", entry->kind);
