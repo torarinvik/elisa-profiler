@@ -311,3 +311,8 @@ assert report["active_stack"] == {
 }
 print("timeout capture OK")
 PY
+
+python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile.schema.json" \
+    "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" \
+    "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" \
+    "$WORK/crash-report.json" "$WORK/timeout-report.json"

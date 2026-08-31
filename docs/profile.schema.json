@@ -1,0 +1,318 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elisa-lang.org/schemas/profile-v1.json",
+  "title": "Elisa profiler report",
+  "description": "Machine-readable output from scripts/elisa-profiler --format json.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source",
+    "compiler",
+    "summary",
+    "source_mapping",
+    "run",
+    "functions",
+    "call_edges",
+    "stacks",
+    "locations"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "source": { "type": "string" },
+    "compiler": {
+      "type": "object",
+      "required": ["root", "branch", "commit", "dirty", "runtime_object"],
+      "properties": {
+        "root": { "type": "string" },
+        "branch": { "type": "string" },
+        "commit": { "type": "string" },
+        "dirty": { "type": "boolean" },
+        "runtime_object": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "events",
+        "locations",
+        "dropped",
+        "statement_events",
+        "value_events",
+        "function_events",
+        "max_stack_depth",
+        "stack_overflow_entries"
+      ],
+      "properties": {
+        "events": { "type": "integer", "minimum": 0 },
+        "locations": { "type": "integer", "minimum": 0 },
+        "dropped": { "type": "integer", "minimum": 0 },
+        "statement_events": { "type": "integer", "minimum": 0 },
+        "value_events": { "type": "integer", "minimum": 0 },
+        "function_events": { "type": "integer", "minimum": 0 },
+        "max_stack_depth": { "type": "integer", "minimum": 0 },
+        "stack_overflow_entries": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "source_mapping": {
+      "type": "object",
+      "required": ["mode", "mapped_locations", "unmapped_locations"],
+      "properties": {
+        "mode": { "type": "string" },
+        "mapped_locations": { "type": "integer", "minimum": 0 },
+        "unmapped_locations": { "type": "integer", "minimum": 0 },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "exit_code",
+        "signal",
+        "location_timing",
+        "execution_ms",
+        "timeout_s",
+        "execution_ms_min",
+        "execution_ms_mean",
+        "execution_ms_max",
+        "execution_ms_median",
+        "execution_ms_stdev",
+        "cpu_user_ms",
+        "cpu_system_ms",
+        "cpu_ms",
+        "peak_rss_bytes",
+        "warmup_ms",
+        "warmup_repetitions",
+        "requested_repetitions",
+        "completed_repetitions",
+        "repetitions",
+        "compile_ms"
+      ],
+      "properties": {
+        "exit_code": { "type": ["integer", "null"] },
+        "signal": { "type": ["integer", "null"] },
+        "location_timing": { "type": "boolean" },
+        "execution_ms": { "type": "number", "minimum": 0 },
+        "timeout_s": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "execution_ms_min": { "type": "number", "minimum": 0 },
+        "execution_ms_mean": { "type": "number", "minimum": 0 },
+        "execution_ms_max": { "type": "number", "minimum": 0 },
+        "execution_ms_median": { "type": "number", "minimum": 0 },
+        "execution_ms_stdev": { "type": "number", "minimum": 0 },
+        "cpu_user_ms": { "type": ["number", "null"], "minimum": 0 },
+        "cpu_system_ms": { "type": ["number", "null"], "minimum": 0 },
+        "cpu_ms": { "type": ["number", "null"], "minimum": 0 },
+        "peak_rss_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "warmup_ms": { "type": "number", "minimum": 0 },
+        "warmup_repetitions": { "type": "integer", "minimum": 0 },
+        "requested_repetitions": { "type": "integer", "minimum": 1 },
+        "completed_repetitions": { "type": "integer", "minimum": 1 },
+        "repetitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/repetition" }
+        },
+        "compile_ms": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "functions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/function" }
+    },
+    "call_edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/call_edge" }
+    },
+    "stacks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stack" }
+    },
+    "locations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/location" }
+    },
+    "recent_events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/recent_event" }
+    },
+    "active_stack": { "$ref": "#/$defs/active_stack" },
+    "program_stderr": { "type": "string" },
+    "artifacts": { "type": "object", "additionalProperties": true }
+  },
+  "$defs": {
+    "repetition": {
+      "type": "object",
+      "required": [
+        "repetition",
+        "requested_repetitions",
+        "exit_code",
+        "signal",
+        "execution_ms",
+        "timed_out",
+        "cpu_user_ms",
+        "cpu_system_ms",
+        "cpu_ms",
+        "peak_rss_bytes"
+      ],
+      "properties": {
+        "repetition": { "type": "integer", "minimum": 1 },
+        "requested_repetitions": { "type": "integer", "minimum": 1 },
+        "exit_code": { "type": ["integer", "null"] },
+        "signal": { "type": ["integer", "null"] },
+        "execution_ms": { "type": "number", "minimum": 0 },
+        "timed_out": { "type": "boolean" },
+        "cpu_user_ms": { "type": ["number", "null"], "minimum": 0 },
+        "cpu_system_ms": { "type": ["number", "null"], "minimum": 0 },
+        "cpu_ms": { "type": ["number", "null"], "minimum": 0 },
+        "peak_rss_bytes": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "definition": {
+      "type": "object",
+      "required": ["source", "line", "compiler_line", "source_text"],
+      "properties": {
+        "source": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "compiler_line": { "type": "integer", "minimum": 1 },
+        "source_text": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "function": {
+      "type": "object",
+      "required": [
+        "function",
+        "events",
+        "statement_events",
+        "value_events",
+        "call_events",
+        "locations",
+        "interval_ns",
+        "max_interval_ns",
+        "inclusive_ns",
+        "self_ns",
+        "completed_calls",
+        "definitions",
+        "mean_inclusive_ns",
+        "mean_self_ns",
+        "inclusive_percent",
+        "self_percent"
+      ],
+      "properties": {
+        "function": { "type": "string" },
+        "events": { "type": "integer", "minimum": 0 },
+        "statement_events": { "type": "integer", "minimum": 0 },
+        "value_events": { "type": "integer", "minimum": 0 },
+        "call_events": { "type": "integer", "minimum": 0 },
+        "locations": { "type": "integer", "minimum": 0 },
+        "interval_ns": { "type": "integer", "minimum": 0 },
+        "max_interval_ns": { "type": "integer", "minimum": 0 },
+        "inclusive_ns": { "type": "integer", "minimum": 0 },
+        "self_ns": { "type": "integer", "minimum": 0 },
+        "completed_calls": { "type": "integer", "minimum": 0 },
+        "definitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/definition" }
+        },
+        "mean_inclusive_ns": { "type": "integer", "minimum": 0 },
+        "mean_self_ns": { "type": "integer", "minimum": 0 },
+        "inclusive_percent": { "type": "number", "minimum": 0 },
+        "self_percent": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "call_edge": {
+      "type": "object",
+      "required": ["caller", "callee", "call_events", "completed_calls", "inclusive_ns"],
+      "properties": {
+        "caller": { "type": "string" },
+        "callee": { "type": "string" },
+        "call_events": { "type": "integer", "minimum": 0 },
+        "completed_calls": { "type": "integer", "minimum": 0 },
+        "inclusive_ns": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "stack": {
+      "type": "object",
+      "required": ["stack", "call_events", "completed_calls", "self_ns"],
+      "properties": {
+        "stack": { "type": "string" },
+        "call_events": { "type": "integer", "minimum": 0 },
+        "completed_calls": { "type": "integer", "minimum": 0 },
+        "self_ns": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "location": {
+      "type": "object",
+      "required": [
+        "kind",
+        "function",
+        "line",
+        "count",
+        "interval_ns",
+        "max_interval_ns",
+        "compiler_line",
+        "source",
+        "source_text"
+      ],
+      "properties": {
+        "kind": { "enum": ["statement", "value", "function"] },
+        "function": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "count": { "type": "integer", "minimum": 0 },
+        "interval_ns": { "type": "integer", "minimum": 0 },
+        "max_interval_ns": { "type": "integer", "minimum": 0 },
+        "compiler_line": { "type": "integer", "minimum": 1 },
+        "source": { "type": "string" },
+        "source_text": { "type": ["string", "null"] },
+        "variable": { "type": ["string", "null"] },
+        "signed": { "type": "boolean" },
+        "minimum": { "type": "integer" },
+        "maximum": { "type": "integer" },
+        "sum": { "type": ["integer", "null"] },
+        "last": { "type": "integer" },
+        "inclusive_ns": { "type": "integer", "minimum": 0 },
+        "self_ns": { "type": "integer", "minimum": 0 },
+        "completed_calls": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "recent_event": {
+      "type": "object",
+      "required": ["sequence", "kind", "function", "line", "variable", "signed", "value"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "kind": { "enum": ["statement", "value", "function"] },
+        "function": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "variable": { "type": ["string", "null"] },
+        "signed": { "type": "boolean" },
+        "value": { "type": "integer" },
+        "compiler_line": { "type": "integer", "minimum": 1 },
+        "source": { "type": "string" },
+        "source_text": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "active_stack": {
+      "type": "object",
+      "required": ["tracked_depth", "overflow_depth", "stack"],
+      "properties": {
+        "tracked_depth": { "type": "integer", "minimum": 0 },
+        "overflow_depth": { "type": "integer", "minimum": 0 },
+        "stack": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
