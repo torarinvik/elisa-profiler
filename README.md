@@ -82,6 +82,9 @@ retains event-count ordering.
 Each measured repetition also records child user/system CPU time when the host
 provides Python's `resource` interface; aggregate CPU time is kept separate
 from wall-clock execution time.
+Each repetition also records its trace event/location totals, traced-thread
+count, dropped-event count, and stack-depth diagnostics, so merged reports can
+be audited run by run.
 On macOS, measured repetitions also record `peak_rss_bytes`, the profiled
 child's peak resident set size; the aggregate field is the largest measured
 repetition. A timed-out child may terminate before the operating-system

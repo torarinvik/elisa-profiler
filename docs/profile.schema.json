@@ -159,7 +159,13 @@
         "cpu_user_ms",
         "cpu_system_ms",
         "cpu_ms",
-        "peak_rss_bytes"
+        "peak_rss_bytes",
+        "trace_events",
+        "trace_locations",
+        "trace_dropped",
+        "trace_threads",
+        "trace_max_stack_depth",
+        "trace_stack_overflow_entries"
       ],
       "properties": {
         "repetition": { "type": "integer", "minimum": 1 },
@@ -171,7 +177,13 @@
         "cpu_user_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_system_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_ms": { "type": ["number", "null"], "minimum": 0 },
-        "peak_rss_bytes": { "type": ["integer", "null"], "minimum": 0 }
+        "peak_rss_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "trace_events": { "type": "integer", "minimum": 0 },
+        "trace_locations": { "type": "integer", "minimum": 0 },
+        "trace_dropped": { "type": "integer", "minimum": 0 },
+        "trace_threads": { "type": "integer", "minimum": 0 },
+        "trace_max_stack_depth": { "type": "integer", "minimum": 0 },
+        "trace_stack_overflow_entries": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": true
     },

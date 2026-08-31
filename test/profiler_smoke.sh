@@ -51,6 +51,7 @@ assert "Measured repetitions:" in text
 assert "run 1: exit 0" in text
 assert "run 2: exit 0" in text
 assert "compile=" in text
+assert "trace=" in text
 assert "opt=-O0" in text
 assert "Elisa profile comparison" in comparison_text
 assert "wall mean:" in comparison_text
@@ -115,6 +116,9 @@ assert report["run"]["cpu_ms"] is not None
 assert report["run"]["cpu_ms"] >= 0
 assert all(repetition["cpu_ms"] is not None for repetition in report["run"]["repetitions"])
 assert all(repetition["cpu_ms"] >= 0 for repetition in report["run"]["repetitions"])
+assert all(repetition["trace_events"] > 0 for repetition in report["run"]["repetitions"])
+assert all(repetition["trace_threads"] == 1 for repetition in report["run"]["repetitions"])
+assert all(repetition["trace_dropped"] == 0 for repetition in report["run"]["repetitions"])
 assert "peak_rss_bytes" in report["run"]
 assert all("peak_rss_bytes" in repetition for repetition in report["run"]["repetitions"])
 if sys.platform == "darwin":

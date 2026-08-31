@@ -714,6 +714,11 @@ def text_report(report: dict[str, Any], top: int) -> str:
             detail += (
                 f", peak-rss={repetition['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
             )
+        detail += (
+            f", trace={repetition['trace_events']} events"
+            f", threads={repetition['trace_threads']}"
+            f", dropped={repetition['trace_dropped']}"
+        )
         lines.append(detail)
     display_locations = report["locations"]
     if run["location_timing"]:
@@ -995,12 +1000,15 @@ def html_report(report: dict[str, Any], top: int) -> str:
                     if repetition["peak_rss_bytes"] is not None
                     else "unavailable"
                 ),
+                repetition["trace_events"],
+                repetition["trace_threads"],
+                repetition["trace_dropped"],
             ]
         )
     sections = [
         html_table(
             "Measured repetitions",
-            ["Run", "Status", "Wall time", "CPU", "Peak RSS"],
+            ["Run", "Status", "Wall time", "CPU", "Peak RSS", "Trace events", "Threads", "Dropped"],
             repetition_rows,
         ),
         html_table(
@@ -2062,6 +2070,12 @@ def profile(args: argparse.Namespace) -> int:
                 "cpu_system_ms": cpu_delta[1] if cpu_delta is not None else None,
                 "cpu_ms": sum(cpu_delta) if cpu_delta is not None else None,
                 "peak_rss_bytes": peak_rss_bytes,
+                "trace_events": meta["events"],
+                "trace_locations": meta["locations"],
+                "trace_dropped": meta["dropped"],
+                "trace_threads": meta.get("thread_count", 0),
+                "trace_max_stack_depth": meta.get("max_stack_depth", 0),
+                "trace_stack_overflow_entries": meta.get("stack_overflow_entries", 0),
             }
             run_records.append(run_record)
             profile_results.append(
