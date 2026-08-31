@@ -12,6 +12,7 @@
     "threshold_percent",
     "metrics",
     "functions",
+    "locations",
     "warnings",
     "regressions",
     "status"
@@ -37,6 +38,10 @@
     "functions": {
       "type": "array",
       "items": { "$ref": "#/$defs/function_change" }
+    },
+    "locations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/location_change" }
     },
     "warnings": {
       "type": "array",
@@ -101,14 +106,42 @@
       "type": "object",
       "required": ["scope", "metric", "baseline", "candidate", "delta", "percent", "message"],
       "properties": {
-        "scope": { "type": "string", "enum": ["run", "function"] },
+        "scope": { "type": "string", "enum": ["run", "function", "location"] },
         "function": { "type": "string" },
+        "source": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 0 },
         "metric": { "type": "string" },
         "baseline": { "type": ["number", "null"] },
         "candidate": { "type": ["number", "null"] },
         "delta": { "type": ["number", "null"] },
         "percent": { "type": ["number", "null"] },
         "message": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "location_change": {
+      "type": "object",
+      "required": [
+        "source",
+        "line",
+        "function",
+        "kind",
+        "variable",
+        "signed",
+        "count",
+        "interval_ns",
+        "max_interval_ns"
+      ],
+      "properties": {
+        "source": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 0 },
+        "function": { "type": "string" },
+        "kind": { "type": "string", "enum": ["statement", "value", "function"] },
+        "variable": { "type": ["string", "null"] },
+        "signed": { "type": "boolean" },
+        "count": { "$ref": "#/$defs/metric" },
+        "interval_ns": { "$ref": "#/$defs/metric" },
+        "max_interval_ns": { "$ref": "#/$defs/metric" }
       },
       "additionalProperties": true
     }

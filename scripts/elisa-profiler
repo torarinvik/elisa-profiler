@@ -1214,6 +1214,27 @@ def profile_function_map(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return functions
 
 
+def profile_location_map(report: dict[str, Any]) -> dict[tuple[Any, ...], dict[str, Any]]:
+    locations: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for location in report.get("locations", []):
+        if not isinstance(location, dict):
+            continue
+        function = location.get("function")
+        kind = location.get("kind")
+        if not isinstance(function, str) or not isinstance(kind, str):
+            continue
+        key = (
+            location.get("source"),
+            location.get("line", location.get("compiler_line")),
+            function,
+            kind,
+            location.get("variable"),
+            location.get("signed", False),
+        )
+        locations[key] = location
+    return locations
+
+
 def profile_run_failed(report: dict[str, Any]) -> bool:
     run = report.get("run")
     if not isinstance(run, dict):
@@ -1296,6 +1317,36 @@ def build_comparison_report(
             change["function"],
         )
     )
+    location_metric_names = ("count", "interval_ns", "max_interval_ns")
+    baseline_locations = profile_location_map(baseline)
+    candidate_locations = profile_location_map(candidate)
+    location_changes: list[dict[str, Any]] = []
+    for location_key in sorted(set(baseline_locations) | set(candidate_locations), key=str):
+        baseline_location = baseline_locations.get(location_key, {})
+        candidate_location = candidate_locations.get(location_key, {})
+        source, line, function, kind, variable, signed = location_key
+        location_change: dict[str, Any] = {
+            "source": source,
+            "line": line,
+            "function": function,
+            "kind": kind,
+            "variable": variable,
+            "signed": signed,
+        }
+        for metric_name in location_metric_names:
+            location_change[metric_name] = comparison_metric(
+                baseline_location.get(metric_name), candidate_location.get(metric_name)
+            )
+        location_changes.append(location_change)
+    location_changes.sort(
+        key=lambda change: (
+            -abs(change["interval_ns"]["delta"] or 0),
+            -abs(change["count"]["delta"] or 0),
+            str(change["source"]),
+            change["line"] if isinstance(change["line"], int) else -1,
+            change["function"],
+        )
+    )
 
     regressions: list[dict[str, Any]] = []
     for metric_name in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
@@ -1329,6 +1380,30 @@ def build_comparison_report(
                     "message": (
                         f"function {function_change['function']} inclusive time increased "
                         f"by more than {threshold_percent:g}%"
+                    ),
+                }
+            )
+    for location_change in location_changes:
+        metric = location_change["interval_ns"]
+        percent = metric["percent"]
+        if percent is not None and percent > threshold_percent:
+            location_label = (
+                f"{location_change['function']}:{location_change['line']}"
+            )
+            regressions.append(
+                {
+                    "scope": "location",
+                    "source": location_change["source"],
+                    "line": location_change["line"],
+                    "function": location_change["function"],
+                    "metric": "interval_ns",
+                    "baseline": metric["baseline"],
+                    "candidate": metric["candidate"],
+                    "delta": metric["delta"],
+                    "percent": percent,
+                    "message": (
+                        f"location {location_label} interval increased by more than "
+                        f"{threshold_percent:g}%"
                     ),
                 }
             )
@@ -1368,6 +1443,7 @@ def build_comparison_report(
         "threshold_percent": threshold_percent,
         "metrics": metrics,
         "functions": function_changes,
+        "locations": location_changes,
         "warnings": warnings,
         "regressions": regressions,
         "status": "regression" if regressions else "ok",
@@ -1420,6 +1496,22 @@ def comparison_text(report: dict[str, Any], top: int) -> str:
         events = comparison_metric_text(function["events"])
         lines.append(f"  {function['function']}: inclusive={timing}; events={events}")
     if not report["functions"]:
+        lines.append("  none recorded")
+    lines.extend(
+        [
+            "",
+            f"Source locations (top {min(top, len(report['locations']))}):",
+        ]
+    )
+    for location in report["locations"][:top]:
+        source = Path(location["source"]).name if location["source"] else "<unknown>"
+        label = f"{source}:{location['line']} {location['function']} {location['kind']}"
+        if location.get("variable"):
+            label += f" {location['variable']}"
+        timing = comparison_metric_text(location["interval_ns"], "ns")
+        events = comparison_metric_text(location["count"])
+        lines.append(f"  {label}: interval={timing}; events={events}")
+    if not report["locations"]:
         lines.append("  none recorded")
     if report["warnings"]:
         lines.extend(["", "Warnings:"])

@@ -134,8 +134,9 @@ entries as weights.
 The HTML format is a self-contained local report with summary cards, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies.
-The `compare` command accepts two JSON reports, shows compile/wall/CPU/RSS and
-function timing deltas, and can return a failing status for regressions:
+The `compare` command accepts two JSON reports, shows compile/wall/CPU/RSS,
+function, and source-location timing deltas, and can return a failing status
+for regressions:
 
     scripts/elisa-profiler compare baseline.json candidate.json \
         --threshold 10 --fail-on-regression

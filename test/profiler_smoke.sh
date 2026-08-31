@@ -48,6 +48,7 @@ assert "compile=" in text
 assert "opt=-O0" in text
 assert "Elisa profile comparison" in comparison_text
 assert "wall mean:" in comparison_text
+assert "Source locations" in comparison_text
 o2_report = json.load(open(sys.argv[3], encoding="utf-8"))
 assert o2_report["run"]["opt_level"] == "-O2"
 comparison = json.load(open(sys.argv[4], encoding="utf-8"))
@@ -57,6 +58,7 @@ assert comparison["candidate"]["opt_level"] == "-O2"
 assert "execution_ms_mean" in comparison["metrics"]
 assert "compile_ms" in comparison["metrics"]
 assert comparison["functions"]
+assert "locations" in comparison
 assert comparison["warnings"] == []
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
