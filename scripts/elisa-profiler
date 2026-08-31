@@ -202,9 +202,10 @@ def prepare_target(
 
 def parse_profile(
     stderr: str, *, allow_missing: bool = False
-) -> tuple[dict[str, int], list[dict[str, Any]], str]:
+) -> tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]:
     meta: dict[str, int] | None = None
     locations: list[dict[str, Any]] = []
+    recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
     for line in stderr.splitlines():
         if not line.startswith("ELISA_PROFILE\t"):
@@ -217,6 +218,24 @@ def parse_profile(
                 "locations": int(fields[4]),
                 "dropped": int(fields[5]),
             }
+            continue
+        if len(fields) == 10 and fields[2] == "path":
+            kind = int(fields[4])
+            if kind not in (1, 2):
+                raise ProfilerError(f"unknown profiler path kind: {line}")
+            if fields[8] not in ("0", "1"):
+                raise ProfilerError(f"invalid profiler path signedness flag: {line}")
+            recent_events.append(
+                {
+                    "sequence": int(fields[3]),
+                    "kind": "value" if kind == 2 else "statement",
+                    "function": fields[5],
+                    "line": int(fields[6]),
+                    "variable": None if fields[7] == "-" else fields[7],
+                    "signed": fields[8] == "1",
+                    "value": int(fields[9]),
+                }
+            )
             continue
         if len(fields) != 15 or fields[2] != "location":
             raise ProfilerError(f"malformed profiler runtime record: {line}")
@@ -243,23 +262,31 @@ def parse_profile(
         locations.append(location)
     if meta is None:
         if allow_missing:
-            return {"events": 0, "locations": 0, "dropped": 0}, [], stderr
+            return {"events": 0, "locations": 0, "dropped": 0}, [], stderr, recent_events
         raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
-    return meta, locations, "\n".join(program_stderr) + ("\n" if program_stderr else "")
+    return (
+        meta,
+        locations,
+        "\n".join(program_stderr) + ("\n" if program_stderr else ""),
+        recent_events,
+    )
 
 
 def merge_profiles(
-    results: list[tuple[dict[str, int], list[dict[str, Any]], str]],
-) -> tuple[dict[str, int], list[dict[str, Any]], str]:
+    results: list[tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]],
+) -> tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]:
     merged: dict[tuple[str, str, int, str | None], dict[str, Any]] = {}
     events = 0
     dropped = 0
+    recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
-    for repetition, (meta, locations, stderr) in enumerate(results, start=1):
+    for repetition, (meta, locations, stderr, path) in enumerate(results, start=1):
         events += meta["events"]
         dropped += meta["dropped"]
         if stderr:
             program_stderr.append(f"run {repetition}:\n{stderr.rstrip()}")
+        if path:
+            recent_events = path
         for location in locations:
             key = (
                 location["kind"],
@@ -293,6 +320,7 @@ def merge_profiles(
         {"events": events, "locations": len(locations), "dropped": dropped},
         locations,
         "\n\n".join(program_stderr) + ("\n" if program_stderr else ""),
+        recent_events,
     )
 
 
@@ -403,6 +431,26 @@ def text_report(report: dict[str, Any], top: int) -> str:
     lines.extend(["", "Function totals:"])
     for function_name, count in sorted(function_counts.items(), key=lambda item: (-item[1], item[0])):
         lines.append(f"  {count:>12}  {function_name}")
+    recent_events = report.get("recent_events", [])
+    if recent_events:
+        shown_events = recent_events[-top:]
+        lines.extend(
+            [
+                "",
+                (
+                    "Recent execution path "
+                    f"(oldest to newest; last {len(shown_events)} event(s)):"
+                ),
+            ]
+        )
+        for event in shown_events:
+            label = f"{event['function']}:{event['line']} {event['kind']}"
+            if event["kind"] == "value":
+                label += f" {event.get('variable') or '<value>'}={event['value']}"
+            source_text = event.get("source_text")
+            if source_text:
+                label += f"  {source_text.strip()}"
+            lines.append(f"  {label}")
     if report.get("program_stderr"):
         lines.extend(["", "Program stderr:", report["program_stderr"].rstrip()])
     return "\n".join(lines) + "\n"
@@ -424,8 +472,10 @@ def build_report(
     compile_ms: float,
     program_stderr: str,
     temp_root: Path | None,
+    recent_events: list[dict[str, Any]],
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
+    add_source_context(source, recent_events)
     function_stats: defaultdict[str, dict[str, int]] = defaultdict(
         lambda: {"events": 0, "statement_events": 0, "value_events": 0, "locations": 0}
     )
@@ -481,6 +531,8 @@ def build_report(
     }
     if program_stderr:
         report["program_stderr"] = program_stderr
+    if recent_events:
+        report["recent_events"] = recent_events
     if temp_root is not None:
         report["artifacts"] = {"build_directory": str(temp_root)}
     return report
@@ -640,7 +692,9 @@ def profile(args: argparse.Namespace) -> int:
                 )
                 raise ProfilerError(f"warmup run {repetition} failed with {warmup_status}")
 
-        profile_results: list[tuple[dict[str, int], list[dict[str, Any]], str]] = []
+        profile_results: list[
+            tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]
+        ] = []
         run_records: list[dict[str, Any]] = []
         run_stdout: list[str] = []
         run_stderr: list[str] = []
@@ -651,7 +705,7 @@ def profile(args: argparse.Namespace) -> int:
             )
             execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
             stderr = run_stderr_bytes.decode("utf-8", errors="replace")
-            meta, locations, program_stderr = parse_profile(
+            meta, locations, program_stderr, recent_events = parse_profile(
                 stderr,
                 allow_missing=run_status < 0 or run_timed_out,
             )
@@ -664,13 +718,13 @@ def profile(args: argparse.Namespace) -> int:
                 "timed_out": run_timed_out,
             }
             run_records.append(run_record)
-            profile_results.append((meta, locations, program_stderr))
+            profile_results.append((meta, locations, program_stderr, recent_events))
             run_stdout.append(run_stdout_bytes.decode("utf-8", errors="replace"))
             run_stderr.append(program_stderr)
             if run_status != 0 or run_timed_out:
                 break
 
-        meta, locations, program_stderr = merge_profiles(profile_results)
+        meta, locations, program_stderr, recent_events = merge_profiles(profile_results)
         failed_run = next(
             (
                 record
@@ -705,6 +759,7 @@ def profile(args: argparse.Namespace) -> int:
             compile_ms=compile_ms,
             program_stderr="" if args.show_output else program_stderr,
             temp_root=temp_root if args.keep_temp else None,
+            recent_events=recent_events,
         )
         rendered = (
             json.dumps(report, indent=2, sort_keys=False) + "\n"

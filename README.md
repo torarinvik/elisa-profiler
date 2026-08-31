@@ -64,7 +64,8 @@ back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records
 whether that mapping succeeded. A nonzero target exit status is reported and
 returned by the profiler. Use --show-output to forward the target's
-stdout/stderr.
+stdout/stderr. A panic or timeout report also includes the last 256 trace
+events in execution order, when the collector received the terminating signal.
 
 Useful controls:
 

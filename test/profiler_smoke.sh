@@ -138,6 +138,9 @@ assert report["run"]["exit_code"] is None
 assert report["run"]["signal"] == 6
 assert report["summary"]["events"] >= 1
 assert report["locations"][-1]["line"] == 2
+assert report["recent_events"]
+assert report["recent_events"][-1]["function"] == "main"
+assert report["recent_events"][-1]["line"] == 2
 print("crash capture OK")
 PY
 

@@ -39,7 +39,17 @@ typedef struct {
 enum {
     PROFILE_KIND_STATEMENT = 1,
     PROFILE_KIND_VALUE = 2,
+    PROFILE_RECENT_CAPACITY = 256,
 };
+
+typedef struct {
+    const char *function_name;
+    const char *variable_name;
+    uint32_t line;
+    uint8_t kind;
+    uint8_t is_signed;
+    uint64_t value;
+} profile_recent_entry;
 
 static profile_entry *profile_table;
 static size_t profile_capacity;
@@ -49,6 +59,8 @@ static uint64_t profile_dropped_count;
 static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t profile_crash_dumped;
 static volatile sig_atomic_t profile_dumped;
+static profile_recent_entry profile_recent[PROFILE_RECENT_CAPACITY];
+static uint64_t profile_recent_position;
 
 #if ELISA_PROFILE_TIMING
 static const char *profile_timing_function_name;
@@ -169,6 +181,16 @@ static void profile_record(const char *function_name, uint32_t line,
     profile_account_previous_locked(profile_now_ns());
 #endif
     ++profile_event_count;
+    profile_recent[profile_recent_position % PROFILE_RECENT_CAPACITY] =
+        (profile_recent_entry){
+            .function_name = function_name,
+            .variable_name = variable_name,
+            .line = line,
+            .kind = kind,
+            .is_signed = is_signed,
+            .value = value,
+        };
+    ++profile_recent_position;
 
     if (profile_capacity == 0 || (profile_size + 1) * 10 >= profile_capacity * 7) {
         if (!profile_grow_locked()) {
@@ -277,6 +299,27 @@ static void profile_print_field(const char *value) {
 static void profile_dump(void);
 static void profile_dump_from_signal(void);
 
+static void profile_dump_recent_path(void) {
+    uint64_t start = profile_recent_position > PROFILE_RECENT_CAPACITY
+                        ? profile_recent_position - PROFILE_RECENT_CAPACITY
+                        : 0;
+    for (uint64_t sequence = start; sequence < profile_recent_position; ++sequence) {
+        const profile_recent_entry *entry =
+            &profile_recent[sequence % PROFILE_RECENT_CAPACITY];
+        fprintf(stderr, "ELISA_PROFILE\t1\tpath\t%" PRIu64 "\t%u\t",
+                sequence - start, entry->kind);
+        profile_print_field(entry->function_name);
+        fprintf(stderr, "\t%" PRIu32 "\t", entry->line);
+        profile_print_field(entry->variable_name);
+        fprintf(stderr, "\t%u\t", entry->is_signed);
+        if (entry->is_signed) {
+            fprintf(stderr, "%" PRId64 "\n", (int64_t)entry->value);
+        } else {
+            fprintf(stderr, "%" PRIu64 "\n", entry->value);
+        }
+    }
+}
+
 static void profile_crash_handler(int signal_number) {
     if (!profile_crash_dumped) {
         profile_crash_dumped = 1;
@@ -316,6 +359,9 @@ static void profile_dump_body(void) {
         ++profile_dropped_count;
         fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t0\t%" PRIu64 "\n",
                 profile_event_count, profile_dropped_count);
+        if (profile_crash_dumped) {
+            profile_dump_recent_path();
+        }
         return;
     }
 
@@ -361,6 +407,9 @@ static void profile_dump_body(void) {
                 entry->interval_ns, entry->max_interval_ns);
     }
     free(entries);
+    if (profile_crash_dumped) {
+        profile_dump_recent_path();
+    }
 }
 
 static void profile_dump(void) {
