@@ -6,6 +6,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef ELISA_PROFILE_TIMING
+#define ELISA_PROFILE_TIMING 0
+#endif
+
+#if ELISA_PROFILE_TIMING
+#include <time.h>
+#endif
+
 /*
  * The stage1 backend's -ftrace ABI is deliberately tiny: a function name and
  * source line for statement boundaries, plus an optional variable/value pair.
@@ -17,11 +25,15 @@ typedef struct {
     const char *variable_name;
     uint32_t line;
     uint8_t kind;
+    uint8_t is_signed;
     uint64_t count;
     uint64_t minimum;
     uint64_t maximum;
     uint64_t last;
     __uint128_t sum;
+    __int128_t signed_sum;
+    uint64_t interval_ns;
+    uint64_t max_interval_ns;
 } profile_entry;
 
 enum {
@@ -38,8 +50,27 @@ static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t profile_crash_dumped;
 static volatile sig_atomic_t profile_dumped;
 
+#if ELISA_PROFILE_TIMING
+static const char *profile_timing_function_name;
+static const char *profile_timing_variable_name;
+static uint32_t profile_timing_line;
+static uint8_t profile_timing_kind;
+static uint8_t profile_timing_is_signed;
+static uint64_t profile_timing_last_ns;
+static int profile_timing_have_last;
+
+static uint64_t profile_now_ns(void) {
+    struct timespec timestamp;
+    if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0) {
+        return 0;
+    }
+    return (uint64_t)timestamp.tv_sec * UINT64_C(1000000000) +
+           (uint64_t)timestamp.tv_nsec;
+}
+#endif
+
 static uint64_t profile_hash(const char *function_name, const char *variable_name,
-                             uint32_t line, uint8_t kind) {
+                             uint32_t line, uint8_t kind, uint8_t is_signed) {
     uintptr_t function_bits = (uintptr_t)function_name;
     uintptr_t variable_bits = (uintptr_t)variable_name;
     uint64_t hash = UINT64_C(1469598103934665603);
@@ -50,14 +81,59 @@ static uint64_t profile_hash(const char *function_name, const char *variable_nam
     hash ^= line;
     hash *= UINT64_C(1099511628211);
     hash ^= kind;
+    hash *= UINT64_C(1099511628211);
+    hash ^= is_signed;
     return hash;
 }
 
 static int profile_key_matches(const profile_entry *entry, const char *function_name,
-                               const char *variable_name, uint32_t line, uint8_t kind) {
+                               const char *variable_name, uint32_t line, uint8_t kind,
+                               uint8_t is_signed) {
     return entry->function_name == function_name && entry->variable_name == variable_name &&
-           entry->line == line && entry->kind == kind;
+           entry->line == line && entry->kind == kind && entry->is_signed == is_signed;
 }
+
+#if ELISA_PROFILE_TIMING
+static profile_entry *profile_find_locked(const char *function_name,
+                                          const char *variable_name, uint32_t line,
+                                          uint8_t kind, uint8_t is_signed) {
+    if (profile_capacity == 0) {
+        return NULL;
+    }
+    size_t slot = profile_hash(function_name, variable_name, line, kind, is_signed) &
+                  (profile_capacity - 1);
+    for (size_t probes = 0; probes < profile_capacity; ++probes) {
+        profile_entry *entry = &profile_table[slot];
+        if (entry->function_name == NULL) {
+            return NULL;
+        }
+        if (profile_key_matches(entry, function_name, variable_name, line, kind, is_signed)) {
+            return entry;
+        }
+        slot = (slot + 1) & (profile_capacity - 1);
+    }
+    return NULL;
+}
+
+static void profile_account_previous_locked(uint64_t now_ns) {
+    if (!profile_timing_have_last || now_ns == 0 || profile_timing_last_ns == 0 ||
+        now_ns < profile_timing_last_ns) {
+        profile_timing_last_ns = now_ns;
+        return;
+    }
+    profile_entry *previous = profile_find_locked(
+        profile_timing_function_name, profile_timing_variable_name,
+        profile_timing_line, profile_timing_kind, profile_timing_is_signed);
+    if (previous != NULL) {
+        uint64_t interval_ns = now_ns - profile_timing_last_ns;
+        previous->interval_ns += interval_ns;
+        if (interval_ns > previous->max_interval_ns) {
+            previous->max_interval_ns = interval_ns;
+        }
+    }
+    profile_timing_last_ns = now_ns;
+}
+#endif
 
 static int profile_grow_locked(void) {
     size_t new_capacity = profile_capacity == 0 ? 256 : profile_capacity * 2;
@@ -72,7 +148,7 @@ static int profile_grow_locked(void) {
             continue;
         }
         size_t slot = profile_hash(entry.function_name, entry.variable_name, entry.line,
-                                   entry.kind) & (new_capacity - 1);
+                                   entry.kind, entry.is_signed) & (new_capacity - 1);
         while (new_table[slot].function_name != NULL) {
             slot = (slot + 1) & (new_capacity - 1);
         }
@@ -86,21 +162,28 @@ static int profile_grow_locked(void) {
 }
 
 static void profile_record(const char *function_name, uint32_t line,
-                           const char *variable_name, uint64_t value, uint8_t kind) {
+                           const char *variable_name, uint64_t value, uint8_t kind,
+                           uint8_t is_signed) {
     pthread_mutex_lock(&profile_lock);
+#if ELISA_PROFILE_TIMING
+    profile_account_previous_locked(profile_now_ns());
+#endif
     ++profile_event_count;
 
     if (profile_capacity == 0 || (profile_size + 1) * 10 >= profile_capacity * 7) {
         if (!profile_grow_locked()) {
             ++profile_dropped_count;
+#if ELISA_PROFILE_TIMING
+            profile_timing_have_last = 0;
+#endif
             pthread_mutex_unlock(&profile_lock);
             return;
         }
     }
 
-    size_t slot = profile_hash(function_name, variable_name, line, kind) & (profile_capacity - 1);
+    size_t slot = profile_hash(function_name, variable_name, line, kind, is_signed) & (profile_capacity - 1);
     while (profile_table[slot].function_name != NULL &&
-           !profile_key_matches(&profile_table[slot], function_name, variable_name, line, kind)) {
+           !profile_key_matches(&profile_table[slot], function_name, variable_name, line, kind, is_signed)) {
         slot = (slot + 1) & (profile_capacity - 1);
     }
 
@@ -110,6 +193,7 @@ static void profile_record(const char *function_name, uint32_t line,
         entry->variable_name = variable_name;
         entry->line = line;
         entry->kind = kind;
+        entry->is_signed = is_signed;
         entry->minimum = value;
         entry->maximum = value;
         ++profile_size;
@@ -117,25 +201,45 @@ static void profile_record(const char *function_name, uint32_t line,
 
     ++entry->count;
     if (kind == PROFILE_KIND_VALUE) {
-        if (value < entry->minimum) {
-            entry->minimum = value;
-        }
-        if (value > entry->maximum) {
-            entry->maximum = value;
+        if (is_signed) {
+            int64_t signed_value = (int64_t)value;
+            if (signed_value < (int64_t)entry->minimum) {
+                entry->minimum = value;
+            }
+            if (signed_value > (int64_t)entry->maximum) {
+                entry->maximum = value;
+            }
+            entry->signed_sum += (__int128_t)signed_value;
+        } else {
+            if (value < entry->minimum) {
+                entry->minimum = value;
+            }
+            if (value > entry->maximum) {
+                entry->maximum = value;
+            }
+            entry->sum += value;
         }
         entry->last = value;
-        entry->sum += value;
     }
+#if ELISA_PROFILE_TIMING
+    profile_timing_function_name = entry->function_name;
+    profile_timing_variable_name = entry->variable_name;
+    profile_timing_line = entry->line;
+    profile_timing_kind = entry->kind;
+    profile_timing_is_signed = entry->is_signed;
+    profile_timing_have_last = 1;
+#endif
     pthread_mutex_unlock(&profile_lock);
 }
 
 void elisa_trace_record(const char *function_name, uint32_t line) {
-    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT);
+    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0);
 }
 
 void elisa_trace_record_value(const char *function_name, uint32_t line,
-                              const char *variable_name, uint64_t value) {
-    profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE);
+                              const char *variable_name, uint64_t value, uint32_t is_signed) {
+    profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE,
+                   is_signed != 0 ? 1 : 0);
 }
 
 /* The instrumented program asks the normal runtime to install its crash
@@ -202,6 +306,9 @@ static void profile_dump_body(void) {
     if (profile_dumped) {
         return;
     }
+#if ELISA_PROFILE_TIMING
+    profile_account_previous_locked(profile_now_ns());
+#endif
     profile_dumped = 1;
     size_t count = profile_size;
     profile_entry **entries = calloc(count == 0 ? 1 : count, sizeof(*entries));
@@ -227,13 +334,31 @@ static void profile_dump_body(void) {
         profile_print_field(entry->function_name);
         fprintf(stderr, "\t%" PRIu32 "\t%" PRIu64 "\t", entry->line, entry->count);
         profile_print_field(entry->variable_name);
-        fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\t", entry->minimum, entry->maximum);
-        if (entry->sum > UINT64_MAX) {
-            fputs("overflow", stderr);
+        fprintf(stderr, "\t%u\t", entry->is_signed);
+        if (entry->is_signed) {
+            fprintf(stderr, "%" PRId64 "\t%" PRId64 "\t",
+                    (int64_t)entry->minimum, (int64_t)entry->maximum);
+            if (entry->signed_sum > (__int128_t)INT64_MAX ||
+                entry->signed_sum < (__int128_t)INT64_MIN) {
+                fputs("overflow", stderr);
+            } else {
+                fprintf(stderr, "%" PRId64, (int64_t)entry->signed_sum);
+            }
         } else {
-            fprintf(stderr, "%" PRIu64, (uint64_t)entry->sum);
+            fprintf(stderr, "%" PRIu64 "\t%" PRIu64 "\t", entry->minimum, entry->maximum);
+            if (entry->sum > UINT64_MAX) {
+                fputs("overflow", stderr);
+            } else {
+                fprintf(stderr, "%" PRIu64, (uint64_t)entry->sum);
+            }
         }
-        fprintf(stderr, "\t%" PRIu64 "\n", entry->last);
+        if (entry->is_signed) {
+            fprintf(stderr, "\t%" PRId64, (int64_t)entry->last);
+        } else {
+            fprintf(stderr, "\t%" PRIu64, entry->last);
+        }
+        fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\n",
+                entry->interval_ns, entry->max_interval_ns);
     }
     free(entries);
 }

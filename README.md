@@ -58,10 +58,13 @@ the program, and reports statement/value events:
 The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, execution status/timing, all locations
 with source snippets, and scalar value statistics (minimum, maximum, sum, and
-last). Include-expanded programs are mapped back to the file and line where
-each location originated; compiler_line preserves the flattened line for
-diagnostics. A nonzero target exit status is reported and returned by the
-profiler. Use --show-output to forward the target's stdout/stderr.
+last). Signed scalar values retain their signed interpretation instead of
+being reported as raw u64 bit patterns. Include-expanded programs are mapped
+back to the file and line where each location originated; compiler_line
+preserves the flattened line for diagnostics, and source_mapping records
+whether that mapping succeeded. A nonzero target exit status is reported and
+returned by the profiler. Use --show-output to forward the target's
+stdout/stderr.
 
 Useful controls:
 
@@ -70,6 +73,7 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
+    --location-timing      attribute wall time between trace events to locations
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable
@@ -79,7 +83,10 @@ than the runtime's bounded crash-debug ring, so loop counts are not truncated to
 the last 256 events. The first profiler ABI is intentionally for main() with no
 arguments; richer argument/benchmark control can be added without changing the
 report schema. Repeated runs stop after the first nonzero target status and the
-report retains every completed repetition. The measurements are event counts
-and wall-clock process timings, not statistical CPU samples. Panics and timed-out
-children retain their partial trace when the process reaches the collector's
-exit/signal handler.
+report retains every completed repetition, including min/mean/median/max and
+population standard deviation for measured execution time. With
+--location-timing, locations also receive attributed wall time and their
+largest observed gap to the next trace event. This is an opt-in diagnostic
+estimate: it includes collector overhead and is not statistical CPU sampling.
+Panics and timed-out children retain their partial trace when the process
+reaches the collector's exit/signal handler.

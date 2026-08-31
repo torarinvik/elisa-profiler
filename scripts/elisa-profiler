@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -217,21 +218,28 @@ def parse_profile(
                 "dropped": int(fields[5]),
             }
             continue
-        if len(fields) != 12 or fields[2] != "location":
+        if len(fields) != 15 or fields[2] != "location":
             raise ProfilerError(f"malformed profiler runtime record: {line}")
         kind = int(fields[3])
+        if kind not in (1, 2):
+            raise ProfilerError(f"unknown profiler location kind: {line}")
         location: dict[str, Any] = {
             "kind": "value" if kind == 2 else "statement",
             "function": fields[4],
             "line": int(fields[5]),
             "count": int(fields[6]),
         }
+        location["interval_ns"] = int(fields[13])
+        location["max_interval_ns"] = int(fields[14])
         if kind == 2:
             location["variable"] = None if fields[7] == "-" else fields[7]
-            location["minimum"] = int(fields[8])
-            location["maximum"] = int(fields[9])
-            location["sum"] = None if fields[10] == "overflow" else int(fields[10])
-            location["last"] = int(fields[11])
+            if fields[8] not in ("0", "1"):
+                raise ProfilerError(f"invalid profiler signedness flag: {line}")
+            location["signed"] = fields[8] == "1"
+            location["minimum"] = int(fields[9])
+            location["maximum"] = int(fields[10])
+            location["sum"] = None if fields[11] == "overflow" else int(fields[11])
+            location["last"] = int(fields[12])
         locations.append(location)
     if meta is None:
         if allow_missing:
@@ -258,12 +266,17 @@ def merge_profiles(
                 location["function"],
                 location["line"],
                 location.get("variable"),
+                location.get("signed", False),
             )
             if key not in merged:
                 merged[key] = dict(location)
                 continue
             combined = merged[key]
             combined["count"] += location["count"]
+            combined["interval_ns"] += location["interval_ns"]
+            combined["max_interval_ns"] = max(
+                combined["max_interval_ns"], location["max_interval_ns"]
+            )
             if location["kind"] == "value":
                 combined["minimum"] = min(combined["minimum"], location["minimum"])
                 combined["maximum"] = max(combined["maximum"], location["maximum"])
@@ -309,17 +322,17 @@ def source_line_map(source: Path) -> list[tuple[Path, int, str]]:
                 mapped.append((path, line_number, line.rstrip("\r\n")))
         return mapped
 
-    try:
-        return flatten(source, [])
-    except ProfilerError:
-        raise
+    return flatten(source, [])
 
 
-def add_source_context(source: Path, locations: list[dict[str, Any]]) -> None:
+def add_source_context(source: Path, locations: list[dict[str, Any]]) -> dict[str, Any]:
+    mapping_error: str | None = None
     try:
         mapped_lines = source_line_map(source)
-    except ProfilerError:
+    except ProfilerError as error:
         mapped_lines = []
+        mapping_error = str(error)
+    mapped_count = 0
     for location in locations:
         compiler_line = location["line"]
         location["compiler_line"] = compiler_line
@@ -328,9 +341,18 @@ def add_source_context(source: Path, locations: list[dict[str, Any]]) -> None:
             location["line"] = mapped_line
             location["source"] = str(mapped_path)
             location["source_text"] = source_text.rstrip()
+            mapped_count += 1
         else:
             location["source"] = str(source)
             location["source_text"] = None
+    mapping = {
+        "mode": "include-aware" if mapping_error is None else "fallback",
+        "mapped_locations": mapped_count,
+        "unmapped_locations": len(locations) - mapped_count,
+    }
+    if mapping_error is not None:
+        mapping["error"] = mapping_error
+    return mapping
 
 
 def text_report(report: dict[str, Any], top: int) -> str:
@@ -344,6 +366,7 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
             f"execution={run['execution_ms']:.3f} ms mean={run['execution_ms_mean']:.3f} ms "
             f"events={summary['events']} "
+            f"(statement={summary['statement_events']}, value={summary['value_events']}) "
             f"locations={summary['locations']} dropped={summary['dropped']}"
         ),
         "",
@@ -364,6 +387,11 @@ def text_report(report: dict[str, Any], top: int) -> str:
                 detail += (
                     f", min={location['minimum']}, max={location['maximum']}, "
                     f"last={location['last']}"
+                )
+            if report["run"]["location_timing"]:
+                detail += (
+                    f", attributed={location['interval_ns'] / 1_000_000:.3f} ms"
+                    f", max-gap={location['max_interval_ns'] / 1_000_000:.3f} ms"
                 )
             lines.append(f"  {detail:>34}  {label}")
     else:
@@ -392,17 +420,35 @@ def build_report(
     warmup_ms: float,
     warmup_repetitions: int,
     timeout_s: float | None,
+    location_timing: bool,
     compile_ms: float,
     program_stderr: str,
     temp_root: Path | None,
 ) -> dict[str, Any]:
-    add_source_context(source, locations)
-    function_counts: defaultdict[str, int] = defaultdict(int)
+    source_mapping = add_source_context(source, locations)
+    function_stats: defaultdict[str, dict[str, int]] = defaultdict(
+        lambda: {"events": 0, "statement_events": 0, "value_events": 0, "locations": 0}
+    )
     for location in locations:
-        function_counts[location["function"]] += location["count"]
+        stats = function_stats[location["function"]]
+        stats["events"] += location["count"]
+        stats["locations"] += 1
+        if location["kind"] == "value":
+            stats["value_events"] += location["count"]
+        else:
+            stats["statement_events"] += location["count"]
+    summary = dict(meta)
+    summary["statement_events"] = sum(
+        location["count"] for location in locations if location["kind"] == "statement"
+    )
+    summary["value_events"] = sum(
+        location["count"] for location in locations if location["kind"] == "value"
+    )
     functions = [
-        {"function": function_name, "events": count}
-        for function_name, count in sorted(function_counts.items(), key=lambda item: (-item[1], item[0]))
+        {"function": function_name, **stats}
+        for function_name, stats in sorted(
+            function_stats.items(), key=lambda item: (-item[1]["events"], item[0])
+        )
     ]
     execution_times = [record["execution_ms"] for record in run_records]
     execution_ms = sum(execution_times)
@@ -410,15 +456,19 @@ def build_report(
         "schema_version": 1,
         "source": str(source),
         "compiler": compiler,
-        "summary": meta,
+        "summary": summary,
+        "source_mapping": source_mapping,
         "run": {
             "exit_code": exit_code,
             "signal": signal,
+            "location_timing": location_timing,
             "execution_ms": execution_ms,
             "timeout_s": timeout_s,
             "execution_ms_min": min(execution_times),
             "execution_ms_mean": execution_ms / len(execution_times),
             "execution_ms_max": max(execution_times),
+            "execution_ms_median": statistics.median(execution_times),
+            "execution_ms_stdev": statistics.pstdev(execution_times),
             "warmup_ms": warmup_ms,
             "warmup_repetitions": warmup_repetitions,
             "requested_repetitions": run_records[-1]["requested_repetitions"],
@@ -450,6 +500,11 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repeat", type=int, default=1, help="number of measured executions (default: 1)")
     parser.add_argument("--warmup", type=int, default=0, help="number of unreported executions before measuring")
     parser.add_argument("--timeout", type=float, help="maximum seconds per execution")
+    parser.add_argument(
+        "--location-timing",
+        action="store_true",
+        help="attribute wall time between trace events to source locations",
+    )
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
     parser.add_argument(
         "--compiler-root",
@@ -540,6 +595,7 @@ def profile(args: argparse.Namespace) -> int:
                 clang,
                 "-std=c11",
                 "-O2",
+                *(["-DELISA_PROFILE_TIMING=1"] if args.location_timing else []),
                 "-fno-builtin",
                 "-pthread",
                 "-c",
@@ -611,16 +667,29 @@ def profile(args: argparse.Namespace) -> int:
             profile_results.append((meta, locations, program_stderr))
             run_stdout.append(run_stdout_bytes.decode("utf-8", errors="replace"))
             run_stderr.append(program_stderr)
-            if run_status != 0:
+            if run_status != 0 or run_timed_out:
                 break
 
         meta, locations, program_stderr = merge_profiles(profile_results)
         failed_run = next(
-            (record for record in run_records if record["signal"] is not None or record["exit_code"] != 0),
+            (
+                record
+                for record in run_records
+                if record["timed_out"]
+                or record["signal"] is not None
+                or record["exit_code"] != 0
+            ),
             None,
         )
-        exit_code = failed_run["exit_code"] if failed_run is not None else 0
-        signal = failed_run["signal"] if failed_run is not None else None
+        if failed_run is None:
+            exit_code = 0
+            signal = None
+        elif failed_run["timed_out"]:
+            exit_code = None
+            signal = failed_run["signal"] or 15
+        else:
+            exit_code = failed_run["exit_code"]
+            signal = failed_run["signal"]
         report = build_report(
             args.source,
             compiler_metadata(args.compiler_root, args.runtime_object),
@@ -632,6 +701,7 @@ def profile(args: argparse.Namespace) -> int:
             warmup_ms=warmup_ms,
             warmup_repetitions=args.warmup,
             timeout_s=args.timeout,
+            location_timing=args.location_timing,
             compile_ms=compile_ms,
             program_stderr="" if args.show_output else program_stderr,
             temp_root=temp_root if args.keep_temp else None,

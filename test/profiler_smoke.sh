@@ -6,13 +6,16 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
-    --warmup 1 --repeat 2 --format json --output "$WORK/report.json"
+    --warmup 1 --repeat 2 --location-timing --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
 test -s "$WORK/included-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/signed_values.elisa" \
+    --repeat 2 --format json --output "$WORK/signed-report.json"
+test -s "$WORK/signed-report.json"
 
-python3 - "$WORK/report.json" "$WORK/included-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
+python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -23,12 +26,20 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 assert report["schema_version"] == 1
 assert report["summary"]["events"] == 100
 assert report["summary"]["dropped"] == 0
+assert report["summary"]["statement_events"] + report["summary"]["value_events"] == 100
 assert report["run"]["exit_code"] == 0
 assert report["run"]["warmup_repetitions"] == 1
 assert report["run"]["warmup_ms"] > 0
 assert report["run"]["requested_repetitions"] == 2
 assert report["run"]["completed_repetitions"] == 2
+assert report["run"]["location_timing"] is True
+assert max(location["max_interval_ns"] for location in report["locations"]) > 0
 assert report["functions"][0]["function"] == "accumulate"
+assert report["functions"][0]["locations"] == 10
+assert report["functions"][0]["statement_events"] == 50
+assert report["functions"][0]["value_events"] == 44
+assert report["source_mapping"]["mode"] == "include-aware"
+assert report["source_mapping"]["unmapped_locations"] == 0
 
 hot_total = next(
     location["count"]
@@ -56,8 +67,8 @@ assert next(
     and location["variable"] == "total"
 ) == 330
 
-included_source = Path(sys.argv[3]).resolve()
-helper_source = Path(sys.argv[4]).resolve()
+included_source = Path(sys.argv[4]).resolve()
+helper_source = Path(sys.argv[5]).resolve()
 with open(sys.argv[2], encoding="utf-8") as stream:
     included_report = json.load(stream)
 helper_locations = [
@@ -77,6 +88,33 @@ assert any(
     location["function"] == "main"
     and Path(location["source"]) == included_source
     for location in included_report["locations"]
+)
+
+with open(sys.argv[3], encoding="utf-8") as stream:
+    signed_report = json.load(stream)
+signed_values = [
+    location for location in signed_report["locations"]
+    if location["kind"] == "value" and location["function"] == "main"
+]
+assert signed_values
+assert all(location["signed"] is True for location in signed_values)
+assert any(
+    location["variable"] == "first"
+    and location["count"] == 2
+    and location["minimum"] == -7
+    and location["maximum"] == -7
+    and location["sum"] == -14
+    and location["last"] == -7
+    for location in signed_values
+)
+assert any(
+    location["variable"] == "second"
+    and location["count"] == 2
+    and location["minimum"] == -7
+    and location["maximum"] == -7
+    and location["sum"] == -14
+    and location["last"] == -7
+    for location in signed_values
 )
 
 print("profiler smoke OK")

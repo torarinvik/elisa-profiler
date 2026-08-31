@@ -1,0 +1,4 @@
+def main() -> i64:
+    first: i64 = 0 - 7
+    second: i64 = 5 - 12
+    return first - first + second - second
