@@ -34,6 +34,10 @@ scripts/elisa-compiler -o build/hello.o examples/hello.elisa
 stage1 binary and compiler build outputs remain ignored artifacts inside the
 compiler worktree.
 
+The profiler Makefile seeds at -O0 with an 8 GiB RSS cap by default for a
+predictable local bootstrap. Override SEED_OPT_LEVEL and SEED_MAX_RSS_KB when
+the host has more headroom.
+
 ## Profiling direction
 
 The first implementation milestone is to compile and run an Elisa target with
