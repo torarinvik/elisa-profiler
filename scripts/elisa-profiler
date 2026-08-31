@@ -327,12 +327,15 @@ def parse_profile(
             program_stderr.append(line)
             continue
         fields = line.split("\t")
-        if len(fields) == 6 and fields[2] == "meta":
+        if len(fields) in (6, 8) and fields[2] == "meta":
             meta = {
                 "events": int(fields[3]),
                 "locations": int(fields[4]),
                 "dropped": int(fields[5]),
             }
+            if len(fields) == 8:
+                meta["max_stack_depth"] = int(fields[6])
+                meta["stack_overflow_entries"] = int(fields[7])
             continue
         if len(fields) == 10 and fields[2] == "path":
             kind = int(fields[4])
@@ -404,7 +407,20 @@ def parse_profile(
         locations.append(location)
     if meta is None:
         if allow_missing:
-            return {"events": 0, "locations": 0, "dropped": 0}, [], [], [], stderr, recent_events
+            return (
+                {
+                    "events": 0,
+                    "locations": 0,
+                    "dropped": 0,
+                    "max_stack_depth": 0,
+                    "stack_overflow_entries": 0,
+                },
+                [],
+                [],
+                [],
+                stderr,
+                recent_events,
+            )
         raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
     return (
         meta,
@@ -440,11 +456,15 @@ def merge_profiles(
     merged_stacks: dict[str, dict[str, Any]] = {}
     events = 0
     dropped = 0
+    max_stack_depth = 0
+    stack_overflow_entries = 0
     recent_events: list[dict[str, Any]] = []
     program_stderr: list[str] = []
     for repetition, (meta, locations, call_edges, stacks, stderr, path) in enumerate(results, start=1):
         events += meta["events"]
         dropped += meta["dropped"]
+        max_stack_depth = max(max_stack_depth, meta.get("max_stack_depth", 0))
+        stack_overflow_entries += meta.get("stack_overflow_entries", 0)
         if stderr:
             program_stderr.append(f"run {repetition}:\n{stderr.rstrip()}")
         if path:
@@ -524,7 +544,13 @@ def merge_profiles(
         ),
     )
     return (
-        {"events": events, "locations": len(locations), "dropped": dropped},
+        {
+            "events": events,
+            "locations": len(locations),
+            "dropped": dropped,
+            "max_stack_depth": max_stack_depth,
+            "stack_overflow_entries": stack_overflow_entries,
+        },
         locations,
         call_edges,
         stacks,
@@ -605,7 +631,9 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"events={summary['events']} "
             f"(statement={summary['statement_events']}, value={summary['value_events']}, "
             f"function={summary['function_events']}) "
-            f"locations={summary['locations']} dropped={summary['dropped']}"
+            f"locations={summary['locations']} dropped={summary['dropped']} "
+            f"stack-depth={summary['max_stack_depth']} "
+            f"stack-overflow={summary['stack_overflow_entries']}"
         ),
         "",
     ]
@@ -964,6 +992,8 @@ document.addEventListener("DOMContentLoaded", () => {
             f'<div class="card"><div class="card-label">CPU</div><div class="card-value">{escape(cpu)}</div></div>',
             f'<div class="card"><div class="card-label">Peak RSS</div><div class="card-value">{escape(peak_rss)}</div></div>',
             f'<div class="card"><div class="card-label">Locations</div><div class="card-value">{summary["locations"]}</div></div>',
+            f'<div class="card"><div class="card-label">Max stack depth</div><div class="card-value">{summary["max_stack_depth"]}</div></div>',
+            f'<div class="card"><div class="card-label">Stack overflows</div><div class="card-value">{summary["stack_overflow_entries"]}</div></div>',
             "</div>",
             *sections,
             f"<footer>Schema {report['schema_version']} · compiler {escape(compiler['commit'])} · timing {'enabled' if run['location_timing'] else 'disabled'}</footer>",

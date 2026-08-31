@@ -18,6 +18,7 @@ test -s "$WORK/hot-loop.html"
 grep -q '<table data-sortable>' "$WORK/hot-loop.html"
 grep -q 'Call graph (top 1)' "$WORK/hot-loop.html"
 grep -q 'main;accumulate' "$WORK/hot-loop.html"
+grep -q 'Max stack depth' "$WORK/hot-loop.html"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --location-timing --format text --output "$WORK/timing.txt"
 python3 - "$WORK/timing.txt" <<'PY'
@@ -25,6 +26,7 @@ import sys
 
 text = open(sys.argv[1], encoding="utf-8").read()
 assert text.index("main (calls=") < text.index("accumulate (calls=")
+assert "stack-depth=2 stack-overflow=0" in text
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
@@ -35,8 +37,11 @@ test -s "$WORK/signed-report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/recursive.elisa" \
     --repeat 2 --location-timing --format json --output "$WORK/recursive-report.json"
 test -s "$WORK/recursive-report.json"
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/deep_recursion.elisa" \
+    --format json --output "$WORK/deep-recursion-report.json"
+test -s "$WORK/deep-recursion-report.json"
 
-python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
+python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -47,6 +52,8 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 assert report["schema_version"] == 1
 assert report["summary"]["events"] == 104
 assert report["summary"]["dropped"] == 0
+assert report["summary"]["max_stack_depth"] == 2
+assert report["summary"]["stack_overflow_entries"] == 0
 assert (
     report["summary"]["statement_events"]
     + report["summary"]["value_events"]
@@ -132,6 +139,8 @@ assert next(
 
 with open(sys.argv[4], encoding="utf-8") as stream:
     recursive_report = json.load(stream)
+with open(sys.argv[5], encoding="utf-8") as stream:
+    deep_report = json.load(stream)
 recursive_functions = {
     function["function"]: function for function in recursive_report["functions"]
 }
@@ -143,9 +152,12 @@ assert next(
     if edge["caller"] == "countdown" and edge["callee"] == "countdown"
 )["call_events"] == 12
 assert max(stack["stack"].count("countdown") for stack in recursive_report["stacks"]) == 7
+assert deep_report["summary"]["max_stack_depth"] == 1024
+assert deep_report["summary"]["stack_overflow_entries"] > 0
+assert deep_report["summary"]["dropped"] == 0
 
-included_source = Path(sys.argv[5]).resolve()
-helper_source = Path(sys.argv[6]).resolve()
+included_source = Path(sys.argv[6]).resolve()
+helper_source = Path(sys.argv[7]).resolve()
 with open(sys.argv[2], encoding="utf-8") as stream:
     included_report = json.load(stream)
 helper_locations = [

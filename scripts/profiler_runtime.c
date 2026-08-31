@@ -90,6 +90,8 @@ static size_t profile_call_edge_size;
 static profile_call_path **profile_call_paths;
 static size_t profile_call_path_capacity;
 static size_t profile_call_path_size;
+static size_t profile_max_call_depth;
+static uint64_t profile_stack_overflow_entries;
 
 #define PROFILE_CALL_STACK_CAPACITY 1024
 
@@ -419,8 +421,15 @@ static int profile_grow_locked(void) {
 
 static void profile_record(const char *function_name, uint32_t line,
                            const char *variable_name, uint64_t value, uint8_t kind,
-                           uint8_t is_signed) {
+                           uint8_t is_signed, size_t call_depth,
+                           int stack_overflowed) {
     pthread_mutex_lock(&profile_lock);
+    if (call_depth > profile_max_call_depth) {
+        profile_max_call_depth = call_depth;
+    }
+    if (stack_overflowed) {
+        ++profile_stack_overflow_entries;
+    }
 #if ELISA_PROFILE_TIMING
     profile_account_previous_locked(profile_now_ns());
 #endif
@@ -499,12 +508,13 @@ static void profile_record(const char *function_name, uint32_t line,
 }
 
 void elisa_trace_record(const char *function_name, uint32_t line) {
-    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0);
+    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0, 0, 0);
 }
 
 void elisa_trace_function_entry(const char *function_name, uint32_t line) {
     const char *caller_name = NULL;
     profile_call_path *caller_path = NULL;
+    int stack_overflowed = 0;
     if (profile_call_overflow_depth == 0 && profile_call_depth > 0) {
         caller_name = profile_call_stack[profile_call_depth - 1].function_name;
         caller_path = profile_call_stack[profile_call_depth - 1].path;
@@ -527,6 +537,7 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
         ++profile_call_depth;
     } else {
         ++profile_call_overflow_depth;
+        stack_overflowed = 1;
     }
 #else
     if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
@@ -538,9 +549,11 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
         ++profile_call_depth;
     } else {
         ++profile_call_overflow_depth;
+        stack_overflowed = 1;
     }
 #endif
-    profile_record(function_name, line, NULL, 0, PROFILE_KIND_FUNCTION, 0);
+    profile_record(function_name, line, NULL, 0, PROFILE_KIND_FUNCTION, 0,
+                   profile_call_depth, stack_overflowed);
 }
 
 static void profile_record_completed_function(const char *function_name, uint32_t line) {
@@ -635,7 +648,7 @@ void elisa_trace_function_exit(const char *function_name, uint32_t line) {
 void elisa_trace_record_value(const char *function_name, uint32_t line,
                               const char *variable_name, uint64_t value, uint32_t is_signed) {
     profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE,
-                   is_signed != 0 ? 1 : 0);
+                   is_signed != 0 ? 1 : 0, 0, 0);
 }
 
 /* The instrumented program asks the normal runtime to install its crash
@@ -796,8 +809,10 @@ static void profile_dump_body(void) {
     profile_entry **entries = calloc(count == 0 ? 1 : count, sizeof(*entries));
     if (entries == NULL) {
         ++profile_dropped_count;
-        fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t0\t%" PRIu64 "\n",
-                profile_event_count, profile_dropped_count);
+        fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t0\t%" PRIu64
+                        "\t%zu\t%" PRIu64 "\n",
+                profile_event_count, profile_dropped_count,
+                profile_max_call_depth, profile_stack_overflow_entries);
         if (profile_crash_dumped) {
             profile_dump_recent_path();
         }
@@ -811,8 +826,10 @@ static void profile_dump_body(void) {
         }
     }
     qsort(entries, output_count, sizeof(*entries), profile_entry_compare);
-    fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t%zu\t%" PRIu64 "\n",
-            profile_event_count, output_count, profile_dropped_count);
+    fprintf(stderr, "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t%zu\t%" PRIu64
+                    "\t%zu\t%" PRIu64 "\n",
+            profile_event_count, output_count, profile_dropped_count,
+            profile_max_call_depth, profile_stack_overflow_entries);
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];
         fprintf(stderr, "ELISA_PROFILE\t1\tlocation\t%u\t", entry->kind);
