@@ -1,0 +1,494 @@
+#!/usr/bin/env python3
+"""Compile, run, and report an instrumented Elisa program."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from collections import defaultdict
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_COMPILER_ROOT = ROOT.parent / "elisa-compiler-worktrees" / "profiler"
+DEFAULT_STAGE0_CORE = ROOT.parent.parent / "Go projects" / "structpy-tree"
+
+
+class ProfilerError(Exception):
+    pass
+
+
+def executable(value: str | None, candidates: list[Path], name: str) -> str:
+    if value:
+        path = Path(value)
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+        found = shutil.which(value)
+        if found:
+            return found
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    found = shutil.which(name)
+    if found:
+        return found
+    raise ProfilerError(f"could not find {name}; set the corresponding LLVM tool environment variable")
+
+
+def compiler_tools() -> tuple[str, str, str]:
+    llvm_config_value = os.environ.get("LLVM_CONFIG", "/opt/homebrew/opt/llvm/bin/llvm-config")
+    llvm_config = Path(llvm_config_value)
+    llvm_bin = Path(os.environ.get("ELISA_LLVM_BIN_DIR", str(llvm_config.parent)))
+    clang = executable(
+        os.environ.get("ELISA_CLANG"),
+        [llvm_bin / "clang", Path("/usr/bin/clang")],
+        "clang",
+    )
+    objcopy = executable(
+        os.environ.get("ELISA_LLVM_OBJCOPY"),
+        [llvm_bin / "llvm-objcopy"],
+        "llvm-objcopy",
+    )
+    nm = executable(
+        os.environ.get("ELISA_LLVM_NM"),
+        [llvm_bin / "llvm-nm", Path("/usr/bin/nm")],
+        "nm",
+    )
+    return clang, objcopy, nm
+
+
+def run_command(command: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, env=env, text=True, capture_output=True, check=False)
+
+
+def git_value(root: Path, *arguments: str, fallback: str = "unknown") -> str:
+    result = run_command(["git", "-C", str(root), *arguments])
+    if result.returncode == 0:
+        value = result.stdout.strip()
+        if value:
+            return value
+    return fallback
+
+
+def compiler_metadata(compiler_root: Path, runtime_object: Path) -> dict[str, Any]:
+    status = git_value(compiler_root, "status", "--porcelain", fallback="")
+    return {
+        "root": str(compiler_root),
+        "branch": git_value(compiler_root, "branch", "--show-current"),
+        "commit": git_value(compiler_root, "rev-parse", "HEAD"),
+        "dirty": bool(status),
+        "runtime_object": str(runtime_object),
+    }
+
+
+def ensure_runtime(
+    compiler_root: Path,
+    runtime_object: Path,
+    stage0_core: Path,
+    *,
+    rebuild: bool,
+    env: dict[str, str],
+) -> None:
+    if runtime_object.is_file() and not rebuild:
+        return
+    build_script = compiler_root / "scripts" / "build_runtime_object.sh"
+    if not build_script.is_file():
+        raise ProfilerError(f"runtime builder is missing: {build_script}")
+    stage0_binary = stage0_core / "compiler" / "bin" / "elisac"
+    if not stage0_binary.is_file():
+        raise ProfilerError(
+            f"stage0 compiler is missing: {stage0_binary}; set ELISA_STAGE0_CORE or build the local stage0 compiler"
+        )
+    build_env = env.copy()
+    build_env["ELISA_CORE"] = str(stage0_core)
+    build_env["ELISA_RUNTIME_OBJ"] = str(runtime_object)
+    result = run_command([str(build_script)], env=build_env)
+    if result.returncode != 0 or not runtime_object.is_file():
+        message = result.stderr.strip() or result.stdout.strip() or "runtime build failed"
+        raise ProfilerError(message)
+
+
+def defined_symbols(nm: str, object_path: Path) -> set[str]:
+    result = run_command([nm, "-g", str(object_path)])
+    if result.returncode != 0:
+        raise ProfilerError(f"nm failed for {object_path}: {result.stderr.strip()}")
+    symbols: set[str] = set()
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if fields:
+            symbols.add(fields[-1])
+    return symbols
+
+
+def prepare_target(
+    objcopy: str,
+    nm: str,
+    target_object: Path,
+    runtime_object: Path,
+    renamed_target: Path,
+    collector_runtime: Path,
+) -> None:
+    target_symbols = defined_symbols(nm, target_object)
+    main_symbol = "_main" if "_main" in target_symbols else "main"
+    if main_symbol not in target_symbols:
+        raise ProfilerError(f"compiled Elisa object does not export main: {target_object}")
+    target_name = "_elisa_profile_target_main" if main_symbol.startswith("_") else "elisa_profile_target_main"
+    result = run_command(
+        [
+            objcopy,
+            "--redefine-sym",
+            f"{main_symbol}={target_name}",
+            str(target_object),
+            str(renamed_target),
+        ]
+    )
+    if result.returncode != 0:
+        raise ProfilerError(f"could not rename Elisa main: {result.stderr.strip()}")
+
+    shutil.copyfile(runtime_object, collector_runtime)
+    runtime_symbols = defined_symbols(nm, collector_runtime)
+    trace_symbols = [
+        symbol
+        for symbol in ("_elisa_trace_record", "elisa_trace_record")
+        if symbol in runtime_symbols
+    ]
+    trace_value_symbols = [
+        symbol
+        for symbol in ("_elisa_trace_record_value", "elisa_trace_record_value")
+        if symbol in runtime_symbols
+    ]
+    localize = trace_symbols + trace_value_symbols
+    if not localize:
+        raise ProfilerError(f"runtime object has no trace callbacks: {runtime_object}")
+    command = [objcopy]
+    for symbol in localize:
+        command.extend(["--localize-symbol", symbol])
+    command.extend([str(collector_runtime)])
+    result = run_command(command)
+    if result.returncode != 0:
+        raise ProfilerError(f"could not localize runtime trace callbacks: {result.stderr.strip()}")
+
+
+def parse_profile(stderr: str) -> tuple[dict[str, int], list[dict[str, Any]], str]:
+    meta: dict[str, int] | None = None
+    locations: list[dict[str, Any]] = []
+    program_stderr: list[str] = []
+    for line in stderr.splitlines():
+        if not line.startswith("ELISA_PROFILE\t"):
+            program_stderr.append(line)
+            continue
+        fields = line.split("\t")
+        if len(fields) == 6 and fields[2] == "meta":
+            meta = {
+                "events": int(fields[3]),
+                "locations": int(fields[4]),
+                "dropped": int(fields[5]),
+            }
+            continue
+        if len(fields) != 12 or fields[2] != "location":
+            raise ProfilerError(f"malformed profiler runtime record: {line}")
+        kind = int(fields[3])
+        location: dict[str, Any] = {
+            "kind": "value" if kind == 2 else "statement",
+            "function": fields[4],
+            "line": int(fields[5]),
+            "count": int(fields[6]),
+        }
+        if kind == 2:
+            location["variable"] = None if fields[7] == "-" else fields[7]
+            location["minimum"] = int(fields[8])
+            location["maximum"] = int(fields[9])
+            location["sum"] = None if fields[10] == "overflow" else int(fields[10])
+            location["last"] = int(fields[11])
+        locations.append(location)
+    if meta is None:
+        raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
+    return meta, locations, "\n".join(program_stderr) + ("\n" if program_stderr else "")
+
+
+def add_source_context(source: Path, locations: list[dict[str, Any]]) -> None:
+    try:
+        source_lines = source.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        source_lines = []
+    for location in locations:
+        line_number = location["line"]
+        location["source"] = str(source)
+        location["source_text"] = (
+            source_lines[line_number - 1].rstrip() if 0 < line_number <= len(source_lines) else None
+        )
+
+
+def text_report(report: dict[str, Any], top: int) -> str:
+    summary = report["summary"]
+    run = report["run"]
+    lines = [
+        f"Elisa profile: {report['source']}",
+        (
+            f"exit={run['exit_code'] if run['exit_code'] is not None else 'signal ' + str(run['signal'])} "
+            f"execution={run['execution_ms']:.3f} ms events={summary['events']} "
+            f"locations={summary['locations']} dropped={summary['dropped']}"
+        ),
+        "",
+        f"Hot locations (top {min(top, len(report['locations']))}):",
+    ]
+    for location in report["locations"][:top]:
+        label = f"{location['function']}:{location['line']} {location['kind']}"
+        if location["kind"] == "value":
+            label += f" {location.get('variable') or '<value>'}"
+        source_text = location.get("source_text")
+        if source_text:
+            label += f"  {source_text.strip()}"
+        detail = f"{location['count']} event(s)"
+        if location["kind"] == "value":
+            detail += (
+                f", min={location['minimum']}, max={location['maximum']}, "
+                f"last={location['last']}"
+            )
+        lines.append(f"  {detail:>34}  {label}")
+
+    function_counts: defaultdict[str, int] = defaultdict(int)
+    for location in report["locations"]:
+        function_counts[location["function"]] += location["count"]
+    lines.extend(["", "Function totals:"])
+    for function_name, count in sorted(function_counts.items(), key=lambda item: (-item[1], item[0])):
+        lines.append(f"  {count:>12}  {function_name}")
+    if report.get("program_stderr"):
+        lines.extend(["", "Program stderr:", report["program_stderr"].rstrip()])
+    return "\n".join(lines) + "\n"
+
+
+def build_report(
+    source: Path,
+    compiler: dict[str, Any],
+    meta: dict[str, int],
+    locations: list[dict[str, Any]],
+    *,
+    exit_code: int | None,
+    signal: int | None,
+    execution_ms: float,
+    compile_ms: float,
+    program_stderr: str,
+    temp_root: Path | None,
+) -> dict[str, Any]:
+    add_source_context(source, locations)
+    function_counts: defaultdict[str, int] = defaultdict(int)
+    for location in locations:
+        function_counts[location["function"]] += location["count"]
+    functions = [
+        {"function": function_name, "events": count}
+        for function_name, count in sorted(function_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    report: dict[str, Any] = {
+        "schema_version": 1,
+        "source": str(source),
+        "compiler": compiler,
+        "summary": meta,
+        "run": {
+            "exit_code": exit_code,
+            "signal": signal,
+            "execution_ms": execution_ms,
+            "compile_ms": compile_ms,
+        },
+        "functions": functions,
+        "locations": locations,
+    }
+    if program_stderr:
+        report["program_stderr"] = program_stderr
+    if temp_root is not None:
+        report["artifacts"] = {"build_directory": str(temp_root)}
+    return report
+
+
+def parse_arguments(argv: list[str]) -> argparse.Namespace:
+    if argv and argv[0] == "profile":
+        argv = argv[1:]
+    parser = argparse.ArgumentParser(
+        prog="elisa-profiler",
+        description="Compile and run an Elisa program with source-location tracing.",
+    )
+    parser.add_argument("source", type=Path, help="Elisa source file containing main() -> i64")
+    parser.add_argument("-o", "--output", type=Path, help="write the report to this file")
+    parser.add_argument("--format", choices=("text", "json"), default="text")
+    parser.add_argument("--top", type=int, default=20, help="number of hot locations in text output")
+    parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
+    parser.add_argument(
+        "--compiler-root",
+        type=Path,
+        default=Path(os.environ.get("ELISA_COMPILER_ROOT", DEFAULT_COMPILER_ROOT)),
+    )
+    parser.add_argument("--runtime-object", type=Path)
+    parser.add_argument("--stage0-core", type=Path, default=Path(os.environ.get("ELISA_STAGE0_CORE", DEFAULT_STAGE0_CORE)))
+    parser.add_argument("--rebuild-runtime", action="store_true")
+    parser.add_argument("--show-output", action="store_true", help="forward target stdout/stderr to profiler stderr")
+    parser.add_argument("--keep-temp", action="store_true", help="keep generated objects and executable")
+    parser.add_argument("--version", action="version", version="elisa-profiler 0.1")
+    args = parser.parse_args(argv)
+    if args.top < 1:
+        parser.error("--top must be positive")
+    args.source = args.source.resolve()
+    args.compiler_root = args.compiler_root.resolve()
+    args.stage0_core = args.stage0_core.resolve()
+    if args.runtime_object is None:
+        args.runtime_object = args.compiler_root / "build" / "runtime" / "elisacore_runtime.o"
+    else:
+        args.runtime_object = args.runtime_object.resolve()
+    return args
+
+
+def profile(args: argparse.Namespace) -> int:
+    if not args.source.is_file():
+        raise ProfilerError(f"source file does not exist: {args.source}")
+    compiler_script = ROOT / "scripts" / "elisa-compiler"
+    if not compiler_script.is_file():
+        raise ProfilerError(f"compiler wrapper is missing: {compiler_script}")
+    stage1_script = args.compiler_root / "scripts" / "elisac_stage1.sh"
+    if not stage1_script.is_file():
+        raise ProfilerError(f"compiler worktree is missing: {args.compiler_root}")
+
+    clang, objcopy, nm = compiler_tools()
+    env = os.environ.copy()
+    env["ELISA_COMPILER_ROOT"] = str(args.compiler_root)
+    ensure_runtime(
+        args.compiler_root,
+        args.runtime_object,
+        args.stage0_core,
+        rebuild=args.rebuild_runtime,
+        env=env,
+    )
+
+    temp_root = Path(tempfile.mkdtemp(prefix="elisa-profiler-"))
+    try:
+        target_object = temp_root / "target.o"
+        renamed_target = temp_root / "target-renamed.o"
+        collector_runtime = temp_root / "runtime-collector.o"
+        collector_object = temp_root / "profiler-runtime.o"
+        executable_path = temp_root / "profiled-program"
+        compile_start = time.perf_counter_ns()
+        compile_result = run_command(
+            [
+                str(compiler_script),
+                "-g",
+                "-ftrace",
+                f"-O{args.opt_level}",
+                "-o",
+                str(target_object),
+                str(args.source),
+            ],
+            env=env,
+        )
+        compile_ms = (time.perf_counter_ns() - compile_start) / 1_000_000
+        if compile_result.returncode != 0:
+            message = compile_result.stderr.strip() or compile_result.stdout.strip() or "Elisa compilation failed"
+            raise ProfilerError(message)
+
+        prepare_target(
+            objcopy,
+            nm,
+            target_object,
+            args.runtime_object,
+            renamed_target,
+            collector_runtime,
+        )
+        compile_shim = run_command(
+            [
+                clang,
+                "-std=c11",
+                "-O2",
+                "-fno-builtin",
+                "-pthread",
+                "-c",
+                "-o",
+                str(collector_object),
+                str(ROOT / "scripts" / "profiler_runtime.c"),
+            ],
+            env=env,
+        )
+        if compile_shim.returncode != 0:
+            raise ProfilerError(f"profiler runtime failed to compile: {compile_shim.stderr.strip()}")
+
+        link_flags = ["-Wl,-dead_strip"] if sys.platform == "darwin" else ["-Wl,--gc-sections"]
+        if sys.platform == "darwin":
+            link_flags.append("-Wl,-stack_size,0x20000000")
+        link_result = run_command(
+            [
+                clang,
+                *link_flags,
+                "-pthread",
+                "-o",
+                str(executable_path),
+                str(renamed_target),
+                str(collector_runtime),
+                str(collector_object),
+            ],
+            env=env,
+        )
+        if link_result.returncode != 0:
+            raise ProfilerError(f"could not link profiled program: {link_result.stderr.strip()}")
+
+        execution_start = time.perf_counter_ns()
+        run_result = subprocess.run(
+            [str(executable_path)],
+            capture_output=True,
+            check=False,
+        )
+        execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
+        stderr = run_result.stderr.decode("utf-8", errors="replace")
+        meta, locations, program_stderr = parse_profile(stderr)
+        exit_code = run_result.returncode if run_result.returncode >= 0 else None
+        signal = -run_result.returncode if run_result.returncode < 0 else None
+        report = build_report(
+            args.source,
+            compiler_metadata(args.compiler_root, args.runtime_object),
+            meta,
+            locations,
+            exit_code=exit_code,
+            signal=signal,
+            execution_ms=execution_ms,
+            compile_ms=compile_ms,
+            program_stderr="" if args.show_output else program_stderr,
+            temp_root=temp_root if args.keep_temp else None,
+        )
+        rendered = (
+            json.dumps(report, indent=2, sort_keys=False) + "\n"
+            if args.format == "json"
+            else text_report(report, args.top)
+        )
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+        else:
+            sys.stdout.write(rendered)
+        if args.show_output:
+            stdout = run_result.stdout.decode("utf-8", errors="replace")
+            if stdout:
+                sys.stderr.write("Program stdout:\n" + stdout)
+            if program_stderr:
+                sys.stderr.write("Program stderr:\n" + program_stderr)
+        return run_result.returncode if run_result.returncode >= 0 else 128 + (-run_result.returncode)
+    finally:
+        if not args.keep_temp:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        args = parse_arguments(sys.argv[1:] if argv is None else argv)
+        return profile(args)
+    except ProfilerError as error:
+        print(f"elisa-profiler: {error}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("elisa-profiler: interrupted", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

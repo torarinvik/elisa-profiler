@@ -1,0 +1,11 @@
+def accumulate(limit: i64) -> i64:
+    total: mutable i64 = 0
+    index: mutable i64 = 0
+    while index < limit |total, index|:
+        total <- total + index
+        index <- index + 1
+    return total
+
+def main() -> i64:
+    result: i64 = accumulate(10)
+    return result - result

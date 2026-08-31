@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../elisa-compiler-worktrees/profiler}"
+COMPILER_SCRIPT="$COMPILER_ROOT/scripts/elisac_stage1.sh"
+
+if [[ ! -x "$COMPILER_SCRIPT" ]]; then
+    echo "Elisa compiler worktree is unavailable: $COMPILER_ROOT" >&2
+    echo "set ELISA_COMPILER_ROOT or run: make compiler-seed" >&2
+    exit 2
+fi
+
+# A seed is the only operation that needs stage0. Keep the default explicit and
+# local, while respecting ELISA_CORE when the caller has already selected one.
+if [[ "${1:-}" == "--seed" && -z "${ELISA_CORE:-}" ]]; then
+    STAGE0_CORE="${ELISA_STAGE0_CORE:-$ROOT/../../Go projects/structpy-tree}"
+    if [[ -x "$STAGE0_CORE/compiler/bin/elisac" ]]; then
+        export ELISA_CORE="$STAGE0_CORE"
+    fi
+fi
+
+exec "$COMPILER_SCRIPT" "$@"

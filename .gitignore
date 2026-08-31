@@ -1,0 +1,8 @@
+build/
+profiles/
+*.o
+*.ll
+*.bc
+*.wasm
+.DS_Store
+__pycache__/
