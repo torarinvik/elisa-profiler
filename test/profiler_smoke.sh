@@ -24,9 +24,15 @@ with open(sys.argv[1], encoding="utf-8") as stream:
     report = json.load(stream)
 
 assert report["schema_version"] == 1
-assert report["summary"]["events"] == 100
+assert report["summary"]["events"] == 104
 assert report["summary"]["dropped"] == 0
-assert report["summary"]["statement_events"] + report["summary"]["value_events"] == 100
+assert (
+    report["summary"]["statement_events"]
+    + report["summary"]["value_events"]
+    + report["summary"]["function_events"]
+    == 104
+)
+assert report["summary"]["function_events"] == 4
 assert report["run"]["exit_code"] == 0
 assert report["run"]["warmup_repetitions"] == 1
 assert report["run"]["warmup_ms"] > 0
@@ -35,9 +41,11 @@ assert report["run"]["completed_repetitions"] == 2
 assert report["run"]["location_timing"] is True
 assert max(location["max_interval_ns"] for location in report["locations"]) > 0
 assert report["functions"][0]["function"] == "accumulate"
-assert report["functions"][0]["locations"] == 10
+assert report["functions"][0]["locations"] == 11
 assert report["functions"][0]["statement_events"] == 50
 assert report["functions"][0]["value_events"] == 44
+assert report["functions"][0]["call_events"] == 2
+assert report["functions"][0]["events"] == 96
 assert report["source_mapping"]["mode"] == "include-aware"
 assert report["source_mapping"]["unmapped_locations"] == 0
 

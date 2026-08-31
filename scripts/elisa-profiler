@@ -206,12 +206,17 @@ def prepare_target(
         for symbol in ("_elisa_trace_record_value", "elisa_trace_record_value")
         if symbol in runtime_symbols
     ]
+    trace_entry_symbols = [
+        symbol
+        for symbol in ("_elisa_trace_function_entry", "elisa_trace_function_entry")
+        if symbol in runtime_symbols
+    ]
     trace_install_symbols = [
         symbol
         for symbol in ("_elisa_trace_install_fault_handler", "elisa_trace_install_fault_handler")
         if symbol in runtime_symbols
     ]
-    localize = trace_symbols + trace_value_symbols + trace_install_symbols
+    localize = trace_symbols + trace_value_symbols + trace_entry_symbols + trace_install_symbols
     if not localize:
         raise ProfilerError(f"runtime object has no trace callbacks: {runtime_object}")
     command = [objcopy]
@@ -244,14 +249,14 @@ def parse_profile(
             continue
         if len(fields) == 10 and fields[2] == "path":
             kind = int(fields[4])
-            if kind not in (1, 2):
+            if kind not in (1, 2, 3):
                 raise ProfilerError(f"unknown profiler path kind: {line}")
             if fields[8] not in ("0", "1"):
                 raise ProfilerError(f"invalid profiler path signedness flag: {line}")
             recent_events.append(
                 {
                     "sequence": int(fields[3]),
-                    "kind": "value" if kind == 2 else "statement",
+                    "kind": {1: "statement", 2: "value", 3: "function"}[kind],
                     "function": fields[5],
                     "line": int(fields[6]),
                     "variable": None if fields[7] == "-" else fields[7],
@@ -263,10 +268,12 @@ def parse_profile(
         if len(fields) != 15 or fields[2] != "location":
             raise ProfilerError(f"malformed profiler runtime record: {line}")
         kind = int(fields[3])
-        if kind not in (1, 2):
+        if kind not in (1, 2, 3):
             raise ProfilerError(f"unknown profiler location kind: {line}")
+        if fields[8] not in ("0", "1"):
+            raise ProfilerError(f"invalid profiler signedness flag: {line}")
         location: dict[str, Any] = {
-            "kind": "value" if kind == 2 else "statement",
+            "kind": {1: "statement", 2: "value", 3: "function"}[kind],
             "function": fields[4],
             "line": int(fields[5]),
             "count": int(fields[6]),
@@ -275,8 +282,6 @@ def parse_profile(
         location["max_interval_ns"] = int(fields[14])
         if kind == 2:
             location["variable"] = None if fields[7] == "-" else fields[7]
-            if fields[8] not in ("0", "1"):
-                raise ProfilerError(f"invalid profiler signedness flag: {line}")
             location["signed"] = fields[8] == "1"
             location["minimum"] = int(fields[9])
             location["maximum"] = int(fields[10])
@@ -298,7 +303,7 @@ def parse_profile(
 def merge_profiles(
     results: list[tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]],
 ) -> tuple[dict[str, int], list[dict[str, Any]], str, list[dict[str, Any]]]:
-    merged: dict[tuple[str, str, int, str | None], dict[str, Any]] = {}
+    merged: dict[tuple[str, str, int, str | None, bool], dict[str, Any]] = {}
     events = 0
     dropped = 0
     recent_events: list[dict[str, Any]] = []
@@ -337,7 +342,14 @@ def merge_profiles(
                     combined["sum"] += location["sum"]
     locations = sorted(
         merged.values(),
-        key=lambda location: (-location["count"], location["line"], location["function"]),
+        key=lambda location: (
+            -location["count"],
+            location["line"],
+            location["function"],
+            location["kind"],
+            location.get("variable") or "",
+            location.get("signed", False),
+        ),
     )
     return (
         {"events": events, "locations": len(locations), "dropped": dropped},
@@ -417,7 +429,8 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"runs={run['completed_repetitions']}/{run['requested_repetitions']} "
             f"execution={run['execution_ms']:.3f} ms mean={run['execution_ms_mean']:.3f} ms "
             f"events={summary['events']} "
-            f"(statement={summary['statement_events']}, value={summary['value_events']}) "
+            f"(statement={summary['statement_events']}, value={summary['value_events']}, "
+            f"function={summary['function_events']}) "
             f"locations={summary['locations']} dropped={summary['dropped']}"
         ),
         "",
@@ -448,12 +461,12 @@ def text_report(report: dict[str, Any], top: int) -> str:
     else:
         lines.append("Hot locations: none recorded")
 
-    function_counts: defaultdict[str, int] = defaultdict(int)
-    for location in report["locations"]:
-        function_counts[location["function"]] += location["count"]
     lines.extend(["", "Function totals:"])
-    for function_name, count in sorted(function_counts.items(), key=lambda item: (-item[1], item[0])):
-        lines.append(f"  {count:>12}  {function_name}")
+    for function in report["functions"]:
+        lines.append(
+            f"  {function['events']:>12}  {function['function']}"
+            f" (calls={function['call_events']})"
+        )
     recent_events = report.get("recent_events", [])
     if recent_events:
         shown_events = recent_events[-top:]
@@ -500,7 +513,13 @@ def build_report(
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
     function_stats: defaultdict[str, dict[str, int]] = defaultdict(
-        lambda: {"events": 0, "statement_events": 0, "value_events": 0, "locations": 0}
+        lambda: {
+            "events": 0,
+            "statement_events": 0,
+            "value_events": 0,
+            "call_events": 0,
+            "locations": 0,
+        }
     )
     for location in locations:
         stats = function_stats[location["function"]]
@@ -508,6 +527,8 @@ def build_report(
         stats["locations"] += 1
         if location["kind"] == "value":
             stats["value_events"] += location["count"]
+        elif location["kind"] == "function":
+            stats["call_events"] += location["count"]
         else:
             stats["statement_events"] += location["count"]
     summary = dict(meta)
@@ -516,6 +537,9 @@ def build_report(
     )
     summary["value_events"] = sum(
         location["count"] for location in locations if location["kind"] == "value"
+    )
+    summary["function_events"] = sum(
+        location["count"] for location in locations if location["kind"] == "function"
     )
     functions = [
         {"function": function_name, **stats}

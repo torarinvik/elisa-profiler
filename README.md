@@ -50,15 +50,16 @@ the command-line interface, collection, and report formats.
 
 The profiler expects an Elisa source file with main() -> i64. It compiles with
 the local stage1 compiler using -ftrace -g, links a small host collector, runs
-the program, and reports statement/value events:
+the program, and reports function-entry, statement, and scalar-value events:
 
     scripts/elisa-profiler profile examples/hot_loop.elisa
     scripts/elisa-profiler examples/hot_loop.elisa --format json -o profiles/hot-loop.json
 
 The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, execution status/timing, all locations
-with source snippets, and scalar value statistics (minimum, maximum, sum, and
-last). Signed scalar values retain their signed interpretation instead of
+with source snippets, function call-event counts, and scalar value statistics
+(minimum, maximum, sum, and last). Signed scalar values retain their signed
+interpretation instead of
 being reported as raw u64 bit patterns. Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records

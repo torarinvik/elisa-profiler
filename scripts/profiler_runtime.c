@@ -39,6 +39,7 @@ typedef struct {
 enum {
     PROFILE_KIND_STATEMENT = 1,
     PROFILE_KIND_VALUE = 2,
+    PROFILE_KIND_FUNCTION = 3,
     PROFILE_RECENT_CAPACITY = 256,
 };
 
@@ -258,6 +259,10 @@ void elisa_trace_record(const char *function_name, uint32_t line) {
     profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0);
 }
 
+void elisa_trace_function_entry(const char *function_name, uint32_t line) {
+    profile_record(function_name, line, NULL, 0, PROFILE_KIND_FUNCTION, 0);
+}
+
 void elisa_trace_record_value(const char *function_name, uint32_t line,
                               const char *variable_name, uint64_t value, uint32_t is_signed) {
     profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE,
@@ -278,7 +283,29 @@ static int profile_entry_compare(const void *left_pointer, const void *right_poi
     if (left->line != right->line) {
         return left->line < right->line ? -1 : 1;
     }
-    return strcmp(left->function_name, right->function_name);
+    int function_order = strcmp(left->function_name, right->function_name);
+    if (function_order != 0) {
+        return function_order;
+    }
+    if (left->kind != right->kind) {
+        return left->kind < right->kind ? -1 : 1;
+    }
+    if (left->variable_name == NULL && right->variable_name != NULL) {
+        return -1;
+    }
+    if (left->variable_name != NULL && right->variable_name == NULL) {
+        return 1;
+    }
+    if (left->variable_name != NULL) {
+        int variable_order = strcmp(left->variable_name, right->variable_name);
+        if (variable_order != 0) {
+            return variable_order;
+        }
+    }
+    if (left->is_signed != right->is_signed) {
+        return left->is_signed < right->is_signed ? -1 : 1;
+    }
+    return 0;
 }
 
 static void profile_print_field(const char *value) {
