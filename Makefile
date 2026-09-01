@@ -5,7 +5,7 @@ SEED_OPT_LEVEL ?= -O0
 SEED_MAX_RSS_KB ?= 8388608
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
 
-.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke profile-resource-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -36,6 +36,9 @@ timing-failure-smoke:
 profile-resource-smoke:
 	@python3 "$(PROFILER_ROOT)/test/profile_resource_smoke.py"
 
+profile-fd-smoke:
+	@python3 "$(PROFILER_ROOT)/test/profile_fd_smoke.py"
+
 profiler-smoke:
 	@"$(PROFILER_ROOT)/test/profiler_smoke.sh"
 
@@ -51,4 +54,4 @@ profile-protocol-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-audit compiler-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke profile-resource-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke
+test: compiler-audit compiler-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke process-group-smoke

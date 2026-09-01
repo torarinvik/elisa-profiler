@@ -157,6 +157,10 @@ therefore contain incomplete calls. Inclusive/self timings are available with
 overhead and is not statistical CPU sampling. Wall timing includes sleeps and waits;
 `--timing-clock cpu` uses each thread's CPU clock, which is often a better signal for
 compute hotspots in threaded programs.
+Collector records are sent over a dedicated inherited file descriptor during
+normal profiler runs, so target stderr—including lines that resemble the
+`ELISA_PROFILE` protocol prefix—remains available as program diagnostics and
+cannot corrupt the profile.
 The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.

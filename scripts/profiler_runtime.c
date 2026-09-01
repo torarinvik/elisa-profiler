@@ -1,10 +1,12 @@
 #include <inttypes.h>
+#include <limits.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifndef ELISA_PROFILE_TIMING
 #define ELISA_PROFILE_TIMING 0
@@ -97,6 +99,40 @@ static size_t profile_call_path_capacity;
 static size_t profile_call_path_size;
 static size_t profile_max_call_depth;
 static uint64_t profile_stack_overflow_entries;
+static FILE *profile_output_stream;
+
+static FILE *profile_output(void) {
+    if (profile_output_stream != NULL) {
+        return profile_output_stream;
+    }
+    profile_output_stream = stderr;
+    const char *fd_text = getenv("ELISA_PROFILE_FD");
+    if (fd_text == NULL || *fd_text == '\0') {
+        return profile_output_stream;
+    }
+    char *end = NULL;
+    long requested_fd = strtol(fd_text, &end, 10);
+    if (end == fd_text || *end != '\0' || requested_fd < 0 || requested_fd > INT_MAX) {
+        return profile_output_stream;
+    }
+    int duplicate_fd = dup((int)requested_fd);
+    if (duplicate_fd < 0) {
+        return profile_output_stream;
+    }
+    FILE *stream = fdopen(duplicate_fd, "w");
+    if (stream == NULL) {
+        close(duplicate_fd);
+        return profile_output_stream;
+    }
+    (void)setvbuf(stream, NULL, _IONBF, 0);
+    profile_output_stream = stream;
+    return profile_output_stream;
+}
+
+/* Keep the existing diagnostic formatting compact while allowing every
+ * collector write to switch transports without changing the protocol. */
+#undef stderr
+#define stderr profile_output()
 
 typedef struct profile_thread_state profile_thread_state;
 

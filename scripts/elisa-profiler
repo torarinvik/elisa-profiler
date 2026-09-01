@@ -131,6 +131,7 @@ def execute_program(
     timeout: float | None,
     resource_path: Path | None = None,
     env: dict[str, str] | None = None,
+    profile_path: Path | None = None,
 ) -> tuple[int, bytes, bytes, bool, dict[str, float | int]]:
     command = [str(executable_path)]
     if resource_path is not None:
@@ -141,25 +142,39 @@ def execute_program(
             str(resource_path),
             *command,
         ]
-    process = subprocess.Popen(
-        command,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=os.name == "posix",
-    )
-    timed_out = False
+    child_env = os.environ.copy() if env is None else env.copy()
+    child_env.pop("ELISA_PROFILE_FD", None)
+    profile_handle = None
+    pass_fds: tuple[int, ...] = ()
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        signal_process_group(process, signal.SIGTERM)
+        if profile_path is not None and os.name == "posix":
+            profile_handle = profile_path.open("wb")
+            profile_fd = profile_handle.fileno()
+            child_env["ELISA_PROFILE_FD"] = str(profile_fd)
+            pass_fds = (profile_fd,)
+        process = subprocess.Popen(
+            command,
+            env=child_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=os.name == "posix",
+            pass_fds=pass_fds,
+        )
+        timed_out = False
         try:
-            stdout, stderr = process.communicate(timeout=2)
+            stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            signal_process_group(process, signal.SIGKILL)
-            stdout, stderr = process.communicate()
-    return process.returncode, stdout, stderr, timed_out, parse_resource_report(resource_path)
+            timed_out = True
+            signal_process_group(process, signal.SIGTERM)
+            try:
+                stdout, stderr = process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                signal_process_group(process, signal.SIGKILL)
+                stdout, stderr = process.communicate()
+        return process.returncode, stdout, stderr, timed_out, parse_resource_report(resource_path)
+    finally:
+        if profile_handle is not None:
+            profile_handle.close()
 
 
 def child_cpu_usage() -> tuple[float, float] | None:
@@ -2626,26 +2641,46 @@ def profile(args: argparse.Namespace) -> int:
             execution_start = time.perf_counter_ns()
             cpu_before = child_cpu_usage()
             resource_path = measured_resource_file(temp_root, repetition, args.timeout)
+            profile_path = (
+                temp_root / f"profile-{repetition}.txt" if os.name == "posix" else None
+            )
             run_status, run_stdout_bytes, run_stderr_bytes, run_timed_out, resources = execute_program(
-                executable_path, args.timeout, resource_path, env
+                executable_path,
+                args.timeout,
+                resource_path,
+                env,
+                profile_path=profile_path,
             )
             cpu_after = child_cpu_usage()
             cpu_delta = child_cpu_delta(cpu_before, cpu_after)
             peak_rss_bytes = resources.get("peak_rss_bytes")
             execution_ms = (time.perf_counter_ns() - execution_start) / 1_000_000
-            stderr = run_stderr_bytes.decode("utf-8", errors="replace")
+            target_stderr = run_stderr_bytes.decode("utf-8", errors="replace")
+            if profile_path is not None:
+                profile_stderr = (
+                    profile_path.read_text(encoding="utf-8", errors="replace")
+                    if profile_path.is_file()
+                    else ""
+                )
+            else:
+                profile_stderr = target_stderr
             (
                 meta,
                 locations,
                 call_edges,
                 stacks,
-                program_stderr,
+                parsed_profile_stderr,
                 recent_events,
                 active_stack,
             ) = parse_profile(
-                stderr,
+                profile_stderr,
                 allow_missing=run_status < 0 or run_timed_out,
             )
+            program_stderr = target_stderr
+            if parsed_profile_stderr:
+                if program_stderr and not program_stderr.endswith("\n"):
+                    program_stderr += "\n"
+                program_stderr += parsed_profile_stderr
             run_record = {
                 "repetition": repetition,
                 "requested_repetitions": args.repeat,
