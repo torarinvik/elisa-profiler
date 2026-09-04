@@ -1317,6 +1317,18 @@ def validate_profile_integer(
         invalid_profile_field(path, field, "an integer or null" if allow_null else "an integer")
 
 
+def validate_profile_nonnegative_integer(
+    value: Any, path: Path, field: str, *, allow_null: bool = True
+) -> None:
+    validate_profile_integer(value, path, field, allow_null=allow_null)
+    if value is not None and value < 0:
+        invalid_profile_field(
+            path,
+            field,
+            "a non-negative integer or null" if allow_null else "a non-negative integer",
+        )
+
+
 def validate_profile_number(value: Any, path: Path, field: str) -> None:
     if value is None:
         return
@@ -1324,6 +1336,12 @@ def validate_profile_number(value: Any, path: Path, field: str) -> None:
         invalid_profile_field(path, field, "a finite number or null")
     if isinstance(value, float) and not math.isfinite(value):
         invalid_profile_field(path, field, "a finite number or null")
+
+
+def validate_profile_nonnegative_number(value: Any, path: Path, field: str) -> None:
+    validate_profile_number(value, path, field)
+    if value is not None and value < 0:
+        invalid_profile_field(path, field, "a non-negative finite number or null")
 
 
 def validate_profile_string(value: Any, path: Path, field: str, *, allow_null: bool = True) -> None:
@@ -1337,20 +1355,51 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
     if not isinstance(report.get("source"), str):
         invalid_profile_field(path, "source", "a string")
 
-    for field in ("events",):
+    for field in (
+        "events",
+        "locations",
+        "dropped",
+        "statement_events",
+        "value_events",
+        "function_events",
+        "max_stack_depth",
+        "stack_overflow_entries",
+        "thread_count",
+    ):
         if field in report["summary"]:
-            validate_profile_integer(report["summary"][field], path, f"summary.{field}", allow_null=False)
+            validate_profile_nonnegative_integer(
+                report["summary"][field], path, f"summary.{field}", allow_null=False
+            )
 
     run = report["run"]
     for field in ("exit_code", "signal"):
         if field in run:
             validate_profile_integer(run[field], path, f"run.{field}")
-    for field in ("completed_repetitions", "successful_repetitions", "failed_repetitions"):
+    for field in (
+        "warmup_repetitions",
+        "completed_repetitions",
+        "successful_repetitions",
+        "failed_repetitions",
+        "measurement_repetitions",
+    ):
         if field in run:
-            validate_profile_integer(run[field], path, f"run.{field}", allow_null=False)
-    for field in ("execution_ms_mean", "compile_ms", "cpu_ms", "peak_rss_bytes"):
+            validate_profile_nonnegative_integer(run[field], path, f"run.{field}", allow_null=False)
+    for field in (
+        "execution_ms",
+        "execution_ms_min",
+        "execution_ms_mean",
+        "execution_ms_max",
+        "execution_ms_median",
+        "execution_ms_stdev",
+        "cpu_user_ms",
+        "cpu_system_ms",
+        "cpu_ms",
+        "peak_rss_bytes",
+        "warmup_ms",
+        "compile_ms",
+    ):
         if field in run:
-            validate_profile_number(run[field], path, f"run.{field}")
+            validate_profile_nonnegative_number(run[field], path, f"run.{field}")
     if "opt_level" in run:
         validate_profile_string(run["opt_level"], path, "run.opt_level")
     if "timing_clock" in run:
@@ -1372,6 +1421,31 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
             for field in ("exit_code", "signal"):
                 if field in repetition:
                     validate_profile_integer(repetition[field], path, f"{field_prefix}.{field}")
+            for field in (
+                "repetition",
+                "requested_repetitions",
+                "trace_events",
+                "trace_locations",
+                "trace_dropped",
+                "trace_threads",
+                "trace_max_stack_depth",
+                "trace_stack_overflow_entries",
+            ):
+                if field in repetition:
+                    validate_profile_nonnegative_integer(
+                        repetition[field], path, f"{field_prefix}.{field}", allow_null=False
+                    )
+            for field in (
+                "execution_ms",
+                "cpu_user_ms",
+                "cpu_system_ms",
+                "cpu_ms",
+                "peak_rss_bytes",
+            ):
+                if field in repetition:
+                    validate_profile_nonnegative_number(
+                        repetition[field], path, f"{field_prefix}.{field}"
+                    )
             if "timed_out" in repetition and not isinstance(repetition["timed_out"], bool):
                 invalid_profile_field(path, f"{field_prefix}.timed_out", "a boolean")
 
@@ -1394,7 +1468,7 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
         validate_profile_string(function.get("function"), path, f"{field_prefix}.function", allow_null=False)
         for field in function_metric_names:
             if field in function:
-                validate_profile_number(function[field], path, f"{field_prefix}.{field}")
+                validate_profile_nonnegative_number(function[field], path, f"{field_prefix}.{field}")
 
     call_edge_metric_names = ("call_events", "completed_calls", "inclusive_ns")
     for index, edge in enumerate(report["call_edges"]):
@@ -1403,7 +1477,7 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
         validate_profile_string(edge.get("callee"), path, f"{field_prefix}.callee", allow_null=False)
         for field in call_edge_metric_names:
             if field in edge:
-                validate_profile_number(edge[field], path, f"{field_prefix}.{field}")
+                validate_profile_nonnegative_number(edge[field], path, f"{field_prefix}.{field}")
 
     stack_metric_names = ("call_events", "completed_calls", "self_ns")
     for index, stack in enumerate(report["stacks"]):
@@ -1411,7 +1485,7 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
         validate_profile_string(stack.get("stack"), path, f"{field_prefix}.stack", allow_null=False)
         for field in stack_metric_names:
             if field in stack:
-                validate_profile_number(stack[field], path, f"{field_prefix}.{field}")
+                validate_profile_nonnegative_number(stack[field], path, f"{field_prefix}.{field}")
 
     location_metric_names = ("count", "interval_ns", "max_interval_ns")
     for index, location in enumerate(report["locations"]):
@@ -1423,14 +1497,21 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
             invalid_profile_field(path, f"{field_prefix}.kind", "a known location kind")
         for field in ("line", "compiler_line"):
             if field in location:
-                validate_profile_integer(location[field], path, f"{field_prefix}.{field}", allow_null=False)
+                validate_profile_nonnegative_integer(
+                    location[field], path, f"{field_prefix}.{field}", allow_null=False
+                )
+                if location[field] == 0:
+                    invalid_profile_field(path, f"{field_prefix}.{field}", "a positive integer")
         if "variable" in location:
             validate_profile_string(location["variable"], path, f"{field_prefix}.variable")
         if "signed" in location and not isinstance(location["signed"], bool):
             invalid_profile_field(path, f"{field_prefix}.signed", "a boolean")
         for field in location_metric_names:
             if field in location:
-                validate_profile_number(location[field], path, f"{field_prefix}.{field}")
+                validate_profile_nonnegative_number(location[field], path, f"{field_prefix}.{field}")
+        for field in ("inclusive_ns", "self_ns", "completed_calls"):
+            if field in location:
+                validate_profile_nonnegative_number(location[field], path, f"{field_prefix}.{field}")
 
 
 def profile_numeric_value(report: dict[str, Any], section: str, name: str) -> int | float | None:

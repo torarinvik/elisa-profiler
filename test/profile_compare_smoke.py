@@ -426,6 +426,25 @@ def main() -> int:
         assert invalid_stack_result.returncode == 2
         assert "stacks[0].self_ns must be a finite number or null" in invalid_stack_result.stderr
 
+        negative_metric = profile(20.0, 2_000, "-O2")
+        negative_metric["summary"]["events"] = -1
+        negative_metric_path = root / "negative-metric.json"
+        negative_metric_path.write_text(json.dumps(negative_metric), encoding="utf-8")
+        negative_metric_result = subprocess.run(
+            [
+                sys.executable,
+                str(PROFILER),
+                "compare",
+                str(baseline_path),
+                str(negative_metric_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert negative_metric_result.returncode == 2
+        assert "summary.events must be a non-negative integer" in negative_metric_result.stderr
+
         nonfinite_path = root / "nonfinite.json"
         nonfinite_path.write_text('{"schema_version": 1, "value": NaN}\n', encoding="utf-8")
         nonfinite_result = subprocess.run(
