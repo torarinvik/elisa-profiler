@@ -651,22 +651,17 @@ def merge_profiles(
 
 
 def source_line_map(source: Path) -> list[tuple[Path, int, str]]:
-    seen: set[Path] = set()
-
     def flatten(path: Path, stack: list[Path]) -> list[tuple[Path, int, str]]:
         path = path.resolve()
         if path in stack:
             raise ProfilerError(f"cyclic include while mapping profile locations: {path}")
-        if path in seen:
-            return []
-        seen.add(path)
         try:
             contents = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise ProfilerError(f"could not read source for profile mapping: {path}: {error}") from error
         mapped: list[tuple[Path, int, str]] = []
         for line_number, line in enumerate(contents.splitlines(keepends=True), start=1):
-            match = INCLUDE_RE.match(line.rstrip("\n"))
+            match = INCLUDE_RE.match(line.rstrip("\r\n"))
             if match:
                 include_path = Path(match.group(1))
                 if not include_path.is_absolute():
