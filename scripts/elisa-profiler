@@ -354,6 +354,17 @@ def parse_protocol_int(value: str, line: str) -> int:
         raise ProfilerError(f"malformed profiler runtime record: {line}") from error
 
 
+def parse_protocol_uint(value: str, line: str) -> int:
+    parsed = parse_protocol_int(value, line)
+    if parsed < 0:
+        raise ProfilerError(f"malformed profiler runtime record: {line}")
+    return parsed
+
+
+def parse_protocol_value(value: str, line: str, is_signed: bool) -> int:
+    return parse_protocol_int(value, line) if is_signed else parse_protocol_uint(value, line)
+
+
 def parse_profile(
     stderr: str, *, allow_missing: bool = False
 ) -> tuple[
@@ -381,41 +392,41 @@ def parse_profile(
             raise ProfilerError(f"unsupported profiler runtime protocol version: {line}")
         if len(fields) in (6, 8, 9) and fields[2] == "meta":
             meta = {
-                "events": parse_protocol_int(fields[3], line),
-                "locations": parse_protocol_int(fields[4], line),
-                "dropped": parse_protocol_int(fields[5], line),
+                "events": parse_protocol_uint(fields[3], line),
+                "locations": parse_protocol_uint(fields[4], line),
+                "dropped": parse_protocol_uint(fields[5], line),
             }
             if len(fields) == 8:
-                meta["max_stack_depth"] = parse_protocol_int(fields[6], line)
-                meta["stack_overflow_entries"] = parse_protocol_int(fields[7], line)
+                meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
+                meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
                 meta["thread_count"] = 1 if meta["events"] else 0
             elif len(fields) == 9:
-                meta["max_stack_depth"] = parse_protocol_int(fields[6], line)
-                meta["stack_overflow_entries"] = parse_protocol_int(fields[7], line)
-                meta["thread_count"] = parse_protocol_int(fields[8], line)
+                meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
+                meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
+                meta["thread_count"] = parse_protocol_uint(fields[8], line)
             continue
         if len(fields) == 10 and fields[2] == "path":
-            kind = parse_protocol_int(fields[4], line)
+            kind = parse_protocol_uint(fields[4], line)
             if kind not in (1, 2, 3):
                 raise ProfilerError(f"unknown profiler path kind: {line}")
             if fields[8] not in ("0", "1"):
                 raise ProfilerError(f"invalid profiler path signedness flag: {line}")
             recent_events.append(
                 {
-                    "sequence": parse_protocol_int(fields[3], line),
+                    "sequence": parse_protocol_uint(fields[3], line),
                     "kind": {1: "statement", 2: "value", 3: "function"}[kind],
                     "function": fields[5],
-                    "line": parse_protocol_int(fields[6], line),
+                    "line": parse_protocol_uint(fields[6], line),
                     "variable": None if fields[7] == "-" else fields[7],
                     "signed": fields[8] == "1",
-                    "value": parse_protocol_int(fields[9], line),
+                    "value": parse_protocol_value(fields[9], line, fields[8] == "1"),
                 }
             )
             continue
         if len(fields) == 6 and fields[2] == "active":
             active_stack = {
-                "tracked_depth": parse_protocol_int(fields[3], line),
-                "overflow_depth": parse_protocol_int(fields[4], line),
+                "tracked_depth": parse_protocol_uint(fields[3], line),
+                "overflow_depth": parse_protocol_uint(fields[4], line),
                 "stack": [] if fields[5] == "-" else fields[5].split(";"),
             }
             continue
@@ -424,9 +435,9 @@ def parse_profile(
                 {
                     "caller": fields[3],
                     "callee": fields[4],
-                    "call_events": parse_protocol_int(fields[5], line),
-                    "completed_calls": parse_protocol_int(fields[6], line),
-                    "inclusive_ns": parse_protocol_int(fields[7], line),
+                    "call_events": parse_protocol_uint(fields[5], line),
+                    "completed_calls": parse_protocol_uint(fields[6], line),
+                    "inclusive_ns": parse_protocol_uint(fields[7], line),
                 }
             )
             continue
@@ -434,15 +445,15 @@ def parse_profile(
             stacks.append(
                 {
                     "stack": fields[3],
-                    "call_events": parse_protocol_int(fields[4], line),
-                    "completed_calls": parse_protocol_int(fields[5], line),
-                    "self_ns": parse_protocol_int(fields[6], line),
+                    "call_events": parse_protocol_uint(fields[4], line),
+                    "completed_calls": parse_protocol_uint(fields[5], line),
+                    "self_ns": parse_protocol_uint(fields[6], line),
                 }
             )
             continue
         if len(fields) != 15 or fields[2] != "location":
             raise ProfilerError(f"malformed profiler runtime record: {line}")
-        kind = parse_protocol_int(fields[3], line)
+        kind = parse_protocol_uint(fields[3], line)
         if kind not in (1, 2, 3):
             raise ProfilerError(f"unknown profiler location kind: {line}")
         if fields[8] not in ("0", "1"):
@@ -450,24 +461,28 @@ def parse_profile(
         location: dict[str, Any] = {
             "kind": {1: "statement", 2: "value", 3: "function"}[kind],
             "function": fields[4],
-            "line": parse_protocol_int(fields[5], line),
-            "count": parse_protocol_int(fields[6], line),
+            "line": parse_protocol_uint(fields[5], line),
+            "count": parse_protocol_uint(fields[6], line),
         }
-        location["interval_ns"] = parse_protocol_int(fields[13], line)
-        location["max_interval_ns"] = parse_protocol_int(fields[14], line)
+        location["interval_ns"] = parse_protocol_uint(fields[13], line)
+        location["max_interval_ns"] = parse_protocol_uint(fields[14], line)
         if kind == 2:
             location["variable"] = None if fields[7] == "-" else fields[7]
             location["signed"] = fields[8] == "1"
-            location["minimum"] = parse_protocol_int(fields[9], line)
-            location["maximum"] = parse_protocol_int(fields[10], line)
-            location["sum"] = None if fields[11] == "overflow" else parse_protocol_int(fields[11], line)
-            location["last"] = parse_protocol_int(fields[12], line)
+            location["minimum"] = parse_protocol_value(fields[9], line, location["signed"])
+            location["maximum"] = parse_protocol_value(fields[10], line, location["signed"])
+            location["sum"] = (
+                None
+                if fields[11] == "overflow"
+                else parse_protocol_value(fields[11], line, location["signed"])
+            )
+            location["last"] = parse_protocol_value(fields[12], line, location["signed"])
         elif kind == 3:
             # Function locations reuse the fixed-width collector record: fields 9–11
             # carry inclusive duration, self duration, and completed return count.
-            location["inclusive_ns"] = parse_protocol_int(fields[9], line)
-            location["self_ns"] = parse_protocol_int(fields[10], line)
-            location["completed_calls"] = parse_protocol_int(fields[11], line)
+            location["inclusive_ns"] = parse_protocol_uint(fields[9], line)
+            location["self_ns"] = parse_protocol_uint(fields[10], line)
+            location["completed_calls"] = parse_protocol_uint(fields[11], line)
         locations.append(location)
     if meta is None:
         if allow_missing:
