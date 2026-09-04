@@ -9,6 +9,27 @@ trap 'rm -rf "$WORK"' EXIT INT TERM HUP
     --warmup 1 --repeat 2 --location-timing --recent-path --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --event-trace --format json --output "$WORK/event-trace-report.json"
+test -s "$WORK/event-trace-report.json"
+python3 - "$WORK/event-trace-report.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    event_trace_report = json.load(stream)
+
+assert event_trace_report["run"]["event_trace_enabled"] is True
+assert "recent_events" not in event_trace_report
+event_trace = event_trace_report["run"]["repetitions"][0]["event_trace"]
+assert len(event_trace) == event_trace_report["summary"]["events"]
+assert [event["sequence"] for event in event_trace] == list(range(len(event_trace)))
+assert all(
+    "compiler_line" in event and "source" in event and "source_text" in event
+    for event in event_trace
+)
+print("event trace smoke OK")
+PY
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format folded --output "$WORK/hot-loop.folded"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
@@ -473,7 +494,7 @@ print("timeout capture OK")
 PY
 
 python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile.schema.json" \
-    "$WORK/report.json" "$WORK/cpu-timing-report.json" "$WORK/included-report.json" "$WORK/signed-report.json" \
+    "$WORK/report.json" "$WORK/event-trace-report.json" "$WORK/cpu-timing-report.json" "$WORK/included-report.json" "$WORK/signed-report.json" \
     "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" \
     "$WORK/threaded-cpu-report.json" "$WORK/crash-report.json" "$WORK/timeout-report.json"
 python3 "$ROOT/test/profile_schema_smoke.py" "$ROOT/docs/profile-comparison.schema.json" \

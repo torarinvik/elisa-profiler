@@ -119,6 +119,9 @@ depth at termination.
 Pass `--recent-path` to include the same recent-event ring in every measured
 run record, as well as the most recent path at the report top level, for
 execution-path diagnostics.
+Pass `--event-trace` to stream every trace event into each measured JSON run
+record. This is intentionally opt-in because a hot loop can produce a large
+trace; the default recent path remains capped at 256 events.
 
 Useful controls:
 
@@ -131,6 +134,7 @@ Useful controls:
     --location-timing      attribute selected clock time between trace events to locations
     --timing-clock wall|cpu choose wall time or per-thread CPU time for location timing
     --recent-path          include the last 256 trace events in each measured run
+    --event-trace          include every trace event in each measured JSON run
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable

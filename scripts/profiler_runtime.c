@@ -101,6 +101,7 @@ static size_t profile_max_call_depth;
 static uint64_t profile_stack_overflow_entries;
 static FILE *profile_output_stream;
 static pthread_once_t profile_output_once = PTHREAD_ONCE_INIT;
+static int profile_event_trace_enabled;
 
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
@@ -208,6 +209,8 @@ static _Thread_local size_t profile_call_overflow_depth;
 static _Thread_local profile_overflow_frame *profile_call_overflow_stack;
 static _Thread_local size_t profile_call_overflow_untracked_depth;
 static _Thread_local profile_thread_state *profile_current_thread;
+
+static void profile_print_field(const char *value);
 
 static void profile_push_overflow_frame(const char *function_name, uint32_t line) {
     /* Once one allocation fails, keep later overflow entries untracked so a
@@ -642,6 +645,19 @@ static void profile_record(const char *function_name, uint32_t line,
             .value = value,
         };
     ++profile_recent_position;
+    if (profile_event_trace_enabled) {
+        fprintf(stderr, "ELISA_PROFILE\t1\tpath\t%" PRIu64 "\t%u\t",
+                profile_event_count - 1, kind);
+        profile_print_field(function_name);
+        fprintf(stderr, "\t%" PRIu32 "\t", line);
+        profile_print_field(variable_name);
+        fprintf(stderr, "\t%u\t", is_signed);
+        if (is_signed) {
+            fprintf(stderr, "%" PRId64 "\n", (int64_t)value);
+        } else {
+            fprintf(stderr, "%" PRIu64 "\n", value);
+        }
+    }
 
     if (profile_capacity == 0 || (profile_size + 1) * 10 >= profile_capacity * 7) {
         if (!profile_grow_locked()) {
@@ -1077,7 +1093,8 @@ static void profile_dump_body(void) {
                 profile_event_count, profile_dropped_count,
                 profile_max_call_depth, profile_stack_overflow_entries,
                 profile_thread_count);
-        if (profile_crash_dumped || profile_recent_path_enabled) {
+        if (!profile_event_trace_enabled &&
+            (profile_crash_dumped || profile_recent_path_enabled)) {
             profile_dump_recent_path();
         }
         if (profile_crash_dumped) {
@@ -1174,7 +1191,8 @@ static void profile_dump_body(void) {
         free(paths);
     }
     free(entries);
-    if (profile_crash_dumped || profile_recent_path_enabled) {
+    if (!profile_event_trace_enabled &&
+        (profile_crash_dumped || profile_recent_path_enabled)) {
         profile_dump_recent_path();
     }
     if (profile_crash_dumped) {
@@ -1212,6 +1230,8 @@ extern int64_t elisa_profile_target_main(void);
 int main(void) {
     const char *recent_path = getenv("ELISA_PROFILE_RECENT_PATH");
     profile_recent_path_enabled = recent_path != NULL && strcmp(recent_path, "1") == 0;
+    const char *event_trace = getenv("ELISA_PROFILE_EVENT_TRACE");
+    profile_event_trace_enabled = event_trace != NULL && strcmp(event_trace, "1") == 0;
     profile_install_crash_handlers();
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main();

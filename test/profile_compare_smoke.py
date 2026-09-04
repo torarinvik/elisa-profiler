@@ -32,6 +32,25 @@ def assert_invalid_timeout() -> None:
     assert "--timeout must be a finite positive number" in result.stderr
 
 
+def assert_invalid_event_trace_format() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(PROFILER),
+            "profile",
+            str(ROOT / "examples" / "hello.elisa"),
+            "--event-trace",
+            "--format",
+            "text",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "--event-trace requires --format json" in result.stderr
+
+
 def profile(
     execution_ms: float,
     inclusive_ns: int,
@@ -108,6 +127,7 @@ def profile(
 
 def main() -> int:
     assert_invalid_timeout()
+    assert_invalid_event_trace_format()
     with tempfile.TemporaryDirectory(prefix="elisa-profile-compare-") as directory:
         root = Path(directory)
         baseline_path = root / "baseline.json"

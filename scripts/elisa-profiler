@@ -1411,6 +1411,8 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
         validate_profile_string(run["measurement_basis"], path, "run.measurement_basis")
     if "location_timing" in run and not isinstance(run["location_timing"], bool):
         invalid_profile_field(path, "run.location_timing", "a boolean")
+    if "event_trace_enabled" in run and not isinstance(run["event_trace_enabled"], bool):
+        invalid_profile_field(path, "run.event_trace_enabled", "a boolean")
     repetitions = run.get("repetitions")
     if "repetitions" in run:
         if not isinstance(repetitions, list):
@@ -1449,6 +1451,9 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
                     )
             if "timed_out" in repetition and not isinstance(repetition["timed_out"], bool):
                 invalid_profile_field(path, f"{field_prefix}.timed_out", "a boolean")
+            for event_field in ("recent_events", "event_trace"):
+                if event_field in repetition and not isinstance(repetition[event_field], list):
+                    invalid_profile_field(path, f"{field_prefix}.{event_field}", "an array")
 
     for section in ("functions", "call_edges", "stacks", "locations"):
         for index, item in enumerate(report[section]):
@@ -2329,13 +2334,15 @@ def build_report(
     recent_events: list[dict[str, Any]],
     active_stack: dict[str, Any] | None,
     timing_clock: str | None = None,
+    event_trace_enabled: bool = False,
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
     for record in run_records:
-        record_recent_events = record.get("recent_events")
-        if isinstance(record_recent_events, list) and record_recent_events is not recent_events:
-            add_source_context(source, record_recent_events)
+        for event_field in ("recent_events", "event_trace"):
+            record_events = record.get(event_field)
+            if isinstance(record_events, list) and record_events is not recent_events:
+                add_source_context(source, record_events)
     function_stats: defaultdict[str, dict[str, Any]] = defaultdict(
         lambda: {
             "events": 0,
@@ -2465,6 +2472,7 @@ def build_report(
             "signal": signal,
             "location_timing": location_timing,
             "timing_clock": timing_clock,
+            "event_trace_enabled": event_trace_enabled,
             "opt_level": opt_level,
             "execution_ms": execution_ms,
             "timeout_s": timeout_s,
@@ -2576,6 +2584,11 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="include the last 256 trace events for each measured run",
     )
+    parser.add_argument(
+        "--event-trace",
+        action="store_true",
+        help="capture every trace event for each measured run in JSON output",
+    )
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
     parser.add_argument(
         "--compiler-root",
@@ -2591,6 +2604,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.top < 1:
         parser.error("--top must be positive")
+    if args.event_trace and args.format != "json":
+        parser.error("--event-trace requires --format json")
     if args.repeat < 1:
         parser.error("--repeat must be positive")
     if args.warmup < 0:
@@ -2622,6 +2637,7 @@ def profile(args: argparse.Namespace) -> int:
     env = os.environ.copy()
     env["ELISA_COMPILER_ROOT"] = str(args.compiler_root)
     env["ELISA_PROFILE_RECENT_PATH"] = "1" if args.recent_path else "0"
+    env["ELISA_PROFILE_EVENT_TRACE"] = "1" if args.event_trace else "0"
     ensure_runtime(
         args.compiler_root,
         args.runtime_object,
@@ -2708,8 +2724,11 @@ def profile(args: argparse.Namespace) -> int:
         warmup_ms = 0.0
         for repetition in range(1, args.warmup + 1):
             warmup_start = time.perf_counter_ns()
+            warmup_env = env.copy()
+            warmup_env["ELISA_PROFILE_RECENT_PATH"] = "0"
+            warmup_env["ELISA_PROFILE_EVENT_TRACE"] = "0"
             warmup_status, _, _, warmup_timed_out, _ = execute_program(
-                executable_path, args.timeout, env=env
+                executable_path, args.timeout, env=warmup_env
             )
             warmup_ms += (time.perf_counter_ns() - warmup_start) / 1_000_000
             if warmup_status != 0 or warmup_timed_out:
@@ -2796,7 +2815,9 @@ def profile(args: argparse.Namespace) -> int:
                 "trace_max_stack_depth": meta.get("max_stack_depth", 0),
                 "trace_stack_overflow_entries": meta.get("stack_overflow_entries", 0),
             }
-            if recent_events:
+            if args.event_trace:
+                run_record["event_trace"] = recent_events
+            elif recent_events:
                 run_record["recent_events"] = recent_events
             run_records.append(run_record)
             profile_results.append(
@@ -2862,8 +2883,9 @@ def profile(args: argparse.Namespace) -> int:
             compile_ms=compile_ms,
             program_stderr="" if args.show_output else program_stderr,
             temp_root=temp_root if args.keep_temp else None,
-            recent_events=recent_events,
+            recent_events=[] if args.event_trace else recent_events,
             active_stack=active_stack,
+            event_trace_enabled=args.event_trace,
         )
         if args.format == "json":
             rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"
