@@ -26,5 +26,7 @@ assert 2 in statement and 4 in statement
 # the location immediately preceding that exit.
 assert int(statement[2][14]) < 10_000_000, statement[2]
 assert statement[4][13:] == ["0", "0"], statement[4]
+function = next(record for record in locations if record[3] == "3")
+assert function[11] == "0", function
 print("timing mismatch smoke OK")
 PY

@@ -721,7 +721,6 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
     }
     if (profile_call_depth == 0) {
         profile_invalidate_timing_cursor(profile_current_thread);
-        profile_record_completed_function(function_name, line);
         return;
     }
     profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
@@ -730,7 +729,6 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
         profile_invalidate_timing_cursor(profile_current_thread);
-        profile_record_completed_function(function_name, line);
         return;
     }
     const char *caller_name = frame->caller_name;
@@ -775,14 +773,12 @@ static void profile_record_untimed_function_exit(const char *function_name, uint
         return;
     }
     if (profile_call_depth == 0) {
-        profile_record_completed_function(function_name, line);
         return;
     }
     profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
     if (!profile_strings_equal(frame->function_name, function_name)) {
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
-        profile_record_completed_function(function_name, line);
         return;
     }
     const char *caller_name = frame->caller_name;
