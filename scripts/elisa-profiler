@@ -349,14 +349,20 @@ def prepare_target(
 
 def parse_protocol_int(value: str, line: str) -> int:
     try:
-        return int(value)
+        parsed = int(value)
     except ValueError as error:
         raise ProfilerError(f"malformed profiler runtime record: {line}") from error
+    if parsed < -(1 << 63) or parsed > (1 << 63) - 1:
+        raise ProfilerError(f"malformed profiler runtime record: {line}")
+    return parsed
 
 
 def parse_protocol_uint(value: str, line: str) -> int:
-    parsed = parse_protocol_int(value, line)
-    if parsed < 0:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ProfilerError(f"malformed profiler runtime record: {line}") from error
+    if parsed < 0 or parsed > (1 << 64) - 1:
         raise ProfilerError(f"malformed profiler runtime record: {line}")
     return parsed
 
