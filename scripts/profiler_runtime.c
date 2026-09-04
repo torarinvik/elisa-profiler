@@ -194,10 +194,58 @@ typedef struct {
 #endif
 } profile_call_frame;
 
+typedef struct profile_overflow_frame profile_overflow_frame;
+
+struct profile_overflow_frame {
+    const char *function_name;
+    uint32_t line;
+    profile_overflow_frame *previous;
+};
+
 static _Thread_local profile_call_frame profile_call_stack[PROFILE_CALL_STACK_CAPACITY];
 static _Thread_local size_t profile_call_depth;
 static _Thread_local size_t profile_call_overflow_depth;
+static _Thread_local profile_overflow_frame *profile_call_overflow_stack;
+static _Thread_local size_t profile_call_overflow_untracked_depth;
 static _Thread_local profile_thread_state *profile_current_thread;
+
+static void profile_push_overflow_frame(const char *function_name, uint32_t line) {
+    /* Once one allocation fails, keep later overflow entries untracked so a
+     * known frame can never be placed above an unknown one. */
+    if (profile_call_overflow_untracked_depth > 0) {
+        ++profile_call_overflow_untracked_depth;
+        return;
+    }
+    profile_overflow_frame *frame = malloc(sizeof(*frame));
+    if (frame == NULL) {
+        profile_call_overflow_untracked_depth = 1;
+        return;
+    }
+    *frame = (profile_overflow_frame){
+        .function_name = function_name,
+        .line = line,
+        .previous = profile_call_overflow_stack,
+    };
+    profile_call_overflow_stack = frame;
+}
+
+static profile_overflow_frame *profile_pop_overflow_frame(void) {
+    profile_overflow_frame *frame = profile_call_overflow_stack;
+    if (frame != NULL) {
+        profile_call_overflow_stack = frame->previous;
+    }
+    return frame;
+}
+
+static void profile_clear_overflow_frames(void) {
+    while (profile_call_overflow_stack != NULL) {
+        profile_overflow_frame *frame = profile_call_overflow_stack;
+        profile_call_overflow_stack = frame->previous;
+        free(frame);
+    }
+    profile_call_overflow_untracked_depth = 0;
+    profile_call_overflow_depth = 0;
+}
 
 #if ELISA_PROFILE_TIMING
 static uint64_t profile_now_ns(void) {
@@ -529,6 +577,14 @@ static void profile_account_previous_locked(profile_thread_state *thread,
     }
     thread->timing_last_ns = now_ns;
 }
+
+static void profile_close_timing_cursor(void) {
+    uint64_t now_ns = profile_now_ns();
+    pthread_mutex_lock(&profile_lock);
+    profile_account_previous_locked(profile_current_thread, now_ns);
+    profile_invalidate_timing_cursor(profile_current_thread);
+    pthread_mutex_unlock(&profile_lock);
+}
 #endif
 
 static int profile_grow_locked(void) {
@@ -683,6 +739,7 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
         ++profile_call_depth;
     } else {
         ++profile_call_overflow_depth;
+        profile_push_overflow_frame(function_name, line);
         stack_overflowed = 1;
     }
 #else
@@ -695,6 +752,7 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
         ++profile_call_depth;
     } else {
         ++profile_call_overflow_depth;
+        profile_push_overflow_frame(function_name, line);
         stack_overflowed = 1;
     }
 #endif
@@ -715,8 +773,22 @@ static void profile_record_completed_function(const char *function_name, uint32_
 #if ELISA_PROFILE_TIMING
 static void profile_record_timed_function_exit(const char *function_name, uint32_t line) {
     if (profile_call_overflow_depth > 0) {
+        profile_close_timing_cursor();
         --profile_call_overflow_depth;
-        profile_record_completed_function(function_name, line);
+        if (profile_call_overflow_untracked_depth > 0) {
+            --profile_call_overflow_untracked_depth;
+            return;
+        }
+        profile_overflow_frame *overflow_frame = profile_pop_overflow_frame();
+        if (overflow_frame == NULL ||
+            !profile_strings_equal(overflow_frame->function_name, function_name)) {
+            free(overflow_frame);
+            profile_call_depth = 0;
+            profile_clear_overflow_frames();
+            return;
+        }
+        profile_record_completed_function(overflow_frame->function_name, overflow_frame->line);
+        free(overflow_frame);
         return;
     }
     if (profile_call_depth == 0) {
@@ -769,7 +841,20 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
 static void profile_record_untimed_function_exit(const char *function_name, uint32_t line) {
     if (profile_call_overflow_depth > 0) {
         --profile_call_overflow_depth;
-        profile_record_completed_function(function_name, line);
+        if (profile_call_overflow_untracked_depth > 0) {
+            --profile_call_overflow_untracked_depth;
+            return;
+        }
+        profile_overflow_frame *overflow_frame = profile_pop_overflow_frame();
+        if (overflow_frame == NULL ||
+            !profile_strings_equal(overflow_frame->function_name, function_name)) {
+            free(overflow_frame);
+            profile_call_depth = 0;
+            profile_clear_overflow_frames();
+            return;
+        }
+        profile_record_completed_function(overflow_frame->function_name, overflow_frame->line);
+        free(overflow_frame);
         return;
     }
     if (profile_call_depth == 0) {
