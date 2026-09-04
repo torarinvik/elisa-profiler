@@ -73,8 +73,9 @@ def main() -> int:
         collector_text = profile_path.read_text(encoding="utf-8")
         assert "spoofed" not in collector_text
         meta, locations, _, _, collector_stderr, _, _ = profiler.parse_profile(collector_text)
-        assert meta["events"] == 2
+        assert meta["events"] == 32 * 2
         assert len(locations) == 2
+        assert meta["thread_count"] >= 2
         assert collector_stderr == ""
     print("profile FD smoke OK")
     return 0

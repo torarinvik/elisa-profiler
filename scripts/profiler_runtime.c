@@ -100,32 +100,34 @@ static size_t profile_call_path_size;
 static size_t profile_max_call_depth;
 static uint64_t profile_stack_overflow_entries;
 static FILE *profile_output_stream;
+static pthread_once_t profile_output_once = PTHREAD_ONCE_INIT;
 
-static FILE *profile_output(void) {
-    if (profile_output_stream != NULL) {
-        return profile_output_stream;
-    }
+static void profile_initialize_output(void) {
     profile_output_stream = stderr;
     const char *fd_text = getenv("ELISA_PROFILE_FD");
     if (fd_text == NULL || *fd_text == '\0') {
-        return profile_output_stream;
+        return;
     }
     char *end = NULL;
     long requested_fd = strtol(fd_text, &end, 10);
     if (end == fd_text || *end != '\0' || requested_fd < 0 || requested_fd > INT_MAX) {
-        return profile_output_stream;
+        return;
     }
     int duplicate_fd = dup((int)requested_fd);
     if (duplicate_fd < 0) {
-        return profile_output_stream;
+        return;
     }
     FILE *stream = fdopen(duplicate_fd, "w");
     if (stream == NULL) {
         close(duplicate_fd);
-        return profile_output_stream;
+        return;
     }
     (void)setvbuf(stream, NULL, _IONBF, 0);
     profile_output_stream = stream;
+}
+
+static FILE *profile_output(void) {
+    (void)pthread_once(&profile_output_once, profile_initialize_output);
     return profile_output_stream;
 }
 
@@ -718,6 +720,7 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         return;
     }
     if (profile_call_depth == 0) {
+        profile_invalidate_timing_cursor(profile_current_thread);
         profile_record_completed_function(function_name, line);
         return;
     }
@@ -726,6 +729,7 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         /* A missing/foreign exit must not poison every later frame. */
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
+        profile_invalidate_timing_cursor(profile_current_thread);
         profile_record_completed_function(function_name, line);
         return;
     }
