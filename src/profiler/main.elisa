@@ -91,6 +91,7 @@ module ProfilerNative:
         const NATIVE_STANDARD_OUTPUT: i64 = 1
         const NATIVE_STANDARD_ERROR: i64 = 2
         const NATIVE_BYTE_NUL: u8 = 0
+        const NATIVE_BYTE_SPACE: u8 = 32
         const NATIVE_BYTE_TAB: u8 = 9
         const NATIVE_BYTE_NEWLINE: u8 = 10
         const NATIVE_BYTE_CARRIAGE_RETURN: u8 = 13
@@ -149,6 +150,7 @@ module ProfilerNative:
             function_records: mutable darray[u8]
             call_edge_records: mutable darray[u8]
             stack_records: mutable darray[u8]
+            folded_records: mutable darray[u8]
             event_records: mutable darray[u8]
             malformed: mutable bool
             malformed_code: mutable i64
@@ -521,6 +523,10 @@ module ProfilerNative:
             records.push(NATIVE_BYTE_COMMA) if records.count > NATIVE_ZERO.usize()
 
 
+        def append_folded_separator(records: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            records.push(NATIVE_BYTE_NEWLINE) if records.count > NATIVE_ZERO.usize()
+
+
         def append_protocol_number(records: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             records.extend(value)
 
@@ -703,7 +709,7 @@ module ProfilerNative:
             append_text(call_edge_records, "}")
 
 
-        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
             stack_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
             completed_field: mutable darray[u8] = []
@@ -726,6 +732,14 @@ module ProfilerNative:
             append_text(stack_records, ",\"self_ns\":")
             append_protocol_number(stack_records, self_field)
             append_text(stack_records, "}")
+            append_folded_separator(folded_records)
+            for index in 0..<stack_field.count |folded_records, stack_field|:
+                folded_records.push(stack_field[index])
+            folded_records.push(NATIVE_BYTE_SPACE)
+            if protocol_number_field(self_field) > NATIVE_ZERO:
+                append_protocol_number(folded_records, self_field)
+            else:
+                append_protocol_number(folded_records, calls_field)
 
 
         def append_event_record(summary: mutable CaptureSummary&, event_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -826,6 +840,7 @@ module ProfilerNative:
                 function_records: [],
                 call_edge_records: [],
                 stack_records: [],
+                folded_records: [],
                 event_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
@@ -835,6 +850,7 @@ module ProfilerNative:
             call_edge_records: mutable darray[u8] = []
             stack_records: mutable darray[u8] = []
             event_records: mutable darray[u8] = []
+            folded_records: mutable darray[u8] = []
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
@@ -870,7 +886,7 @@ module ProfilerNative:
                     append_call_record(&summary, &call_edge_records, data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
-                    append_stack_record(&summary, &stack_records, data, &cursor, line_stop)
+                    append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
                     append_event_record(&summary, &event_records, data, &cursor, line_stop, source)
@@ -881,6 +897,7 @@ module ProfilerNative:
             summary.function_records <- function_records
             summary.call_edge_records <- call_edge_records
             summary.stack_records <- stack_records
+            summary.folded_records <- folded_records
             summary.event_records <- event_records
             return summary
 
@@ -910,6 +927,7 @@ module ProfilerNative:
                 function_records: [],
                 call_edge_records: [],
                 stack_records: [],
+                folded_records: [],
                 event_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
@@ -944,6 +962,8 @@ module ProfilerNative:
             destination.call_edge_records.extend(incoming.call_edge_records)
             append_record_separator(destination.stack_records)
             destination.stack_records.extend(incoming.stack_records)
+            append_folded_separator(destination.folded_records)
+            destination.folded_records.extend(incoming.folded_records)
             append_record_separator(destination.event_records)
             destination.event_records.extend(incoming.event_records)
             if incoming.malformed:
@@ -1043,6 +1063,11 @@ module ProfilerNative:
             append_text(buffer, "],\"locations\":[")
             buffer.extend(summary.location_records)
             append_text(buffer, "]")
+
+
+        def append_folded_report(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            buffer.extend(summary.folded_records)
+            buffer.push(NATIVE_BYTE_NEWLINE) if summary.folded_records.count > NATIVE_ZERO.usize()
 
 
         def append_report(
@@ -1324,19 +1349,22 @@ module ProfilerNative:
             event_trace: mutable bool = false
             recent_path: mutable bool = false
             format_text: mutable bool = false
+            format_folded: mutable bool = false
             requested_repetitions: mutable i64 = NATIVE_ONE
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, requested_repetitions, warmup_repetitions, trace_limit, source_seen|:
+            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, format_folded, requested_repetitions, warmup_repetitions, trace_limit, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
-                    return report_error("--format requires json or text") if index + NATIVE_ONE >= argc
+                    return report_error("--format requires json, text, or folded") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
                         format_text <- true
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
+                        format_folded <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO:
-                        return report_error("--format requires json or text")
+                        return report_error("--format requires json, text, or folded")
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
@@ -1626,6 +1654,8 @@ module ProfilerNative:
             report: mutable darray[u8] = []
             if format_text:
                 append_text_report(report, source, summary, final_exit_code, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
+            elif format_folded:
+                append_folded_report(report, summary)
             else:
                 append_report(report, source, compiler_root, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
             cleanup_temp(temporary)

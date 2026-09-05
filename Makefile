@@ -50,6 +50,8 @@ profiler-native-smoke: profiler-native
 		cmp -s "$$native_work/report.json" "$$native_work/offline.json"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --recent-path --format json --output "$$native_work/recent.json"; \
 		grep -Fq '"recent_events":[{' "$$native_work/recent.json"; \
+		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format folded --output "$$native_work/hot-loop.folded"; \
+		grep -Fq 'main' "$$native_work/hot-loop.folded"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format json --output "$$native_work/stderr-probe.json" 2>"$$native_work/stderr-probe.log"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/stderr-probe.json"; \
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"
