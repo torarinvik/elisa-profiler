@@ -37,6 +37,11 @@ the authoritative retained detail set; `trace`, `recent_path`, `timing`, and
 `sampling` describe the active policies; and `detail_limits` records the
 collector's configured location, edge, stack, and byte limits. A zero limit
 means unlimited, matching the collector configuration.
+Progress manifests additionally expose a `capture_index` for the framed
+transport. `valid_bytes` is the end of the last checksum-validated frame,
+`valid_frames` is its strict frame count, and `bytes` is the observed capture
+file size at the last manifest update. A partial file may extend past
+`valid_bytes`; recovery must never parse beyond the validated boundary.
 
 ## Units and clocks
 

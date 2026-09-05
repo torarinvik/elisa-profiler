@@ -17,7 +17,8 @@
     "events",
     "capture_started",
     "capture_complete",
-    "frame_dropped"
+    "frame_dropped",
+    "capture_index"
   ],
   "properties": {
     "kind": { "const": "elisa_profile_capture_manifest" },
@@ -33,7 +34,18 @@
     "events": { "type": "integer", "minimum": 0 },
     "capture_started": { "type": "boolean" },
     "capture_complete": { "type": "boolean" },
-    "frame_dropped": { "type": "integer", "minimum": 0 }
+    "frame_dropped": { "type": "integer", "minimum": 0 },
+    "capture_index": {
+      "type": "object",
+      "required": ["format", "bytes", "valid_frames", "valid_bytes"],
+      "properties": {
+        "format": { "const": "record-framed-v1" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "valid_frames": { "type": "integer", "minimum": 0 },
+        "valid_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

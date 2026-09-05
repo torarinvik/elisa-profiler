@@ -31,6 +31,8 @@ extend ProfilerNative:
                 capture_bytes_used: NATIVE_ZERO,
                 capture_bytes_dropped: NATIVE_ZERO,
                 frame_dropped: NATIVE_ZERO,
+                valid_frames: NATIVE_ZERO,
+                valid_capture_bytes: NATIVE_ZERO,
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
@@ -73,6 +75,8 @@ extend ProfilerNative:
             destination.capture_bytes_used <- destination.capture_bytes_used + incoming.capture_bytes_used
             destination.capture_bytes_dropped <- destination.capture_bytes_dropped + incoming.capture_bytes_dropped
             destination.frame_dropped <- destination.frame_dropped + incoming.frame_dropped
+            destination.valid_frames <- destination.valid_frames + incoming.valid_frames
+            destination.valid_capture_bytes <- incoming.valid_capture_bytes if incoming.valid_capture_bytes > NATIVE_ZERO
             destination.budget_exceeded <- incoming.budget_exceeded if incoming.budget_exceeded != NATIVE_ZERO
             destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
             destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped

@@ -207,6 +207,8 @@ module ProfilerNative:
             capture_bytes_used: mutable i64
             capture_bytes_dropped: mutable i64
             frame_dropped: mutable i64
+            valid_frames: mutable i64
+            valid_capture_bytes: mutable i64
             budget_exceeded: mutable i64
             call_edge_dropped: mutable i64
             stack_dropped: mutable i64

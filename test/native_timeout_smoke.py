@@ -62,6 +62,10 @@ def main() -> int:
         assert manifest["state"] == "partial", manifest
         assert manifest["capture_complete"] is False, manifest
         assert manifest["completed_repetitions"] == 1, manifest
+        capture_index = manifest["capture_index"]
+        assert capture_index["format"] == "record-framed-v1", capture_index
+        assert capture_index["bytes"] >= capture_index["valid_bytes"] >= 0, capture_index
+        assert capture_index["valid_frames"] >= 0, capture_index
     print("native timeout smoke OK")
     return 0
 

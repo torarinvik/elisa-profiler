@@ -469,7 +469,7 @@ extend ProfilerNative:
             append_text(buffer, "}\n")
 
 
-        def write_capture_manifest(path: darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, capture_path: darray[u8]&, state: sview, requested: i64, completed: i64, successful: i64, failed: i64, summary: CaptureSummary) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def write_capture_manifest(path: darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, capture_path: darray[u8]&, state: sview, requested: i64, completed: i64, successful: i64, failed: i64, summary: CaptureSummary, capture_bytes: i64, valid_frames: i64, valid_capture_bytes: i64) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             return true if path.count == NATIVE_ZERO.usize()
             manifest: mutable darray[u8] = []
             source_digest: darray[u8] = sha256_hex(source_bytes)
@@ -501,6 +501,13 @@ extend ProfilerNative:
             append_text(manifest, "true" if summary.capture_started and summary.capture_complete else "false")
             append_text(manifest, ",\"frame_dropped\":")
             append_i64(manifest, summary.frame_dropped)
+            append_text(manifest, ",\"capture_index\":{\"format\":\"record-framed-v1\",\"bytes\":")
+            append_i64(manifest, capture_bytes)
+            append_text(manifest, ",\"valid_frames\":")
+            append_i64(manifest, valid_frames)
+            append_text(manifest, ",\"valid_bytes\":")
+            append_i64(manifest, valid_capture_bytes)
+            append_text(manifest, "}")
             append_text(manifest, "}\n")
             return write_file(path, manifest)
 
@@ -829,6 +836,10 @@ extend ProfilerNative:
             append_i64(buffer, summary.capture_bytes_dropped)
             append_text(buffer, ",\"frame_dropped\":")
             append_i64(buffer, summary.frame_dropped)
+            append_text(buffer, ",\"valid_frames\":")
+            append_i64(buffer, summary.valid_frames)
+            append_text(buffer, ",\"valid_capture_bytes\":")
+            append_i64(buffer, summary.valid_capture_bytes)
             append_text(buffer, ",\"detail_budget_exceeded\":")
             append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
             append_text(buffer, ",\"dropped_call_edges\":")
@@ -1545,7 +1556,10 @@ extend ProfilerNative:
             measurement_cpu_system_times: mutable darray[i64] = []
             measurement_peak_rss_values: mutable darray[i64] = []
             measurement_resource_availability: mutable darray[i64] = []
-            return report_error("could not create capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "running", requested_repetitions, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, summary)
+            last_capture_bytes: mutable i64 = NATIVE_ZERO
+            last_valid_frames: mutable i64 = NATIVE_ZERO
+            last_valid_capture_bytes: mutable i64 = NATIVE_ZERO
+            return report_error("could not create capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "running", requested_repetitions, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
             warmup_ns: mutable i64 = NATIVE_ZERO
             warmup_index: mutable i64 = NATIVE_ONE
             while warmup_index <= warmup_repetitions |warmup_index, warmup_ns|:
@@ -1568,7 +1582,7 @@ extend ProfilerNative:
             failed_repetitions: mutable i64 = NATIVE_ZERO
             overall_timed_out: mutable bool = false
             repetition: mutable i64 = NATIVE_ONE
-            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, all_cpu_user_times, all_cpu_system_times, all_peak_rss_values, all_resource_availability, measurement_cpu_user_times, measurement_cpu_system_times, measurement_peak_rss_values, measurement_resource_availability, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out|:
+            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, all_cpu_user_times, all_cpu_system_times, all_peak_rss_values, all_resource_availability, measurement_cpu_user_times, measurement_cpu_system_times, measurement_peak_rss_values, measurement_resource_availability, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out, last_capture_bytes, last_valid_frames, last_valid_capture_bytes|:
                 capture_fd: i64 = open_output_file(capture_path)
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
@@ -1589,6 +1603,9 @@ extend ProfilerNative:
                     if run_result.status == NATIVE_ZERO and (not current_summary.capture_started or not current_summary.capture_complete):
                         cleanup_temp(temporary)
                         return report_error("native collector capture missing a complete frame")
+                last_capture_bytes <- capture.count.i64()
+                last_valid_frames <- current_summary.valid_frames
+                last_valid_capture_bytes <- current_summary.valid_capture_bytes
                 current_stderr: darray[u8] = read_file(run_error_path)
                 if current_stderr.count > 0:
                     if program_stderr.count > NATIVE_ZERO.usize():
@@ -1613,7 +1630,7 @@ extend ProfilerNative:
                     failed_repetitions <- failed_repetitions + 1
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
                 overall_timed_out <- true if run_result.timed_out
-                if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "running", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary):
+                if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "running", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes):
                     cleanup_temp(temporary)
                     return report_error("could not update capture manifest")
                 repetition <- repetition + 1
@@ -1689,13 +1706,13 @@ extend ProfilerNative:
                 append_profile_artifact(&artifact, report)
             manifest_state: mutable sview = "complete"
             manifest_state <- "partial" if overall_timed_out or failed_repetitions > NATIVE_ZERO or not summary.capture_complete
-            return report_error("could not finalize capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "finalizing", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary)
+            return report_error("could not finalize capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "finalizing", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
             cleanup_temp(temporary)
             if artifact_output.count > NATIVE_ZERO.usize():
                 return report_error("could not write profile artifact") if not write_file(artifact_output, artifact)
             if output.count > NATIVE_ZERO.usize():
                 return report_error("could not write native profile report") if not write_file(output, report)
-            return report_error("could not complete capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, manifest_state, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary)
+            return report_error("could not complete capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, manifest_state, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
             return final_exit_code if output.count > NATIVE_ZERO.usize()
             _ = write_all_fd(NATIVE_STANDARD_OUTPUT, report) can Console
             return final_exit_code

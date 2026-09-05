@@ -80,6 +80,8 @@
         "capture_bytes_used": { "type": "integer", "minimum": 0 },
         "capture_bytes_dropped": { "type": "integer", "minimum": 0 },
         "frame_dropped": { "type": "integer", "minimum": 0 },
+        "valid_frames": { "type": "integer", "minimum": 0 },
+        "valid_capture_bytes": { "type": "integer", "minimum": 0 },
         "detail_budget_exceeded": { "type": "boolean" },
         "dropped_call_edges": { "type": "integer", "minimum": 0 },
         "dropped_stacks": { "type": "integer", "minimum": 0 },

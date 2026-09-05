@@ -186,6 +186,10 @@ def main():
         assert measured["run"]["capabilities"]["timing"] == "wall"
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True
+        manifest = json.loads(Path(str(output) + ".manifest.json").read_text(encoding="utf-8"))
+        assert manifest["capture_index"]["format"] == "record-framed-v1"
+        assert manifest["capture_index"]["bytes"] >= manifest["capture_index"]["valid_bytes"] > 0
+        assert manifest["capture_index"]["valid_frames"] > 0
         assert len(measured["workload"]["source_sha256"]) == 64
         assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
         repetitions = measured["run"]["repetitions"]

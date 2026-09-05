@@ -459,6 +459,8 @@ extend ProfilerNative:
                 capture_bytes_used: NATIVE_ZERO,
                 capture_bytes_dropped: NATIVE_ZERO,
                 frame_dropped: NATIVE_ZERO,
+                valid_frames: NATIVE_ZERO,
+                valid_capture_bytes: NATIVE_ZERO,
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
@@ -521,6 +523,8 @@ extend ProfilerNative:
                         if frame_valid:
                             record_start <- frame_cursor
                             next_frame_sequence <- next_frame_sequence + NATIVE_ONE
+                            summary.valid_frames <- summary.valid_frames + NATIVE_ONE
+                            summary.valid_capture_bytes <- (line_stop + (NATIVE_ONE.usize() if line_stop < data.count else NATIVE_ZERO.usize())).i64()
                         else:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
