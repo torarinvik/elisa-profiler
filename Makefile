@@ -55,6 +55,9 @@ profiler-native-smoke: profiler-native
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format html --output "$$native_work/hot-loop.html"; \
 		grep -Fq '<!doctype html>' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Functions' "$$native_work/hot-loop.html"; \
+		! grep -Fq 'native-transition' "$$native_work/report.json"; \
+		grep -Fq '"branch":"' "$$native_work/report.json"; \
+		grep -Fq '"commit":"' "$$native_work/report.json"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format json --output "$$native_work/stderr-probe.json" 2>"$$native_work/stderr-probe.log"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/stderr-probe.json"; \
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"

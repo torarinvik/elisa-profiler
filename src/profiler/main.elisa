@@ -292,6 +292,29 @@ module ProfilerNative:
         def environment_or(name: sview, fallback: sview, destination: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             return if copy_environment(name, destination)
             append_text(destination, fallback)
+
+
+        def trim_line_endings(value: mutable darray[u8]&) -> void:
+            while value.count > NATIVE_ZERO.usize() |value|:
+                last: u8 = value[value.count - NATIVE_ONE.usize()]
+                break if last != NATIVE_BYTE_NEWLINE and last != NATIVE_BYTE_CARRIAGE_RETURN
+                value.count <- value.count - NATIVE_ONE.usize()
+
+
+        def read_git_metadata(compiler_root: darray[u8]&, operation: sview, output_path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            command: mutable darray[u8] = []
+            append_text(command, "git -C ")
+            append_shell_quoted(command, compiler_root)
+            append_text(command, " ")
+            append_text(command, operation)
+            append_text(command, " > ")
+            append_shell_quoted(command, output_path)
+            append_text(command, " 2> /dev/null")
+            command.push(NATIVE_BYTE_NUL)
+            return [] if profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast) != NATIVE_ZERO
+            result: mutable darray[u8] = read_file(output_path)
+            trim_line_endings(&result)
+            return result
         
         
         def path_with_suffix(path: darray[u8]&, suffix: sview) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
@@ -319,6 +342,9 @@ module ProfilerNative:
             remove_temp_file(directory, "/link.err")
             remove_temp_file(directory, "/program.out")
             remove_temp_file(directory, "/program.err")
+            remove_temp_file(directory, "/compiler-branch")
+            remove_temp_file(directory, "/compiler-commit")
+            remove_temp_file(directory, "/compiler-dirty")
             directory_copy: mutable darray[u8] = []
             directory_copy.extend(directory)
             directory_copy.push(NATIVE_BYTE_NUL)
@@ -1119,7 +1145,7 @@ module ProfilerNative:
 
 
         def append_report(
-            buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, runtime_object: darray[u8]&, summary: CaptureSummary,
+            buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
             exit_code: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ms: i64
@@ -1130,7 +1156,13 @@ module ProfilerNative:
             append_json_string(buffer, source)
             append_text(buffer, ",\"compiler\":{\"root\":")
             append_json_string(buffer, compiler_root)
-            append_text(buffer, ",\"branch\":\"native-elisa\",\"commit\":\"native-transition\",\"dirty\":false,\"runtime_object\":")
+            append_text(buffer, ",\"branch\":")
+            append_json_string(buffer, compiler_branch)
+            append_text(buffer, ",\"commit\":")
+            append_json_string(buffer, compiler_commit)
+            append_text(buffer, ",\"dirty\":")
+            append_text(buffer, "true" if compiler_dirty else "false")
+            append_text(buffer, ",\"runtime_object\":")
             append_json_string(buffer, runtime_object)
             append_text(buffer, "},\"summary\":{\"events\":")
             append_i64(buffer, summary.events)
@@ -1526,6 +1558,9 @@ module ProfilerNative:
             link_error_path: darray[u8] = path_with_suffix(temporary, "/link.err")
             run_output_path: darray[u8] = path_with_suffix(temporary, "/program.out")
             run_error_path: darray[u8] = path_with_suffix(temporary, "/program.err")
+            compiler_branch_path: darray[u8] = path_with_suffix(temporary, "/compiler-branch")
+            compiler_commit_path: darray[u8] = path_with_suffix(temporary, "/compiler-commit")
+            compiler_dirty_path: darray[u8] = path_with_suffix(temporary, "/compiler-dirty")
             temporary_cstr: mutable darray[u8] = []
             temporary_cstr.extend(temporary)
             temporary_cstr.push(NATIVE_BYTE_NUL)
@@ -1634,6 +1669,14 @@ module ProfilerNative:
                 cleanup_temp(temporary)
                 return report_error("could not link instrumented target")
             compile_elapsed_ns: i64 = elapsed_nanoseconds(build_start, read_monotonic())
+            compiler_branch: mutable darray[u8] = read_git_metadata(compiler_root, "rev-parse --abbrev-ref HEAD", compiler_branch_path)
+            if compiler_branch.count == NATIVE_ZERO.usize():
+                append_text(compiler_branch, "unknown")
+            compiler_commit: mutable darray[u8] = read_git_metadata(compiler_root, "rev-parse HEAD", compiler_commit_path)
+            if compiler_commit.count == NATIVE_ZERO.usize():
+                append_text(compiler_commit, "unknown")
+            dirty_metadata: darray[u8] = read_git_metadata(compiler_root, "status --porcelain --untracked-files=all", compiler_dirty_path)
+            compiler_dirty: bool = dirty_metadata.count > NATIVE_ZERO.usize()
         
             summary: mutable CaptureSummary = empty_capture_summary()
             repetition_records: mutable darray[u8] = []
@@ -1718,7 +1761,7 @@ module ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
             cleanup_temp(temporary)
             if output.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output, report)
