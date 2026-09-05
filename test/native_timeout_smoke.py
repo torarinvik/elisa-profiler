@@ -58,6 +58,10 @@ def main() -> int:
         assert payload["run"]["signal"] == 15, payload["run"]
         assert payload["run"]["repetitions"][0]["timed_out"] is True, payload["run"]
         assert "timeout" in payload["quality"]["reasons"], payload["quality"]
+        manifest = json.loads(Path(str(report) + ".manifest.json").read_text(encoding="utf-8"))
+        assert manifest["state"] == "partial", manifest
+        assert manifest["capture_complete"] is False, manifest
+        assert manifest["completed_repetitions"] == 1, manifest
     print("native timeout smoke OK")
     return 0
 

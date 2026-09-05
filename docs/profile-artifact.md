@@ -26,6 +26,14 @@ is validated with `docs/profile.schema.json`. `report` unwraps the envelope
 before rendering JSON, text, folded stacks, Speedscope, or HTML. `compare`
 also accepts either raw v1 reports or these envelopes.
 
+When `--artifact-output PATH` (or `--output PATH`) is used, the native command
+also maintains `PATH.manifest.json` beside the requested output. It is an
+atomic, human-readable progress record with `running`, `finalizing`,
+`complete`, or `partial` state, source digest, repetition progress, and the
+temporary collector path. If the profiler is interrupted, the last manifest
+and any still-present capture file identify the recoverable evidence without
+pretending that an unfinished stream is complete.
+
 This is a compatibility container, not yet the final durable artifact format.
 The native collector transport is already record-framed: each streamed record
 carries a strict sequence number, byte length, and FNV-1a-64 checksum, and the

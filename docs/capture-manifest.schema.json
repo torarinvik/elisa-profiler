@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://elisa-lang.org/schemas/profiler/capture-manifest-v1.json",
+  "title": "Elisa profiler capture progress manifest",
+  "type": "object",
+  "required": [
+    "kind",
+    "schema_version",
+    "state",
+    "source",
+    "source_sha256",
+    "capture_path",
+    "requested_repetitions",
+    "completed_repetitions",
+    "successful_repetitions",
+    "failed_repetitions",
+    "events",
+    "capture_started",
+    "capture_complete",
+    "frame_dropped"
+  ],
+  "properties": {
+    "kind": { "const": "elisa_profile_capture_manifest" },
+    "schema_version": { "const": 1 },
+    "state": { "enum": ["running", "finalizing", "complete", "partial"] },
+    "source": { "type": "string" },
+    "source_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "capture_path": { "type": "string" },
+    "requested_repetitions": { "type": "integer", "minimum": 1 },
+    "completed_repetitions": { "type": "integer", "minimum": 0 },
+    "successful_repetitions": { "type": "integer", "minimum": 0 },
+    "failed_repetitions": { "type": "integer", "minimum": 0 },
+    "events": { "type": "integer", "minimum": 0 },
+    "capture_started": { "type": "boolean" },
+    "capture_complete": { "type": "boolean" },
+    "frame_dropped": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false
+}

@@ -154,6 +154,7 @@ module ProfilerNative:
         const NATIVE_SIGNAL_KILL: i64 = 9
         const NATIVE_REPORT_SCHEMA_VERSION: i64 = 1
         const NATIVE_ARTIFACT_VERSION: i64 = 1
+        const NATIVE_CAPTURE_MANIFEST_VERSION: i64 = 1
         const NATIVE_PROTOCOL_KIND_STATEMENT: i64 = 1
         const NATIVE_PROTOCOL_KIND_VALUE: i64 = 2
         const NATIVE_PROTOCOL_KIND_FUNCTION: i64 = 3
