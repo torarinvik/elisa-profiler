@@ -9,6 +9,7 @@
     "source",
     "compiler",
     "summary",
+    "quality",
     "source_mapping",
     "run",
     "functions",
@@ -68,11 +69,26 @@
         "stack_limit": { "type": "integer", "minimum": 0 },
         "detail_budget_exceeded": { "type": "boolean" },
         "dropped_call_edges": { "type": "integer", "minimum": 0 },
-        "dropped_stacks": { "type": "integer", "minimum": 0 }
+        "dropped_stacks": { "type": "integer", "minimum": 0 },
+        "crash_signal": { "type": ["integer", "null"], "minimum": 1 }
         ,"trace_events_captured": { "type": "integer", "minimum": 0 }
         ,"trace_events_omitted": { "type": "integer", "minimum": 0 }
         ,"trace_event_limit": { "type": ["integer", "null"], "minimum": 0 }
         ,"trace_complete": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "required": ["capture", "detail", "event_counts", "reasons"],
+      "properties": {
+        "capture": {
+          "type": "string",
+          "enum": ["complete", "target_exit", "target_signal", "profiler_failure"]
+        },
+        "detail": { "type": "string", "enum": ["complete", "degraded"] },
+        "event_counts": { "type": "string", "enum": ["exact", "partial"] },
+        "reasons": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": true
     },
@@ -247,6 +263,7 @@
         "detail_budget_exceeded": { "type": "boolean" },
         "dropped_call_edges": { "type": "integer", "minimum": 0 },
         "dropped_stacks": { "type": "integer", "minimum": 0 },
+        "crash_signal": { "type": ["integer", "null"], "minimum": 1 },
         "trace_events_captured": { "type": "integer", "minimum": 0 },
         "trace_events_omitted": { "type": "integer", "minimum": 0 },
         "trace_event_limit": { "type": ["integer", "null"], "minimum": 0 },

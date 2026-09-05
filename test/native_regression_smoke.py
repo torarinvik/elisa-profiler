@@ -97,9 +97,23 @@ def main():
         target = work / "target.elisa"
         target.write_text("def main() -> i64:\n    return 7\n")
         run("profile", target, "--format", "json", "--output", output, expected=7)
-        assert json.loads(output.read_text())["run"]["exit_code"] == 7
+        failed_report = json.loads(output.read_text())
+        assert failed_report["run"]["exit_code"] == 7
+        assert failed_report["run"]["signal"] is None
+        assert failed_report["quality"] == {
+            "capture": "target_exit",
+            "detail": "complete",
+            "event_counts": "exact",
+            "reasons": ["target_exit"],
+        }
         target.write_text('@link_name("_exit")\nextern terminate(code: i32) -> void\n\ndef main() -> i64:\n    terminate(0)\n    return 0\n')
         run("profile", target, "--format", "json", "--output", output, ok=False)
+        run("profile", ROOT / "examples/crash.elisa", "--format", "json", "--output", output, expected=134)
+        crash_report = json.loads(output.read_text())
+        assert crash_report["run"]["signal"] == 6
+        assert crash_report["summary"]["crash_signal"] == 6
+        assert crash_report["quality"]["capture"] == "target_signal"
+        assert "crash_marker" in crash_report["quality"]["reasons"]
         run("profile", ROOT / "examples/hot_loop.elisa", "--repeat", "2",
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)

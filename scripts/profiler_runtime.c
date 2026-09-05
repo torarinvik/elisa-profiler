@@ -79,6 +79,7 @@ enum {
     PROFILE_CAPACITY_GROWTH_FACTOR = 2,
     PROFILE_TABLE_LOAD_NUMERATOR = 10,
     PROFILE_TABLE_LOAD_DENOMINATOR = 7,
+    PROFILE_DECIMAL_DIGITS = 20,
 };
 
 typedef struct {
@@ -122,9 +123,11 @@ static int profile_event_trace_enabled;
 static uint64_t profile_event_trace_limit;
 static uint64_t profile_event_trace_captured;
 static uint64_t profile_event_trace_omitted;
+static int profile_output_fd = STDERR_FILENO;
 
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
+    profile_output_fd = STDERR_FILENO;
     const char *fd_text = getenv("ELISA_PROFILE_FD");
     if (fd_text == NULL || *fd_text == '\0') {
         return;
@@ -144,6 +147,7 @@ static void profile_initialize_output(void) {
         return;
     }
     (void)setvbuf(stream, NULL, _IONBF, 0);
+    profile_output_fd = duplicate_fd;
     profile_output_stream = stream;
 }
 
@@ -1151,19 +1155,48 @@ static void profile_dump_active_stack(void) {
     fputc('\n', stderr);
 }
 
+static size_t profile_signal_append_literal(char *buffer, size_t offset,
+                                            size_t capacity, const char *literal) {
+    while (*literal != '\0' && offset < capacity) {
+        buffer[offset++] = *literal++;
+    }
+    return offset;
+}
+
+static size_t profile_signal_append_uint(char *buffer, size_t offset,
+                                         size_t capacity, unsigned int value) {
+    char digits[PROFILE_DECIMAL_DIGITS];
+    size_t count = 0;
+    do {
+        digits[count++] = (char)('0' + value % 10U);
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits));
+    while (count > 0 && offset < capacity) {
+        buffer[offset++] = digits[--count];
+    }
+    return offset;
+}
+
+static void profile_write_crash_marker(int signal_number) {
+    char buffer[128];
+    size_t offset = 0;
+    offset = profile_signal_append_literal(
+        buffer, offset, sizeof(buffer), "ELISA_PROFILE\t1\tcrash\t");
+    offset = profile_signal_append_uint(
+        buffer, offset, sizeof(buffer), (unsigned int)signal_number);
+    offset = profile_signal_append_literal(buffer, offset, sizeof(buffer), "\n");
+    (void)write(profile_output_fd, buffer, offset);
+}
+
 static void profile_crash_handler(int signal_number) {
     if (!profile_crash_dumped) {
         profile_crash_dumped = 1;
-        /*
-         * This path is intentionally diagnostic rather than async-signal-safe:
-         * preserving the trace is more useful than losing all profile data on
-         * a target fault. The handler immediately restores the default action
-         * and re-raises the original signal after dumping.
-         */
-        profile_dump_from_signal();
+        profile_write_crash_marker(signal_number);
     }
-    signal(signal_number, SIG_DFL);
-    raise(signal_number);
+    (void)signal(signal_number, SIG_DFL);
+    (void)kill(getpid(), signal_number);
+    (void)raise(signal_number);
+    _exit(128 + signal_number);
 }
 
 static void profile_install_crash_handlers(void) {
@@ -1373,6 +1406,7 @@ int main(void) {
         "ELISA_PROFILE_MAX_CALL_EDGES", PROFILE_DEFAULT_CALL_EDGE_LIMIT);
     profile_call_path_limit = profile_read_limit_environment(
         "ELISA_PROFILE_MAX_STACKS", PROFILE_DEFAULT_CALL_PATH_LIMIT);
+    (void)profile_output();
     profile_install_crash_handlers();
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main();

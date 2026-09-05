@@ -209,6 +209,7 @@ module ProfilerNative:
             budget_exceeded: mutable i64
             call_edge_dropped: mutable i64
             stack_dropped: mutable i64
+            crash_signal: mutable i64
             location_records: mutable darray[u8]
             function_records: mutable darray[u8]
             call_edge_records: mutable darray[u8]
@@ -1107,6 +1108,7 @@ module ProfilerNative:
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
+                crash_signal: NATIVE_ZERO,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
@@ -1124,6 +1126,7 @@ module ProfilerNative:
             folded_records: mutable darray[u8] = []
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
+            crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
             while line_start < data.count |line_start, data, summary|:
                 line_stop: mutable usize = line_start
@@ -1149,6 +1152,9 @@ module ProfilerNative:
                     summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
+                elif line_prefix(data, line_start, line_stop, crash_prefix):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len(crash_prefix)
+                    summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
                     append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source)
@@ -1194,6 +1200,7 @@ module ProfilerNative:
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
+                crash_signal: NATIVE_ZERO,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
@@ -1225,6 +1232,7 @@ module ProfilerNative:
             destination.budget_exceeded <- incoming.budget_exceeded if incoming.budget_exceeded != NATIVE_ZERO
             destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
             destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped
+            destination.crash_signal <- incoming.crash_signal if incoming.crash_signal > NATIVE_ZERO
             append_record_separator(destination.location_records)
             destination.location_records.extend(incoming.location_records)
             append_record_separator(destination.function_records)
@@ -1268,7 +1276,9 @@ module ProfilerNative:
             append_i64(buffer, requested)
             append_text(buffer, ",\"exit_code\":")
             append_i64(buffer, system_exit_code(result.status))
-            append_text(buffer, ",\"signal\":null,\"execution_ms\":")
+            append_text(buffer, ",\"signal\":")
+            append_observed_signal(buffer, result.status, summary)
+            append_text(buffer, ",\"execution_ms\":")
             append_millis(buffer, result.elapsed_ns)
             append_text(buffer, ",\"timed_out\":false,\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"trace_events\":")
             append_i64(buffer, summary.events)
@@ -1294,6 +1304,11 @@ module ProfilerNative:
             append_i64(buffer, summary.call_edge_dropped)
             append_text(buffer, ",\"dropped_stacks\":")
             append_i64(buffer, summary.stack_dropped)
+            append_text(buffer, ",\"crash_signal\":")
+            if summary.crash_signal > NATIVE_ZERO:
+                append_i64(buffer, summary.crash_signal)
+            else:
+                append_text(buffer, "null")
             append_text(buffer, ",\"trace_events_captured\":")
             append_i64(buffer, summary.trace_captured)
             append_text(buffer, ",\"trace_events_omitted\":")
@@ -1322,6 +1337,84 @@ module ProfilerNative:
         def system_exit_code(status: i64) -> i64:
             return NATIVE_CHILD_FAILURE_STATUS if status < NATIVE_ZERO
             return status / NATIVE_EXIT_STATUS_BASE if status % NATIVE_EXIT_STATUS_BASE == NATIVE_ZERO else NATIVE_SIGNAL_EXIT_BASE + (status % NATIVE_SIGNAL_STATUS_BASE)
+
+
+        def system_signal(status: i64) -> i64:
+            return NATIVE_NEGATIVE_ONE if status < NATIVE_ZERO or status % NATIVE_EXIT_STATUS_BASE == NATIVE_ZERO else status % NATIVE_SIGNAL_STATUS_BASE
+
+
+        def append_optional_signal(buffer: mutable darray[u8]&, status: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            signal: i64 = system_signal(status)
+            append_text(buffer, "null") if signal < NATIVE_ZERO
+            append_i64(buffer, signal) if signal >= NATIVE_ZERO
+
+
+        def observed_signal(status: i64, summary: CaptureSummary) -> i64:
+            signal: i64 = system_signal(status)
+            return summary.crash_signal if signal < NATIVE_ZERO and summary.crash_signal > NATIVE_ZERO
+            return signal
+
+
+        def append_observed_signal(buffer: mutable darray[u8]&, status: i64, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            signal: i64 = observed_signal(status, summary)
+            append_text(buffer, "null") if signal < NATIVE_ZERO
+            append_i64(buffer, signal) if signal >= NATIVE_ZERO
+
+
+        def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            target_exit: i64 = system_exit_code(status)
+            signal: i64 = observed_signal(status, summary)
+            detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
+            append_text(buffer, "\"quality\":{\"capture\":\"")
+            if status < NATIVE_ZERO:
+                append_text(buffer, "profiler_failure")
+            elif signal >= NATIVE_ZERO:
+                append_text(buffer, "target_signal")
+            elif target_exit != NATIVE_ZERO:
+                append_text(buffer, "target_exit")
+            else:
+                append_text(buffer, "complete")
+            append_text(buffer, "\",\"detail\":\"")
+            append_text(buffer, "degraded" if detail_degraded else "complete")
+            append_text(buffer, "\",\"event_counts\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO else "exact")
+            append_text(buffer, "\",\"reasons\":[")
+            first_reason: mutable bool = true
+            if status < NATIVE_ZERO:
+                append_text(buffer, "\"wait_failure\"")
+                first_reason <- false
+            if signal >= NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"signal_termination\"")
+                first_reason <- false
+            if target_exit != NATIVE_ZERO and signal < NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"target_exit\"")
+                first_reason <- false
+            if summary.dropped > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"dropped_locations\"")
+                first_reason <- false
+            if summary.call_edge_dropped > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"dropped_call_edges\"")
+                first_reason <- false
+            if summary.stack_dropped > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"dropped_stacks\"")
+                first_reason <- false
+            if summary.stack_overflow_entries > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"stack_overflow\"")
+                first_reason <- false
+            if summary.crash_signal > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"crash_marker\"")
+                first_reason <- false
+            if event_trace and summary.trace_omitted > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"event_trace_omitted\"")
+            append_text(buffer, "]}")
         
         
         def append_detail_arrays(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
@@ -2203,7 +2296,7 @@ module ProfilerNative:
 
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
-            exit_code: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
+            exit_code: i64, status: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64
         ) -> void can[Abort.Panic, Memory.Allocate]:
@@ -2249,6 +2342,11 @@ module ProfilerNative:
             append_i64(buffer, summary.call_edge_dropped)
             append_text(buffer, ",\"dropped_stacks\":")
             append_i64(buffer, summary.stack_dropped)
+            append_text(buffer, ",\"crash_signal\":")
+            if summary.crash_signal > NATIVE_ZERO:
+                append_i64(buffer, summary.crash_signal)
+            else:
+                append_text(buffer, "null")
             append_text(buffer, ",\"thread_count\":")
             append_i64(buffer, summary.thread_count)
             append_text(buffer, ",\"trace_events_captured\":")
@@ -2265,13 +2363,17 @@ module ProfilerNative:
                 append_text(buffer, "null")
             else:
                 append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
-            append_text(buffer, "},\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
+            append_text(buffer, "},")
+            append_quality(buffer, summary, status, event_trace)
+            append_text(buffer, ",\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
             append_i64(buffer, NATIVE_ZERO)
             append_text(buffer, ",\"unmapped_locations\":")
             append_i64(buffer, summary.locations)
             append_text(buffer, "},\"run\":{\"exit_code\":")
             append_i64(buffer, exit_code)
-            append_text(buffer, ",\"signal\":null,\"location_timing\":true,\"timing_clock\":\"wall\",\"event_trace_enabled\":")
+            append_text(buffer, ",\"signal\":")
+            append_observed_signal(buffer, status, summary)
+            append_text(buffer, ",\"location_timing\":true,\"timing_clock\":\"wall\",\"event_trace_enabled\":")
             append_text(buffer, "true" if event_trace else "false")
             append_text(buffer, ",\"trace_events_captured\":")
             append_i64(buffer, summary.trace_captured)
@@ -2900,7 +3002,7 @@ module ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns)
             cleanup_temp(temporary)
             if output.count > NATIVE_ZERO.usize():
                 return report_error("could not write native profile report") if not write_file(output, report)
