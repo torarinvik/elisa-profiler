@@ -8,16 +8,19 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-b88dbe6 merge: sync latest committed compiler fixes into profiler worktree
+d8cadbb1 fix: report packed header storage accurately
 ```
 
-That merge contains the reviewed source and regression-test deltas found in the
-compiler worktrees during the profiler setup, plus the later qualified-module
-error-call lowering fix from `codex/wasm-sdk` (`22a0744`). The dedicated compiler
-branch also contains the previously committed profiler-facing CLI fix (`770ec6f`)
-and the complete committed ancestry of the local compiler branches, including
-the `codex/wasm-sdk` tip `c033e9e` that advanced after the earlier `583c4927`
-checkpoint. `make
+The dedicated branch contains the reviewed source and regression-test deltas
+found in the compiler worktrees during profiler setup, the qualified-module
+error-call lowering fix from `codex/wasm-sdk`, and the later packed-header
+storage fix from the main compiler checkout. The `codex/wasm-sdk` tip
+`4f368a66` is included through merge `330633ea`; `d8cadbb1` then corrects
+generated C-header accounting for inline dynamic-AoS common fields versus
+side-table common fields and records the packed side-table offsets accurately.
+The dedicated compiler branch also contains the previously committed
+profiler-facing CLI fix and the complete committed ancestry of the local
+compiler branches. `make
 compiler-audit` is the repeatable check that every local branch tip remains an
 ancestor of the dedicated compiler branch. It also writes the ignored
 `build/compiler-integration-ledger.json` file atomically. The ledger is the
@@ -87,15 +90,20 @@ remain untouched, including their uncommitted `.DS_Store` files.
 The generated ledger is the detailed record; its current classifications are:
 
 - The main `Elisa-compiler` worktree has a mixed candidate: the relevant files
-  already matching `codex/profiler` are an `equivalent-patch`, while its changed
-  `c_header.elisa` and `.gitignore` require review. The affected subsystems are
-  backend/parser/semantic and the listed effect, packed-store, and differential
-  tests are the verification set.
+  already matching `codex/profiler` are an `equivalent-patch`; its packed-header
+  `c_header.elisa` fix was independently reviewed, parity-tested, and imported
+  as `d8cadbb1`. Its unrelated `.gitignore` change remains unimported. The
+  affected subsystems are backend/parser/semantic and packed-header emission;
+  the listed effect, packed-store, and differential tests are the verification
+  set.
 - The temporary verification worktree is an `equivalent-patch` for the local
   region annotation and region-scope fixtures; it has not been rewritten or
   committed from this audit.
 - The transpiler stage1 worktree has a distinct backend/parser candidate plus a
-  breadth fixture; it remains `candidate-fix-needs-review`.
+  breadth fixture. Its changed source files are already represented by newer
+  or equivalent implementations in the dedicated checkout, but the dirty
+  patch has not been proven equivalent as a patch and remains
+  `candidate-fix-needs-review`.
 - The Neural Workshop scope-binding test and structpy parser-machine changes are
   distinct `candidate-fix-needs-review` entries. Their owners' worktrees remain
   byte-for-byte untouched.
@@ -104,7 +112,9 @@ The generated ledger is the detailed record; its current classifications are:
 
 No uncommitted patch is imported automatically. A candidate closes only after an
 independent diff review, its affected tests pass against stage0 and stage1, and a
-destination commit records the source path and patch digest.
+destination commit records the source path and patch digest. The packed-header
+candidate is the exception now closed by `d8cadbb1`; the source checkout itself
+was not rewritten.
 
 ## Verification contract
 
