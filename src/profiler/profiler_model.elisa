@@ -18,6 +18,8 @@ module ProfilerNative:
         const NATIVE_WAIT_NO_OPTIONS: i64 = 0
         const NATIVE_WAIT_NO_HANG: i64 = 1
         const NATIVE_WAIT_POLL_MICROSECONDS: u32 = 1000
+        const NATIVE_TOOL_TIMEOUT_SECONDS: i64 = 300
+        const NATIVE_TOOL_TIMEOUT_NS: i64 = 300000000000
         const NATIVE_TIMEOUT_GRACE_MILLISECONDS: i64 = 2000
         const NATIVE_ENV_OVERWRITE: i64 = 1
         const NATIVE_ACCESS_EXECUTE: i64 = 1

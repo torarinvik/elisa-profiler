@@ -48,14 +48,35 @@ extend ProfilerNative:
                     profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
+                _ = profiler_ffi_setpgid(NATIVE_ZERO, NATIVE_ZERO)
                 _ = profiler_ffi_execvp(tool_cstr, (&command_argv[0]).cast[mutable cstr&&] can Unsafe.PointerCast)
                 profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
             if process < NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 return NATIVE_NEGATIVE_ONE
+            _ = profiler_ffi_setpgid(process, process)
             status: mutable i64 = NATIVE_ZERO
-            waited: i64 = profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
+            waited: mutable i64 = NATIVE_ZERO
+            start_time: ProfilerNativeTimespec = read_monotonic()
+            while waited != process |waited, status|:
+                waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_HANG)
+                break if waited == process or waited < NATIVE_ZERO
+                now: ProfilerNativeTimespec = read_monotonic()
+                if elapsed_nanoseconds(start_time, now) >= NATIVE_TOOL_TIMEOUT_NS:
+                    _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_TERM)
+                    grace_start: ProfilerNativeTimespec = now
+                    while true |waited, status, grace_start|:
+                        waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_HANG)
+                        break if waited == process or waited < NATIVE_ZERO
+                        grace_now: ProfilerNativeTimespec = read_monotonic()
+                        if elapsed_nanoseconds(grace_start, grace_now) >= NATIVE_TIMEOUT_GRACE_MILLISECONDS * NATIVE_NANOS_PER_MILLISECOND:
+                            _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_KILL)
+                            waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
+                            break
+                        _ = profiler_ffi_usleep(NATIVE_WAIT_POLL_MICROSECONDS)
+                    break
+                _ = profiler_ffi_usleep(NATIVE_WAIT_POLL_MICROSECONDS)
             _ = profiler_ffi_close(stdout_fd)
             _ = profiler_ffi_close(stderr_fd)
             return NATIVE_NEGATIVE_ONE if waited != process
