@@ -21,8 +21,6 @@ extern profiler_ffi_write(fd: i64, buf: u8&, count: usize) -> i64 can[Console]
 extern profiler_ffi_open(path: cstr, flags: i64, ...) -> i64
 @link_name("close")
 extern profiler_ffi_close(fd: i64) -> i64
-@link_name("system")
-extern profiler_ffi_system(command: cstr) -> i64
 @link_name("getenv")
 extern profiler_ffi_getenv(name: cstr) -> u8&?
 @link_name("mkdir")
@@ -45,6 +43,8 @@ extern profiler_ffi_unsetenv(name: cstr) -> i64
 extern profiler_ffi_fork() -> i64
 @link_name("execv")
 extern profiler_ffi_execv(path: cstr, argv: mutable cstr&&) -> i64
+@link_name("execvp")
+extern profiler_ffi_execvp(path: cstr, argv: mutable cstr&&) -> i64
 @link_name("waitpid")
 extern profiler_ffi_waitpid(pid: i64, status: mutable i64&, options: i64) -> i64
 @link_name("dup2")
@@ -103,7 +103,6 @@ module ProfilerNative:
         const NATIVE_BYTE_EQUALS: u8 = 61
         const NATIVE_BYTE_DOUBLE_QUOTE: u8 = 34
         const NATIVE_BYTE_AMPERSAND: u8 = 38
-        const NATIVE_BYTE_APOSTROPHE: u8 = 39
         const NATIVE_BYTE_LESS_THAN: u8 = 60
         const NATIVE_BYTE_GREATER_THAN: u8 = 62
         const NATIVE_BYTE_PERIOD: u8 = 46
@@ -260,17 +259,26 @@ module ProfilerNative:
             append_text(buffer, "\":")
         
         
-        def append_shell_quoted(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
-            # Single-quote every path/command argument. A literal single quote is represented
-            # as the shell-safe close-quote/backslash/open-quote sequence.
-            buffer.push(NATIVE_BYTE_APOSTROPHE)
-            for index in 0..<value.count |buffer, value|:
-                byte: u8 = value[index]
-                if byte == NATIVE_BYTE_APOSTROPHE:
-                    append_text(buffer, "'\\''")
-                else:
-                    buffer.push(byte)
-            buffer.push(NATIVE_BYTE_APOSTROPHE)
+        def append_command_argument[@r](arguments: mutable darray[darray[u8]]& @r, value: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            append_text(argument, value)
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
+
+
+        def append_command_path_argument[@r](arguments: mutable darray[darray[u8]]& @r, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            argument.extend(value)
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
+
+
+        def append_command_i64_argument[@r](arguments: mutable darray[darray[u8]]& @r, prefix: sview, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            append_text(argument, prefix)
+            append_i64(argument, value)
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
         
         
         def copy_cstr(destination: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -305,17 +313,24 @@ module ProfilerNative:
                 value.count <- value.count - NATIVE_ONE.usize()
 
 
-        def read_git_metadata(compiler_root: darray[u8]&, operation: sview, output_path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
-            command: mutable darray[u8] = []
-            append_text(command, "git -C ")
-            append_shell_quoted(command, compiler_root)
-            append_text(command, " ")
-            append_text(command, operation)
-            append_text(command, " > ")
-            append_shell_quoted(command, output_path)
-            append_text(command, " 2> /dev/null")
-            command.push(NATIVE_BYTE_NUL)
-            return [] if profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast) != NATIVE_ZERO
+        def read_git_metadata(compiler_root: darray[u8]&, operation: sview, output_path: darray[u8]&, error_path: darray[u8]&, git_tool: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            command_arguments: mutable darray[darray[u8]] = []
+            append_command_argument(command_arguments, "-C")
+            append_command_path_argument(command_arguments, compiler_root)
+            if operation == "branch":
+                append_command_argument(command_arguments, "rev-parse")
+                append_command_argument(command_arguments, "--abbrev-ref")
+                append_command_argument(command_arguments, "HEAD")
+            elif operation == "commit":
+                append_command_argument(command_arguments, "rev-parse")
+                append_command_argument(command_arguments, "HEAD")
+            elif operation == "dirty":
+                append_command_argument(command_arguments, "status")
+                append_command_argument(command_arguments, "--porcelain")
+                append_command_argument(command_arguments, "--untracked-files=all")
+            else:
+                return []
+            return [] if run_tool_direct(git_tool, command_arguments, output_path, error_path) != NATIVE_ZERO
             result: mutable darray[u8] = read_file(output_path)
             trim_line_endings(&result)
             return result
@@ -349,6 +364,7 @@ module ProfilerNative:
             remove_temp_file(directory, "/compiler-branch")
             remove_temp_file(directory, "/compiler-commit")
             remove_temp_file(directory, "/compiler-dirty")
+            remove_temp_file(directory, "/compiler-metadata.err")
             directory_copy: mutable darray[u8] = []
             directory_copy.extend(directory)
             directory_copy.push(NATIVE_BYTE_NUL)
@@ -410,6 +426,48 @@ module ProfilerNative:
             path_copy.push(NATIVE_BYTE_NUL)
             path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
             return profiler_ffi_open(path_cstr, NATIVE_O_RDONLY, NATIVE_ZERO)
+
+
+        def run_tool_direct(tool: darray[u8]&, arguments: darray[darray[u8]], stdout_path: darray[u8]&, stderr_path: darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            # Build stable C-string storage before creating the child. The child receives a
+            # direct argv vector; no shell parser can reinterpret a path or an option.
+            tool_storage: mutable darray[u8] = []
+            tool_storage.extend(tool)
+            tool_storage.push(NATIVE_BYTE_NUL)
+            tool_cstr: cstr = (&tool_storage[0]).cast[cstr] can Unsafe.PointerCast
+            argument_storage: mutable darray[darray[u8]] = []
+            for index in 0..<arguments.count |argument_storage, arguments|:
+                argument_storage.push(arguments[index])
+            command_argv: mutable darray[cstr] = []
+            command_argv.push(tool_cstr)
+            for index in 0..<argument_storage.count |command_argv, argument_storage|:
+                argument_cstr: cstr = (&argument_storage[index][0]).cast[cstr] can Unsafe.PointerCast
+                command_argv.push(argument_cstr)
+            command_argv.push(null)
+            stdout_fd: i64 = open_output_file(stdout_path)
+            return NATIVE_NEGATIVE_ONE if stdout_fd < NATIVE_ZERO
+            stderr_fd: i64 = open_output_file(stderr_path)
+            if stderr_fd < NATIVE_ZERO:
+                _ = profiler_ffi_close(stdout_fd)
+                return NATIVE_NEGATIVE_ONE
+            process: i64 = profiler_ffi_fork()
+            if process == NATIVE_ZERO:
+                if profiler_ffi_dup2(stdout_fd, NATIVE_STANDARD_OUTPUT) < NATIVE_ZERO or profiler_ffi_dup2(stderr_fd, NATIVE_STANDARD_ERROR) < NATIVE_ZERO:
+                    profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
+                _ = profiler_ffi_close(stdout_fd)
+                _ = profiler_ffi_close(stderr_fd)
+                _ = profiler_ffi_execvp(tool_cstr, (&command_argv[0]).cast[mutable cstr&&] can Unsafe.PointerCast)
+                profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
+            if process < NATIVE_ZERO:
+                _ = profiler_ffi_close(stdout_fd)
+                _ = profiler_ffi_close(stderr_fd)
+                return NATIVE_NEGATIVE_ONE
+            status: mutable i64 = NATIVE_ZERO
+            waited: i64 = profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
+            _ = profiler_ffi_close(stdout_fd)
+            _ = profiler_ffi_close(stderr_fd)
+            return NATIVE_NEGATIVE_ONE if waited != process
+            return status
 
 
         def clear_target_environment() -> void:
@@ -1633,6 +1691,8 @@ module ProfilerNative:
             environment_or("ELISA_CLANG", "clang", compiler_tool)
             objcopy_tool: mutable darray[u8] = []
             environment_or("ELISA_LLVM_OBJCOPY", "llvm-objcopy", objcopy_tool)
+            git_tool: mutable darray[u8] = []
+            environment_or("ELISA_GIT", "git", git_tool)
             collector_source: mutable darray[u8] = []
             environment_or("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", collector_source)
         
@@ -1658,6 +1718,7 @@ module ProfilerNative:
             compiler_branch_path: darray[u8] = path_with_suffix(temporary, "/compiler-branch")
             compiler_commit_path: darray[u8] = path_with_suffix(temporary, "/compiler-commit")
             compiler_dirty_path: darray[u8] = path_with_suffix(temporary, "/compiler-dirty")
+            compiler_metadata_error_path: darray[u8] = path_with_suffix(temporary, "/compiler-metadata.err")
             temporary_cstr: mutable darray[u8] = []
             temporary_cstr.extend(temporary)
             temporary_cstr.push(NATIVE_BYTE_NUL)
@@ -1665,43 +1726,33 @@ module ProfilerNative:
             return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temporary_cstr_pointer, NATIVE_DIRECTORY_MODE) != NATIVE_ZERO
             build_start: ProfilerNativeTimespec = read_monotonic()
 
-            command: mutable darray[u8] = []
-            append_shell_quoted(command, compiler_binary)
-            append_text(command, " -g -ftrace -O")
-            append_i64(command, opt_level)
-            append_text(command, " -o ")
-            append_shell_quoted(command, target_object)
-            append_text(command, " ")
-            append_shell_quoted(command, source)
-            append_text(command, " > ")
-            append_shell_quoted(command, compile_output_path)
-            append_text(command, " 2> ")
-            append_shell_quoted(command, compile_error_path)
-            command.push(NATIVE_BYTE_NUL)
-            compile_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            command_arguments: mutable darray[darray[u8]] = []
+            append_command_argument(command_arguments, "-g")
+            append_command_argument(command_arguments, "-ftrace")
+            append_command_i64_argument(command_arguments, "-O", opt_level)
+            append_command_argument(command_arguments, "-o")
+            append_command_path_argument(command_arguments, target_object)
+            append_command_path_argument(command_arguments, source)
+            compile_status: i64 = run_tool_direct(compiler_binary, command_arguments, compile_output_path, compile_error_path)
             if compile_status != NATIVE_ZERO:
                 diagnostics: darray[u8] = read_file(compile_error_path)
                 write_stderr(diagnostics)
                 cleanup_temp(temporary)
                 return report_error("native target compilation failed")
         
-            command <- []
-            append_shell_quoted(command, objcopy_tool)
-            append_text(command, " --redefine-sym _main=_elisa_profile_target_main ")
-            append_shell_quoted(command, target_object)
-            append_text(command, " ")
-            append_shell_quoted(command, renamed_object)
-            command.push(NATIVE_BYTE_NUL)
-            rename_status: mutable i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            command_arguments <- []
+            append_command_argument(command_arguments, "--redefine-sym")
+            append_command_argument(command_arguments, "_main=_elisa_profile_target_main")
+            append_command_path_argument(command_arguments, target_object)
+            append_command_path_argument(command_arguments, renamed_object)
+            rename_status: mutable i64 = run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
             if rename_status != NATIVE_ZERO:
-                command <- []
-                append_shell_quoted(command, objcopy_tool)
-                append_text(command, " --redefine-sym main=elisa_profile_target_main ")
-                append_shell_quoted(command, target_object)
-                append_text(command, " ")
-                append_shell_quoted(command, renamed_object)
-                command.push(NATIVE_BYTE_NUL)
-                rename_status <- profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+                command_arguments <- []
+                append_command_argument(command_arguments, "--redefine-sym")
+                append_command_argument(command_arguments, "main=elisa_profile_target_main")
+                append_command_path_argument(command_arguments, target_object)
+                append_command_path_argument(command_arguments, renamed_object)
+                rename_status <- run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
             if rename_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not rename target main for collection")
@@ -1717,62 +1768,69 @@ module ProfilerNative:
             if not runtime_copy_ok:
                 cleanup_temp(temporary)
                 return report_error("could not copy runtime object for collection")
-            command <- []
-            append_shell_quoted(command, objcopy_tool)
-            append_text(command, " --localize-symbol _elisa_trace_record --localize-symbol elisa_trace_record")
-            append_text(command, " --localize-symbol _elisa_trace_record_value --localize-symbol elisa_trace_record_value")
-            append_text(command, " --localize-symbol _elisa_trace_function_entry --localize-symbol elisa_trace_function_entry")
-            append_text(command, " --localize-symbol elisa_trace_function_entry")
-            append_text(command, " --localize-symbol _elisa_trace_function_exit --localize-symbol elisa_trace_function_exit")
-            append_text(command, " --localize-symbol elisa_trace_function_exit")
-            append_text(command, " --localize-symbol _elisa_trace_install_fault_handler --localize-symbol elisa_trace_install_fault_handler ")
-            append_shell_quoted(command, runtime_collector_object)
-            command.push(NATIVE_BYTE_NUL)
-            localize_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            command_arguments <- []
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "_elisa_trace_record")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "elisa_trace_record")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "_elisa_trace_record_value")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "elisa_trace_record_value")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "_elisa_trace_function_entry")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "elisa_trace_function_entry")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "_elisa_trace_function_exit")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "elisa_trace_function_exit")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "_elisa_trace_install_fault_handler")
+            append_command_argument(command_arguments, "--localize-symbol")
+            append_command_argument(command_arguments, "elisa_trace_install_fault_handler")
+            append_command_path_argument(command_arguments, runtime_collector_object)
+            localize_status: i64 = run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
             if localize_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not localize runtime trace callbacks")
         
-            command <- []
-            append_shell_quoted(command, compiler_tool)
-            append_text(command, " -std=c11 -O2 -DELISA_PROFILE_TIMING=1 -fno-builtin -pthread -c -o ")
-            append_shell_quoted(command, collector_object)
-            append_text(command, " ")
-            append_shell_quoted(command, collector_source)
-            command.push(NATIVE_BYTE_NUL)
-            collector_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            command_arguments <- []
+            append_command_argument(command_arguments, "-std=c11")
+            append_command_argument(command_arguments, "-O2")
+            append_command_argument(command_arguments, "-DELISA_PROFILE_TIMING=1")
+            append_command_argument(command_arguments, "-fno-builtin")
+            append_command_argument(command_arguments, "-pthread")
+            append_command_argument(command_arguments, "-c")
+            append_command_argument(command_arguments, "-o")
+            append_command_path_argument(command_arguments, collector_object)
+            append_command_path_argument(command_arguments, collector_source)
+            collector_status: i64 = run_tool_direct(compiler_tool, command_arguments, compile_output_path, compile_error_path)
             if collector_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not compile native collector")
         
-            command <- []
-            append_shell_quoted(command, compiler_tool)
-            append_text(command, " -Wl,-dead_strip -pthread -o ")
-            append_shell_quoted(command, executable)
-            append_text(command, " ")
-            append_shell_quoted(command, renamed_object)
-            append_text(command, " ")
-            append_shell_quoted(command, runtime_collector_object)
-            append_text(command, " ")
-            append_shell_quoted(command, collector_object)
-            append_text(command, " > ")
-            append_shell_quoted(command, compile_output_path)
-            append_text(command, " 2> ")
-            append_shell_quoted(command, link_error_path)
-            command.push(NATIVE_BYTE_NUL)
-            if profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast) != NATIVE_ZERO:
+            command_arguments <- []
+            append_command_argument(command_arguments, "-Wl,-dead_strip")
+            append_command_argument(command_arguments, "-pthread")
+            append_command_argument(command_arguments, "-o")
+            append_command_path_argument(command_arguments, executable)
+            append_command_path_argument(command_arguments, renamed_object)
+            append_command_path_argument(command_arguments, runtime_collector_object)
+            append_command_path_argument(command_arguments, collector_object)
+            if run_tool_direct(compiler_tool, command_arguments, compile_output_path, link_error_path) != NATIVE_ZERO:
                 diagnostics: darray[u8] = read_file(link_error_path)
                 write_stderr(diagnostics)
                 cleanup_temp(temporary)
                 return report_error("could not link instrumented target")
             compile_elapsed_ns: i64 = elapsed_nanoseconds(build_start, read_monotonic())
-            compiler_branch: mutable darray[u8] = read_git_metadata(compiler_root, "rev-parse --abbrev-ref HEAD", compiler_branch_path)
+            compiler_branch: mutable darray[u8] = read_git_metadata(compiler_root, "branch", compiler_branch_path, compiler_metadata_error_path, git_tool)
             if compiler_branch.count == NATIVE_ZERO.usize():
                 append_text(compiler_branch, "unknown")
-            compiler_commit: mutable darray[u8] = read_git_metadata(compiler_root, "rev-parse HEAD", compiler_commit_path)
+            compiler_commit: mutable darray[u8] = read_git_metadata(compiler_root, "commit", compiler_commit_path, compiler_metadata_error_path, git_tool)
             if compiler_commit.count == NATIVE_ZERO.usize():
                 append_text(compiler_commit, "unknown")
-            dirty_metadata: darray[u8] = read_git_metadata(compiler_root, "status --porcelain --untracked-files=all", compiler_dirty_path)
+            dirty_metadata: darray[u8] = read_git_metadata(compiler_root, "dirty", compiler_dirty_path, compiler_metadata_error_path, git_tool)
             compiler_dirty: bool = dirty_metadata.count > NATIVE_ZERO.usize()
         
             summary: mutable CaptureSummary = empty_capture_summary()

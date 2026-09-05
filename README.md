@@ -61,6 +61,11 @@ executable is built with `make profiler-native` and exercised with
 the native CLI reaches feature parity. New profiler behavior belongs in
 `src/profiler/`, not in that Python command.
 
+The native build pipeline passes compiler, object-copy, collector, linker, and
+Git metadata operations through direct argument vectors. It does not construct
+shell command strings for the normal profiling path, so paths and user-selected
+tool overrides are never re-parsed by a shell.
+
 The native launcher also accepts `--cwd PATH`, `--stdin PATH`, and repeatable
 `--env KEY=VALUE` controls. These are applied only to the profiled child and are
 exercised by `examples/native_launch_probe.elisa`. Positional target-argument
