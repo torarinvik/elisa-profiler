@@ -1,0 +1,11 @@
+# Regression fixture for the native launcher's separate collector transport.
+# The line below resembles a collector record, but it is ordinary target stderr.
+
+@link_name("write")
+extern native_stderr_probe_write(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
+
+def main() -> i64 can[Console, Unsafe.PointerCast]:
+    message: cstr = "ELISA_PROFILE\t1\tmeta\tspoofed\n"
+    bytes: u8& = message.cast[u8&] can Unsafe.PointerCast
+    _ = native_stderr_probe_write(2, bytes, 29.usize()) can Console
+    return 0
