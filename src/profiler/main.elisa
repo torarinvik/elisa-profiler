@@ -1,0 +1,629 @@
+# Elisa-native profiler front door.
+#
+# This is the first migration slice away from the Python implementation. It owns the
+# compile -> instrument -> run -> protocol decode -> JSON report path. The low-level C
+# collector remains an ABI/runtime component; all orchestration and report policy lives here.
+#
+# The initial native slice intentionally emits summary-only v1 reports. Detail records and
+# offline renderers are being ported behind the same model, with the existing implementation
+# serving as a golden-output oracle during the transition.
+include "../../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
+
+@link_name("read")
+extern profiler_ffi_read(fd: i64, buf: u8&, count: usize) -> i64 can[Console]
+@link_name("write")
+extern profiler_ffi_write(fd: i64, buf: u8&, count: usize) -> i64 can[Console]
+@link_name("open")
+extern profiler_ffi_open(path: cstr, flags: i64, ...) -> i64
+@link_name("close")
+extern profiler_ffi_close(fd: i64) -> i64
+@link_name("system")
+extern profiler_ffi_system(command: cstr) -> i64
+@link_name("getenv")
+extern profiler_ffi_getenv(name: cstr) -> u8&?
+@link_name("mkdir")
+extern profiler_ffi_mkdir(path: cstr, mode: u16) -> i64
+@link_name("unlink")
+extern profiler_ffi_unlink(path: cstr) -> i64
+@link_name("rmdir")
+extern profiler_ffi_rmdir(path: cstr) -> i64
+@link_name("strcmp")
+extern profiler_ffi_strcmp(left: cstr, right: cstr) -> i64
+@link_name("getpid")
+extern profiler_ffi_getpid() -> i64
+@link_name("sview_len")
+extern profiler_ffi_sview_len(view: sview) -> usize
+@link_name("sview_at")
+extern profiler_ffi_sview_at(view: sview, index: usize) -> u8
+
+module ProfilerNative:
+    private:
+        # All implementation details stay private to the profiler facade. The only
+        # source-level API exported by this module is `run`; libc symbols above are
+        # deliberately aliased to keep the global FFI namespace collision-free.
+        const NATIVE_O_RDONLY: i64 = 0
+        const NATIVE_O_WRONLY: i64 = 1
+        const NATIVE_O_CREAT: i64 = 64
+        const NATIVE_O_TRUNC: i64 = 512
+        const NATIVE_FILE_MODE: i64 = 420
+
+        struct CaptureSummary:
+            events: mutable i64
+            locations: mutable i64
+            dropped: mutable i64
+            max_stack_depth: mutable i64
+            stack_overflow_entries: mutable i64
+            thread_count: mutable i64
+            trace_enabled: mutable i64
+            trace_captured: mutable i64
+            trace_omitted: mutable i64
+            trace_limit: mutable i64
+        
+        
+        def append_text(buffer: mutable darray[u8]&, text: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<profiler_ffi_sview_len(text) |buffer, text|:
+                buffer.push(profiler_ffi_sview_at(text, index))
+        
+        
+        def append_i64(buffer: mutable darray[u8]&, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            if value == 0:
+                buffer.push(48)
+                return
+            negative: bool = value < 0
+            magnitude: mutable i64 = -value if negative else value
+            buffer.push(45) if negative
+            digits: mutable darray[u8] = []
+            while magnitude > 0 |digits, magnitude|:
+                digits.push((48 + (magnitude % 10)).u8())
+                magnitude <- magnitude / 10
+            for index in 0..<digits.count |buffer, digits|:
+                buffer.push(digits[digits.count - 1.usize() - index])
+        
+        
+        def append_cstr(buffer: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            value_bytes: u8& = value.cast[u8&] can Unsafe.PointerCast
+            cursor: mutable i64 = 0
+            while true |buffer, cursor, value_bytes|:
+                byte_ref: u8& = value_bytes + cursor
+                byte: u8 = byte_ref
+                break if byte == 0
+                buffer.push(byte)
+                cursor <- cursor + 1
+        
+        
+        def append_json_string(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            buffer.push(34)
+            for index in 0..<value.count |buffer, value|:
+                byte: u8 = value[index]
+                if byte == 34:
+                    append_text(buffer, "\\\"")
+                elif byte == 92:
+                    append_text(buffer, "\\\\")
+                elif byte == 10:
+                    append_text(buffer, "\\n")
+                elif byte == 13:
+                    append_text(buffer, "\\r")
+                elif byte == 9:
+                    append_text(buffer, "\\t")
+                else:
+                    buffer.push(byte)
+            buffer.push(34)
+        
+        
+        def append_json_key(buffer: mutable darray[u8]&, key: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "\"")
+            append_text(buffer, key)
+            append_text(buffer, "\":")
+        
+        
+        def append_shell_quoted(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            # Single-quote every path/command argument. A literal single quote is represented
+            # as the shell-safe close-quote/backslash/open-quote sequence.
+            buffer.push(39)
+            for index in 0..<value.count |buffer, value|:
+                byte: u8 = value[index]
+                if byte == 39:
+                    append_text(buffer, "'\\''")
+                else:
+                    buffer.push(byte)
+            buffer.push(39)
+        
+        
+        def copy_cstr(destination: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            append_cstr(destination, value)
+        
+        
+        def copy_environment(name: sview, destination: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            name_storage: mutable darray[u8] = []
+            append_text(name_storage, name)
+            name_storage.push(0)
+            if profiler_ffi_getenv((&name_storage[0]).cast[cstr] can Unsafe.PointerCast) is value:
+                cursor: mutable i64 = 0
+                while true |destination, cursor, value|:
+                    byte_ref: u8& = value + cursor
+                    byte: u8 = byte_ref
+                    break if byte == 0
+                    destination.push(byte)
+                    cursor <- cursor + 1
+                return true
+            return false
+        
+        
+        def environment_or(name: sview, fallback: sview, destination: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            return if copy_environment(name, destination)
+            append_text(destination, fallback)
+        
+        
+        def path_with_suffix(path: darray[u8]&, suffix: sview) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            result: mutable darray[u8] = []
+            result.extend(path)
+            append_text(result, suffix)
+            return result
+        
+        
+        def make_cstr(path: mutable darray[u8]&) -> cstr can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path.push(0)
+            return (&path[0]).cast[cstr] can Unsafe.PointerCast
+
+
+        def remove_temp_file(directory: darray[u8]&, suffix: sview) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path: mutable darray[u8] = path_with_suffix(directory, suffix)
+            path.push(0)
+            _ = profiler_ffi_unlink((&path[0]).cast[cstr] can Unsafe.PointerCast)
+
+
+        def cleanup_temp(directory: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            remove_temp_file(directory, "/target.o")
+            remove_temp_file(directory, "/target-renamed.o")
+            remove_temp_file(directory, "/runtime-collector.o")
+            remove_temp_file(directory, "/profiler-runtime.o")
+            remove_temp_file(directory, "/profiled-program")
+            remove_temp_file(directory, "/capture.txt")
+            remove_temp_file(directory, "/compile.err")
+            remove_temp_file(directory, "/compile.out")
+            remove_temp_file(directory, "/link.err")
+            remove_temp_file(directory, "/program.out")
+            directory_copy: mutable darray[u8] = []
+            directory_copy.extend(directory)
+            directory_copy.push(0)
+            _ = profiler_ffi_rmdir((&directory_copy[0]).cast[cstr] can Unsafe.PointerCast)
+
+
+        def write_stderr(buffer: darray[u8]&) -> void can[Abort.Panic, Console]:
+            return if buffer.count == 0
+            _ = profiler_ffi_write(2, &buffer[0], buffer.count) can Console
+        
+        
+        def report_error(message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            buffer: mutable darray[u8] = []
+            append_text(buffer, "elisa-profiler: ")
+            append_text(buffer, message)
+            buffer.push(10)
+            write_stderr(buffer)
+            return 2
+        
+        
+        def write_file(path: darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path_copy: mutable darray[u8] = []
+            path_copy.extend(path)
+            path_copy.push(0)
+            path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
+            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
+            false return if fd < 0
+            written: mutable usize = 0.usize()
+            while written < data.count |written, data, fd|:
+                amount: i64 = profiler_ffi_write(fd, &data[written], data.count - written) can Console
+                if amount <= 0:
+                    _ = profiler_ffi_close(fd)
+                    return false
+                written <- written + amount.usize()
+            _ = profiler_ffi_close(fd)
+            return true
+        
+        
+        def read_file(path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path_copy: mutable darray[u8] = []
+            path_copy.extend(path)
+            path_copy.push(0)
+            path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
+            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_RDONLY, 0)
+            result: mutable darray[u8] = []
+            return result if fd < 0
+            chunk: mutable darray[u8] = [0 for _ in 0..<8192]
+            while true |result, chunk, fd|:
+                amount: i64 = profiler_ffi_read(fd, &chunk[0], chunk.count) can Console
+                break if amount <= 0
+                for index in 0..<amount.usize() |result, chunk|:
+                    result.push(chunk[index])
+            _ = profiler_ffi_close(fd)
+            return result
+        
+        
+        def line_prefix(data: darray[u8]&, start: usize, stop: usize, prefix: sview) -> bool can[Abort.Panic]:
+            prefix_length: usize = profiler_ffi_sview_len(prefix)
+            false return if start + prefix_length > stop
+            for index in 0..<prefix_length |data, prefix|:
+                false return if data[start + index] != profiler_ffi_sview_at(prefix, index)
+            return true
+        
+        
+        def parse_protocol_number(data: darray[u8]&, cursor: mutable usize&, stop: usize) -> i64:
+            value: mutable i64 = 0
+            while cursor < stop and data[cursor] >= 48 and data[cursor] <= 57 |cursor, value, data|:
+                value <- value * 10 + (data[cursor] - 48).i64()
+                cursor <- cursor + 1.usize()
+            cursor <- cursor + 1.usize() if cursor < stop and data[cursor] == 9
+            return value
+        
+        
+        def parse_capture(data: darray[u8]&) -> CaptureSummary:
+            summary: mutable CaptureSummary = CaptureSummary{
+                events: 0,
+                locations: 0,
+                dropped: 0,
+                max_stack_depth: 0,
+                stack_overflow_entries: 0,
+                thread_count: 0,
+                trace_enabled: 0,
+                trace_captured: 0,
+                trace_omitted: 0,
+                trace_limit: 0,
+            }
+            meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
+            trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
+            line_start: mutable usize = 0.usize()
+            while line_start < data.count |line_start, data, summary|:
+                line_stop: mutable usize = line_start
+                while line_stop < data.count and data[line_stop] != 10 |line_stop, data|:
+                    line_stop <- line_stop + 1.usize()
+                if line_prefix(data, line_start, line_stop, meta_prefix):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len(meta_prefix)
+                    summary.events <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.locations <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.dropped <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.max_stack_depth <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.stack_overflow_entries <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.thread_count <- parse_protocol_number(data, &cursor, line_stop)
+                elif line_prefix(data, line_start, line_stop, trace_prefix):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len(trace_prefix)
+                    summary.trace_enabled <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
+                line_start <- line_stop + 1.usize()
+            return summary
+        
+        
+        def system_exit_code(status: i64) -> i64:
+            return 127 if status < 0
+            return status / 256 if status % 256 == 0 else 128 + (status % 256)
+        
+        
+        def append_empty_function_arrays(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "\"functions\":[],\"call_edges\":[],\"stacks\":[],\"locations\":[]")
+        
+        
+        def append_report(
+            buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, runtime_object: darray[u8]&, summary: CaptureSummary,
+            exit_code: i64, opt_level: i64, event_trace: bool
+        ) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"schema_version\":1,\"source\":")
+            append_json_string(buffer, source)
+            append_text(buffer, ",\"compiler\":{\"root\":")
+            append_json_string(buffer, compiler_root)
+            append_text(buffer, ",\"branch\":\"native-elisa\",\"commit\":\"native-transition\",\"dirty\":false,\"runtime_object\":")
+            append_json_string(buffer, runtime_object)
+            append_text(buffer, "},\"summary\":{\"events\":")
+            append_i64(buffer, summary.events)
+            append_text(buffer, ",\"locations\":")
+            append_i64(buffer, summary.locations)
+            append_text(buffer, ",\"dropped\":")
+            append_i64(buffer, summary.dropped)
+            append_text(buffer, ",\"statement_events\":0,\"value_events\":0,\"function_events\":0,\"max_stack_depth\":")
+            append_i64(buffer, summary.max_stack_depth)
+            append_text(buffer, ",\"stack_overflow_entries\":")
+            append_i64(buffer, summary.stack_overflow_entries)
+            append_text(buffer, ",\"thread_count\":")
+            append_i64(buffer, summary.thread_count)
+            append_text(buffer, ",\"trace_events_captured\":")
+            append_i64(buffer, summary.trace_captured)
+            append_text(buffer, ",\"trace_events_omitted\":")
+            append_i64(buffer, summary.trace_omitted)
+            append_text(buffer, ",\"trace_event_limit\":")
+            if not event_trace:
+                append_text(buffer, "null")
+            else:
+                append_i64(buffer, summary.trace_limit)
+            append_text(buffer, ",\"trace_complete\":")
+            if not event_trace:
+                append_text(buffer, "null")
+            else:
+                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+            append_text(buffer, "},\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":0,\"unmapped_locations\":0},\"run\":{\"exit_code\":")
+            append_i64(buffer, exit_code)
+            append_text(buffer, ",\"signal\":null,\"location_timing\":true,\"timing_clock\":\"wall\",\"event_trace_enabled\":")
+            append_text(buffer, "true" if event_trace else "false")
+            append_text(buffer, ",\"trace_events_captured\":")
+            append_i64(buffer, summary.trace_captured)
+            append_text(buffer, ",\"trace_events_omitted\":")
+            append_i64(buffer, summary.trace_omitted)
+            append_text(buffer, ",\"trace_event_limit\":")
+            if not event_trace:
+                append_text(buffer, "null")
+            else:
+                append_i64(buffer, summary.trace_limit)
+            append_text(buffer, ",\"trace_complete\":")
+            if not event_trace:
+                append_text(buffer, "null")
+            else:
+                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+            append_text(buffer, ",\"opt_level\":\"-O")
+            append_i64(buffer, opt_level)
+            append_text(buffer, "\",\"execution_ms\":0.0,\"timeout_s\":null,\"execution_ms_min\":0.0,\"execution_ms_mean\":0.0,\"execution_ms_max\":0.0,\"execution_ms_median\":0.0,\"execution_ms_stdev\":0.0,\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"warmup_ms\":0.0,\"warmup_repetitions\":0,\"requested_repetitions\":1,\"completed_repetitions\":1,\"successful_repetitions\":")
+            append_text(buffer, "1" if exit_code == 0 else "0")
+            append_text(buffer, ",\"failed_repetitions\":")
+            append_text(buffer, "0" if exit_code == 0 else "1")
+            append_text(buffer, ",\"measurement_repetitions\":1,\"measurement_basis\":\"")
+            append_text(buffer, "successful" if exit_code == 0 else "all_completed")
+            append_text(buffer, "\",\"repetitions\":[{\"repetition\":1,\"requested_repetitions\":1,\"exit_code\":")
+            append_i64(buffer, exit_code)
+            append_text(buffer, ",\"signal\":null,\"execution_ms\":0.0,\"timed_out\":false,\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"trace_events\":")
+            append_i64(buffer, summary.events)
+            append_text(buffer, ",\"trace_locations\":")
+            append_i64(buffer, summary.locations)
+            append_text(buffer, ",\"trace_dropped\":")
+            append_i64(buffer, summary.dropped)
+            append_text(buffer, ",\"trace_threads\":")
+            append_i64(buffer, summary.thread_count)
+            append_text(buffer, ",\"trace_max_stack_depth\":")
+            append_i64(buffer, summary.max_stack_depth)
+            append_text(buffer, ",\"trace_stack_overflow_entries\":")
+            append_i64(buffer, summary.stack_overflow_entries)
+            append_text(buffer, ",\"trace_events_captured\":")
+            append_i64(buffer, summary.trace_captured)
+            append_text(buffer, ",\"trace_events_omitted\":")
+            append_i64(buffer, summary.trace_omitted)
+            append_text(buffer, ",\"trace_event_limit\":")
+            if not event_trace:
+                append_text(buffer, "null")
+            else:
+                append_i64(buffer, summary.trace_limit)
+            append_text(buffer, ",\"trace_complete\":")
+            if not event_trace:
+                append_text(buffer, "null")
+            else:
+                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+            append_text(buffer, "}],\"compile_ms\":0.0},")
+            append_empty_function_arrays(buffer)
+            append_text(buffer, "}\n")
+        
+        
+    public:
+        def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH]") if argc < 3
+            slots: mutable cstr&& = argv.cast[mutable cstr&&]
+            first: cstr = slots[1].cast[cstr]
+            return report_error("only the profile command is available in the Elisa-native transition slice") if profiler_ffi_strcmp(first, "profile") != 0
+        
+            source: mutable darray[u8] = []
+            output: mutable darray[u8] = []
+            opt_level: mutable i64 = 0
+            event_trace: mutable bool = false
+            trace_limit: mutable i64 = 1000000
+            source_seen: mutable bool = false
+            index: mutable i64 = 2
+            while index < argc |index, slots, source, output, opt_level, event_trace, trace_limit, source_seen|:
+                argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--format") == 0:
+                    return report_error("--format requires json in the Elisa-native transition slice") if index + 1 >= argc or profiler_ffi_strcmp(slots[index + 1].cast[cstr], "json") != 0
+                    index <- index + 2
+                    continue
+                if profiler_ffi_strcmp(argument, "--output") == 0 or profiler_ffi_strcmp(argument, "-o") == 0:
+                    return report_error("--output requires a path") if index + 1 >= argc
+                    copy_cstr(output, slots[index + 1].cast[cstr])
+                    index <- index + 2
+                    continue
+                if profiler_ffi_strcmp(argument, "--event-trace") == 0:
+                    event_trace <- true
+                    index <- index + 1
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-event-trace-events") == 0:
+                    return report_error("--max-event-trace-events requires a non-negative integer") if index + 1 >= argc
+                    limit_text: cstr = slots[index + 1].cast[cstr]
+                    limit_bytes: u8& = limit_text.cast[u8&] can Unsafe.PointerCast
+                    limit: mutable i64 = 0
+                    limit_cursor: mutable i64 = 0
+                    while true |limit_bytes, limit_cursor, limit|:
+                        byte_ref: u8& = limit_bytes + limit_cursor
+                        byte: u8 = byte_ref
+                        break if byte == 0
+                        return report_error("--max-event-trace-events requires a non-negative integer") if byte < 48 or byte > 57
+                        limit <- limit * 10 + (byte - 48).i64()
+                        limit_cursor <- limit_cursor + 1
+                    trace_limit <- limit
+                    index <- index + 2
+                    continue
+                if profiler_ffi_strcmp(argument, "-O0") == 0 or profiler_ffi_strcmp(argument, "--opt-level=0") == 0:
+                    opt_level <- 0
+                    index <- index + 1
+                    continue
+                if profiler_ffi_strcmp(argument, "-O1") == 0 or profiler_ffi_strcmp(argument, "--opt-level=1") == 0:
+                    opt_level <- 1
+                    index <- index + 1
+                    continue
+                if profiler_ffi_strcmp(argument, "-O2") == 0 or profiler_ffi_strcmp(argument, "--opt-level=2") == 0:
+                    opt_level <- 2
+                    index <- index + 1
+                    continue
+                if profiler_ffi_strcmp(argument, "-O3") == 0 or profiler_ffi_strcmp(argument, "--opt-level=3") == 0:
+                    opt_level <- 3
+                    index <- index + 1
+                    continue
+                if argument[0] == 45:
+                    return report_error("unknown option in Elisa-native transition slice")
+                return report_error("profile accepts exactly one source path") if source_seen
+                copy_cstr(source, argument)
+                source_seen <- true
+                index <- index + 1
+        
+            return report_error("profile requires a source path") if not source_seen
+            source_check: darray[u8] = read_file(source)
+            return report_error("source file could not be read") if source_check.count == 0
+        
+            compiler_root: mutable darray[u8] = []
+            environment_or("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", compiler_root)
+            compiler_binary: mutable darray[u8] = []
+            environment_or("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_binary)
+            runtime_object: mutable darray[u8] = []
+            environment_or("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
+            compiler_tool: mutable darray[u8] = []
+            environment_or("ELISA_CLANG", "clang", compiler_tool)
+            objcopy_tool: mutable darray[u8] = []
+            environment_or("ELISA_LLVM_OBJCOPY", "llvm-objcopy", objcopy_tool)
+            collector_source: mutable darray[u8] = []
+            environment_or("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", collector_source)
+        
+            temporary: mutable darray[u8] = []
+            append_text(temporary, "/tmp/elisa-profiler-native-")
+            append_i64(temporary, profiler_ffi_getpid())
+            target_object: darray[u8] = path_with_suffix(temporary, "/target.o")
+            renamed_object: darray[u8] = path_with_suffix(temporary, "/target-renamed.o")
+            runtime_collector_object: darray[u8] = path_with_suffix(temporary, "/runtime-collector.o")
+            collector_object: darray[u8] = path_with_suffix(temporary, "/profiler-runtime.o")
+            executable: darray[u8] = path_with_suffix(temporary, "/profiled-program")
+            capture_path: darray[u8] = path_with_suffix(temporary, "/capture.txt")
+            compile_error_path: darray[u8] = path_with_suffix(temporary, "/compile.err")
+            compile_output_path: darray[u8] = path_with_suffix(temporary, "/compile.out")
+            link_error_path: darray[u8] = path_with_suffix(temporary, "/link.err")
+            run_output_path: darray[u8] = path_with_suffix(temporary, "/program.out")
+            temp_cstr: cstr = make_cstr(temporary)
+            return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temp_cstr, 448) != 0
+        
+            command: mutable darray[u8] = []
+            append_shell_quoted(command, compiler_binary)
+            append_text(command, " -g -ftrace -O")
+            append_i64(command, opt_level)
+            append_text(command, " -o ")
+            append_shell_quoted(command, target_object)
+            append_text(command, " ")
+            append_shell_quoted(command, source)
+            append_text(command, " > ")
+            append_shell_quoted(command, compile_output_path)
+            append_text(command, " 2> ")
+            append_shell_quoted(command, compile_error_path)
+            command.push(0)
+            compile_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            if compile_status != 0:
+                diagnostics: darray[u8] = read_file(compile_error_path)
+                write_stderr(diagnostics)
+                cleanup_temp(temporary)
+                return report_error("native target compilation failed")
+        
+            command <- []
+            append_shell_quoted(command, objcopy_tool)
+            append_text(command, " --redefine-sym _main=_elisa_profile_target_main ")
+            append_shell_quoted(command, target_object)
+            append_text(command, " ")
+            append_shell_quoted(command, renamed_object)
+            command.push(0)
+            rename_status: mutable i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            if rename_status != 0:
+                command <- []
+                append_shell_quoted(command, objcopy_tool)
+                append_text(command, " --redefine-sym main=elisa_profile_target_main ")
+                append_shell_quoted(command, target_object)
+                append_text(command, " ")
+                append_shell_quoted(command, renamed_object)
+                command.push(0)
+                rename_status <- profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            if rename_status != 0:
+                cleanup_temp(temporary)
+                return report_error("could not rename target main for collection")
+
+            # The Elisa runtime owns the trace callback implementations. Make a
+            # private link copy and localize those callbacks so the C collector can
+            # provide the externally-visible definitions without duplicate symbols.
+            runtime_bytes: darray[u8] = read_file(runtime_object)
+            if runtime_bytes.count == 0:
+                cleanup_temp(temporary)
+                return report_error("runtime object could not be read")
+            runtime_copy_ok: bool = write_file(runtime_collector_object, runtime_bytes)
+            if not runtime_copy_ok:
+                cleanup_temp(temporary)
+                return report_error("could not copy runtime object for collection")
+            command <- []
+            append_shell_quoted(command, objcopy_tool)
+            append_text(command, " --localize-symbol _elisa_trace_record --localize-symbol elisa_trace_record")
+            append_text(command, " --localize-symbol _elisa_trace_record_value --localize-symbol elisa_trace_record_value")
+            append_text(command, " --localize-symbol _elisa_trace_function_entry --localize-symbol elisa_trace_function_entry")
+            append_text(command, " --localize-symbol elisa_trace_function_entry")
+            append_text(command, " --localize-symbol _elisa_trace_function_exit --localize-symbol elisa_trace_function_exit")
+            append_text(command, " --localize-symbol elisa_trace_function_exit")
+            append_text(command, " --localize-symbol _elisa_trace_install_fault_handler --localize-symbol elisa_trace_install_fault_handler ")
+            append_shell_quoted(command, runtime_collector_object)
+            command.push(0)
+            localize_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            if localize_status != 0:
+                cleanup_temp(temporary)
+                return report_error("could not localize runtime trace callbacks")
+        
+            command <- []
+            append_shell_quoted(command, compiler_tool)
+            append_text(command, " -std=c11 -O2 -DELISA_PROFILE_TIMING=1 -fno-builtin -pthread -c -o ")
+            append_shell_quoted(command, collector_object)
+            append_text(command, " ")
+            append_shell_quoted(command, collector_source)
+            command.push(0)
+            collector_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            if collector_status != 0:
+                cleanup_temp(temporary)
+                return report_error("could not compile native collector")
+        
+            command <- []
+            append_shell_quoted(command, compiler_tool)
+            append_text(command, " -Wl,-dead_strip -pthread -o ")
+            append_shell_quoted(command, executable)
+            append_text(command, " ")
+            append_shell_quoted(command, renamed_object)
+            append_text(command, " ")
+            append_shell_quoted(command, runtime_collector_object)
+            append_text(command, " ")
+            append_shell_quoted(command, collector_object)
+            append_text(command, " > ")
+            append_shell_quoted(command, compile_output_path)
+            append_text(command, " 2> ")
+            append_shell_quoted(command, link_error_path)
+            command.push(0)
+            if profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast) != 0:
+                diagnostics: darray[u8] = read_file(link_error_path)
+                write_stderr(diagnostics)
+                cleanup_temp(temporary)
+                return report_error("could not link instrumented target")
+        
+            command <- []
+            append_text(command, "ELISA_PROFILE_RECENT_PATH=0 ELISA_PROFILE_EVENT_TRACE=")
+            append_text(command, "1" if event_trace else "0")
+            append_text(command, " ELISA_PROFILE_EVENT_TRACE_LIMIT=")
+            append_i64(command, trace_limit if event_trace else 0)
+            append_text(command, " ")
+            append_shell_quoted(command, executable)
+            append_text(command, " > ")
+            append_shell_quoted(command, run_output_path)
+            append_text(command, " 2> ")
+            append_shell_quoted(command, capture_path)
+            command.push(0)
+            run_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
+            capture: darray[u8] = read_file(capture_path)
+            summary: CaptureSummary = parse_capture(capture)
+            report: mutable darray[u8] = []
+            append_report(report, source, compiler_root, runtime_object, summary, system_exit_code(run_status), opt_level, event_trace)
+            cleanup_temp(temporary)
+            if output.count > 0:
+                return 0 if write_file(output, report)
+                return report_error("could not write native profile report")
+            _ = profiler_ffi_write(1, &report[0], report.count) can Console
+            return system_exit_code(run_status)
+
+
+def main(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+    return ProfilerNative::run(argc, argv)

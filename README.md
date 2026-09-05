@@ -53,6 +53,14 @@ source location. Compiler instrumentation and runtime event-format changes
 will live in the dedicated compiler worktree; the profiler repository will own
 the command-line interface, collection, and report formats.
 
+The canonical implementation is being moved into Elisa. The native transition
+executable is built with `make profiler-native` and exercised with
+`make profiler-native-smoke`; its `ProfilerNative` module exposes only a public
+`run` entry point and keeps implementation helpers private. The existing
+`scripts/elisa-profiler` command remains a compatibility implementation while
+the native CLI reaches feature parity. New profiler behavior belongs in
+`src/profiler/`, not in that Python command.
+
 ## Profile a program
 
 The profiler expects an Elisa source file with main() -> i64. It compiles with

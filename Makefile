@@ -4,8 +4,13 @@ STAGE0_CORE ?= $(CURDIR)/../../Go projects/structpy-tree
 SEED_OPT_LEVEL ?= -O0
 SEED_MAX_RSS_KB ?= 8388608
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
+NATIVE_PROFILER_BIN ?= $(PROFILER_ROOT)/bin/elisa-profiler
+NATIVE_PROFILER_SOURCE := $(PROFILER_ROOT)/src/profiler/main.elisa
+NATIVE_COMPILER_SCRIPT := $(COMPILER_WORKTREE)/scripts/elisac_stage1.sh
+NATIVE_STAGE1_BIN := $(COMPILER_WORKTREE)/bin/elisac-stage1
+NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 
-.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke profiler-native profiler-native-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -20,6 +25,21 @@ compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
 	ELISA_STAGE1_SEED_OPT_LEVEL="$(SEED_OPT_LEVEL)" ELISA_STAGE1_SEED_MAX_RSS_KB="$(SEED_MAX_RSS_KB)" \
 	"$(COMPILER_WRAPPER)" --seed
+
+profiler-native:
+	@test -x "$(NATIVE_COMPILER_SCRIPT)" || { echo "stage1 compiler wrapper missing: $(NATIVE_COMPILER_SCRIPT)" >&2; exit 2; }
+	@test -x "$(NATIVE_STAGE1_BIN)" || { echo "stage1 compiler missing: $(NATIVE_STAGE1_BIN) (run make compiler-seed)" >&2; exit 2; }
+	@test -f "$(NATIVE_RUNTIME_OBJECT)" || { echo "runtime object missing: $(NATIVE_RUNTIME_OBJECT) (run $(COMPILER_WORKTREE)/scripts/build_runtime_object.sh)" >&2; exit 2; }
+	@mkdir -p "$(PROFILER_ROOT)/bin"
+	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -O0 -o "$(NATIVE_PROFILER_BIN)" "$(NATIVE_PROFILER_SOURCE)"
+	@echo "native profiler: $(NATIVE_PROFILER_BIN)"
+
+profiler-native-smoke: profiler-native
+	@native_work="$$(mktemp -d)"; trap 'rm -rf "$$native_work"' EXIT; \
+		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --event-trace --max-event-trace-events 10 --format json --output "$$native_work/report.json"; \
+		test -s "$$native_work/report.json"; \
+		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/report.json"
 
 compiler-smoke:
 	@"$(PROFILER_ROOT)/test/compiler_smoke.sh"
@@ -63,4 +83,4 @@ source-mapping-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-audit compiler-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
+test: compiler-audit compiler-smoke profiler-native-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
