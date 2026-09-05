@@ -247,6 +247,14 @@ def main():
         expected_stdev = statistics.pstdev(item["execution_ms"] for item in repetitions)
         assert abs(measured["run"]["execution_ms_stdev"] - expected_stdev) <= 0.002
 
+        threaded_output = work / "threaded.json"
+        run("profile", ROOT / "examples/threaded.elisa", "--format", "json", "--output", threaded_output)
+        threaded = json.loads(threaded_output.read_text(encoding="utf-8"))
+        assert threaded["summary"]["thread_count"] >= 3
+        assert len(threaded["thread_loss"]) >= 3
+        assert all(record["events"] > 0 for record in threaded["thread_loss"])
+        assert any(function["function"] == "worker" for function in threaded["functions"])
+
         functions_capture = work / "functions.json"
         values_capture = work / "values.json"
         run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "functions",
