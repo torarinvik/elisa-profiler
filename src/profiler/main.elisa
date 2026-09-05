@@ -301,11 +301,6 @@ module ProfilerNative:
             return result
         
         
-        def make_cstr(path: mutable darray[u8]&) -> cstr can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
-            path.push(NATIVE_BYTE_NUL)
-            return (&path[0]).cast[cstr] can Unsafe.PointerCast
-
-
         def remove_temp_file(directory: darray[u8]&, suffix: sview) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path: mutable darray[u8] = path_with_suffix(directory, suffix)
             path.push(NATIVE_BYTE_NUL)
@@ -1515,6 +1510,11 @@ module ProfilerNative:
             temporary: mutable darray[u8] = []
             append_text(temporary, "/tmp/elisa-profiler-native-")
             append_i64(temporary, profiler_ffi_getpid())
+            nonce: ProfilerNativeTimespec = read_monotonic()
+            append_text(temporary, "-")
+            append_i64(temporary, nonce.seconds)
+            append_text(temporary, "-")
+            append_i64(temporary, nonce.nanoseconds)
             target_object: darray[u8] = path_with_suffix(temporary, "/target.o")
             renamed_object: darray[u8] = path_with_suffix(temporary, "/target-renamed.o")
             runtime_collector_object: darray[u8] = path_with_suffix(temporary, "/runtime-collector.o")
@@ -1526,8 +1526,11 @@ module ProfilerNative:
             link_error_path: darray[u8] = path_with_suffix(temporary, "/link.err")
             run_output_path: darray[u8] = path_with_suffix(temporary, "/program.out")
             run_error_path: darray[u8] = path_with_suffix(temporary, "/program.err")
-            temp_cstr: cstr = make_cstr(temporary)
-            return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temp_cstr, NATIVE_DIRECTORY_MODE) != NATIVE_ZERO
+            temporary_cstr: mutable darray[u8] = []
+            temporary_cstr.extend(temporary)
+            temporary_cstr.push(NATIVE_BYTE_NUL)
+            temporary_cstr_pointer: cstr = (&temporary_cstr[0]).cast[cstr] can Unsafe.PointerCast
+            return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temporary_cstr_pointer, NATIVE_DIRECTORY_MODE) != NATIVE_ZERO
             build_start: ProfilerNativeTimespec = read_monotonic()
 
             command: mutable darray[u8] = []
