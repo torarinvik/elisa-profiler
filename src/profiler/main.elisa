@@ -645,12 +645,12 @@ extend ProfilerNative:
             append_text(buffer, "</main></body></html>\n")
 
 
-        def append_json_workload(buffer: mutable darray[u8]&, source: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def append_json_workload(buffer: mutable darray[u8]&, source_bytes: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, ",\"workload\":{\"source_sha256\":")
-            source_digest: darray[u8] = sha256_hex(source)
+            source_digest: darray[u8] = sha256_hex(source_bytes)
             append_json_string(buffer, source_digest)
             append_text(buffer, ",\"source_size_bytes\":")
-            append_i64(buffer, source.count.i64())
+            append_i64(buffer, source_bytes.count.i64())
             append_text(buffer, ",\"working_directory\":")
             if working_directory.count == NATIVE_ZERO.usize():
                 append_text(buffer, "\".\"")
@@ -699,7 +699,7 @@ extend ProfilerNative:
 
 
         def append_report(
-            buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
+            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
@@ -721,7 +721,7 @@ extend ProfilerNative:
             append_text(buffer, ",\"runtime_object\":")
             append_json_string(buffer, runtime_object)
             append_text(buffer, "}")
-            append_json_workload(buffer, source, working_directory, stdin_path, environment, target_arguments)
+            append_json_workload(buffer, source_bytes, working_directory, stdin_path, environment, target_arguments)
             append_text(buffer, ",\"summary\":{\"events\":")
             append_i64(buffer, summary.events)
             append_text(buffer, ",\"locations\":")
@@ -1549,7 +1549,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, source, source_check, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

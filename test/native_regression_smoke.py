@@ -62,8 +62,8 @@ def main():
             "compile_ms": 2.5, "location_timing": True,
         },
         "stacks": [
-            {"stack": "root", "call_events": 1, "self_ns": 0},
-            {"stack": "root;work", "call_events": 6, "self_ns": 123},
+            {"stack": "root", "call_events": 1, "completed_calls": 1, "self_ns": 0},
+            {"stack": "root;work", "call_events": 6, "completed_calls": 6, "self_ns": 123},
         ],
     }
     with tempfile.TemporaryDirectory(prefix="elisa-native-regression-") as directory:
