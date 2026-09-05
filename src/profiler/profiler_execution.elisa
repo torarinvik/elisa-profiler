@@ -128,13 +128,64 @@ extend ProfilerNative:
             return true
 
 
+        def empty_native_rusage() -> ProfilerNativeRusage:
+            return ProfilerNativeRusage{
+                user_seconds: NATIVE_ZERO,
+                user_microseconds: NATIVE_ZERO,
+                system_seconds: NATIVE_ZERO,
+                system_microseconds: NATIVE_ZERO,
+                maximum_resident_set_bytes: NATIVE_ZERO,
+                integral_shared_memory: NATIVE_ZERO,
+                integral_unshared_data: NATIVE_ZERO,
+                integral_unshared_stack: NATIVE_ZERO,
+                page_reclaims: NATIVE_ZERO,
+                page_faults: NATIVE_ZERO,
+                swaps: NATIVE_ZERO,
+                block_input_operations: NATIVE_ZERO,
+                block_output_operations: NATIVE_ZERO,
+                messages_sent: NATIVE_ZERO,
+                messages_received: NATIVE_ZERO,
+                signals_received: NATIVE_ZERO,
+                voluntary_context_switches: NATIVE_ZERO,
+                involuntary_context_switches: NATIVE_ZERO,
+            }
+
+
+        def failed_target_run_result(timed_out: bool) -> TargetRunResult:
+            return TargetRunResult{
+                status: NATIVE_NEGATIVE_ONE,
+                elapsed_ns: NATIVE_ZERO,
+                timed_out: timed_out,
+                resource_available: false,
+                cpu_user_ns: NATIVE_ZERO,
+                cpu_system_ns: NATIVE_ZERO,
+                peak_rss_bytes: NATIVE_ZERO,
+            }
+
+
+        def rusage_time_nanoseconds(seconds: i64, microseconds: i64) -> i64:
+            return seconds * NATIVE_NANOS_PER_SECOND + microseconds * NATIVE_NANOS_PER_MICROSECOND
+
+
+        def native_host_is_linux() -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            host_name: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_UNAME_BUFFER_BYTES]
+            return false if profiler_ffi_uname(&host_name[0]) != NATIVE_ZERO
+            return host_name[0] == NATIVE_BYTE_ASCII_UPPER_L and host_name[1] == NATIVE_BYTE_ASCII_LOWER_I and host_name[2] == NATIVE_BYTE_ASCII_LOWER_N and host_name[3] == NATIVE_BYTE_ASCII_LOWER_U and host_name[4] == NATIVE_BYTE_ASCII_LOWER_X
+
+
+        def peak_rss_bytes(raw_value: i64) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            return NATIVE_ZERO if raw_value < NATIVE_ZERO
+            return raw_value * NATIVE_LINUX_RSS_UNIT_BYTES if native_host_is_linux()
+            return raw_value
+
+
         def run_target_direct(executable: darray[u8]&, target_arguments: darray[darray[u8]], stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, event_trace: bool, recent_path: bool, trace_limit: i64, capture_byte_limit: i64, timeout_ns: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             stdout_fd: i64 = open_output_file(stdout_path)
-            return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false} if stdout_fd < NATIVE_ZERO
+            return failed_target_run_result(false) if stdout_fd < NATIVE_ZERO
             stderr_fd: i64 = open_output_file(stderr_path)
             if stderr_fd < NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             executable_arg: mutable darray[u8] = []
             executable_arg.extend(executable)
             executable_arg.push(NATIVE_BYTE_NUL)
@@ -159,14 +210,14 @@ extend ProfilerNative:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             trace_flag: mutable cstr = "0"
             trace_flag <- "1" if event_trace
             if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE", trace_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             limit_text: mutable darray[u8] = []
             append_i64(limit_text, trace_limit if event_trace else NATIVE_ZERO)
             limit_text.push(NATIVE_BYTE_NUL)
@@ -175,7 +226,7 @@ extend ProfilerNative:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             capture_byte_limit_text: mutable darray[u8] = []
             append_i64(capture_byte_limit_text, capture_byte_limit)
             capture_byte_limit_text.push(NATIVE_BYTE_NUL)
@@ -184,14 +235,14 @@ extend ProfilerNative:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             recent_flag: mutable cstr = "0"
             recent_flag <- "1" if recent_path and not event_trace
             if profiler_ffi_setenv("ELISA_PROFILE_RECENT_PATH", recent_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             stdin_fd: mutable i64 = NATIVE_NEGATIVE_ONE
             if stdin_path.count > NATIVE_ZERO.usize():
                 stdin_fd <- open_input_file(stdin_path)
@@ -199,7 +250,7 @@ extend ProfilerNative:
                     _ = profiler_ffi_close(stdout_fd)
                     _ = profiler_ffi_close(stderr_fd)
                     clear_target_environment()
-                    return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                    return failed_target_run_result(false)
             start_time: ProfilerNativeTimespec = read_monotonic()
             process: i64 = profiler_ffi_fork()
             if process == NATIVE_ZERO:
@@ -228,18 +279,19 @@ extend ProfilerNative:
                 if stdin_fd >= NATIVE_ZERO:
                     _ = profiler_ffi_close(stdin_fd)
                 clear_target_environment()
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: false}
+                return failed_target_run_result(false)
             # Establish the process group from the parent as well as the child. This
             # closes the short fork/exec race before a timeout can arrive.
             _ = profiler_ffi_setpgid(process, process)
             status: mutable i64 = NATIVE_ZERO
             waited: mutable i64 = NATIVE_ZERO
             timed_out: mutable bool = false
+            resource_usage: mutable ProfilerNativeRusage = empty_native_rusage()
             if timeout_ns <= NATIVE_ZERO:
-                waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
+                waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_OPTIONS, &resource_usage)
             else:
                 while waited != process |waited, status, timed_out|:
-                    waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_HANG)
+                    waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_HANG, &resource_usage)
                     break if waited == process or waited < NATIVE_ZERO
                     now: ProfilerNativeTimespec = read_monotonic()
                     if elapsed_nanoseconds(start_time, now) >= timeout_ns:
@@ -247,13 +299,13 @@ extend ProfilerNative:
                         _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_TERM)
                         grace_start: ProfilerNativeTimespec = now
                         while true |waited, status, grace_start|:
-                            waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_HANG)
+                            waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_HANG, &resource_usage)
                             break if waited == process or waited < NATIVE_ZERO
                             grace_now: ProfilerNativeTimespec = read_monotonic()
                             grace_ns: i64 = elapsed_nanoseconds(grace_start, grace_now)
                             if grace_ns >= NATIVE_TIMEOUT_GRACE_MILLISECONDS * NATIVE_NANOS_PER_MILLISECOND:
                                 _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_KILL)
-                                waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
+                                waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_OPTIONS, &resource_usage)
                                 break
                             _ = profiler_ffi_usleep(NATIVE_WAIT_POLL_MICROSECONDS)
                         break
@@ -264,8 +316,16 @@ extend ProfilerNative:
             if stdin_fd >= NATIVE_ZERO:
                 _ = profiler_ffi_close(stdin_fd)
             clear_target_environment()
-            return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO, timed_out: timed_out} if waited != process
-            return TargetRunResult{status: status, elapsed_ns: elapsed_nanoseconds(start_time, finish_time), timed_out: timed_out}
+            return failed_target_run_result(timed_out) if waited != process
+            return TargetRunResult{
+                status: status,
+                elapsed_ns: elapsed_nanoseconds(start_time, finish_time),
+                timed_out: timed_out,
+                resource_available: true,
+                cpu_user_ns: rusage_time_nanoseconds(resource_usage.user_seconds, resource_usage.user_microseconds),
+                cpu_system_ns: rusage_time_nanoseconds(resource_usage.system_seconds, resource_usage.system_microseconds),
+                peak_rss_bytes: peak_rss_bytes(resource_usage.maximum_resident_set_bytes),
+            }
 
 
         def read_file(path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:

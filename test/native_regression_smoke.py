@@ -166,6 +166,14 @@ def main():
         assert len(repetitions) == 2
         assert all(set(item["detail_records"]) == {"locations", "functions", "call_edges", "stacks"} for item in repetitions)
         assert all(item["detail_records"]["locations"] >= item["detail_records"]["functions"] for item in repetitions)
+        assert all(item["cpu_user_ms"] is not None for item in repetitions)
+        assert all(item["cpu_system_ms"] is not None for item in repetitions)
+        assert all(abs(item["cpu_ms"] - item["cpu_user_ms"] - item["cpu_system_ms"]) <= 0.002 for item in repetitions)
+        assert all(item["peak_rss_bytes"] is not None and item["peak_rss_bytes"] >= 0 for item in repetitions)
+        assert abs(measured["run"]["cpu_user_ms"] - sum(item["cpu_user_ms"] for item in repetitions)) <= 0.002
+        assert abs(measured["run"]["cpu_system_ms"] - sum(item["cpu_system_ms"] for item in repetitions)) <= 0.002
+        assert abs(measured["run"]["cpu_ms"] - sum(item["cpu_ms"] for item in repetitions)) <= 0.002
+        assert measured["run"]["peak_rss_bytes"] == max(item["peak_rss_bytes"] for item in repetitions)
         assert all(item["trace_events_captured"] == 10 for item in repetitions)
         mean_of_middle = sum(item["execution_ms"] for item in repetitions) / 2
         assert abs(measured["run"]["execution_ms_median"] - mean_of_middle) <= 0.002

@@ -32,6 +32,7 @@ module ProfilerNative:
         const NATIVE_NANOS_PER_SECOND: i64 = 1000000000
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
+        const NATIVE_MICROSECONDS_PER_SECOND: i64 = 1000000
         const NATIVE_TIMEOUT_FRACTION_DIGITS: i64 = 9
         const NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR: i64 = 100000000
         const NATIVE_MICROSECONDS_PER_MILLISECOND: i64 = 1000
@@ -39,6 +40,8 @@ module ProfilerNative:
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192
         const NATIVE_MAX_FILE_BYTES: usize = 134217728
+        const NATIVE_UNAME_BUFFER_BYTES: usize = 4096
+        const NATIVE_LINUX_RSS_UNIT_BYTES: i64 = 1024
         const NATIVE_MAX_JSON_NESTING_DEPTH: i64 = 128
         const NATIVE_DEFAULT_TRACE_LIMIT: i64 = 1000000
         const NATIVE_DEFAULT_CAPTURE_BYTES: i64 = 67108864
@@ -109,8 +112,13 @@ module ProfilerNative:
         const NATIVE_BYTE_ASCII_NINE: u8 = 57
         const NATIVE_BYTE_ASCII_UPPER_A: u8 = 65
         const NATIVE_BYTE_ASCII_UPPER_F: u8 = 70
+        const NATIVE_BYTE_ASCII_UPPER_L: u8 = 76
         const NATIVE_BYTE_ASCII_LOWER_A: u8 = 97
         const NATIVE_BYTE_ASCII_LOWER_F: u8 = 102
+        const NATIVE_BYTE_ASCII_LOWER_I: u8 = 105
+        const NATIVE_BYTE_ASCII_LOWER_N: u8 = 110
+        const NATIVE_BYTE_ASCII_LOWER_U: u8 = 117
+        const NATIVE_BYTE_ASCII_LOWER_X: u8 = 120
         const NATIVE_BYTE_ASCII_FALSE_A: u8 = 97
         const NATIVE_BYTE_ASCII_FALSE_F: u8 = 102
         const NATIVE_BYTE_ASCII_FALSE_L: u8 = 108
@@ -154,6 +162,10 @@ module ProfilerNative:
             status: i64
             elapsed_ns: i64
             timed_out: bool
+            resource_available: bool
+            cpu_user_ns: i64
+            cpu_system_ns: i64
+            peak_rss_bytes: i64
 
         struct CaptureSummary:
             events: mutable i64

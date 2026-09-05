@@ -31,6 +31,13 @@ capture is moved; a missing content digest is represented as `null`.
   to `quality.reasons`.
 - `compile_ms` covers target compilation, object preparation, collector build,
   and link steps performed for the capture.
+- `cpu_user_ms` and `cpu_system_ms` are child-process CPU durations returned by
+  the native `wait4` resource record, and `cpu_ms` is their sum. They are
+  summed across the selected measurement repetitions, not compared with wall
+  time; a missing host resource record leaves these fields `null`.
+- `peak_rss_bytes` is the largest profiled-child resident-set value across the
+  selected measurement repetitions. The native launcher reports the host
+  `wait4` value in bytes; unavailable host accounting remains `null`.
 - `thread_count` is the maximum number of registered collector threads seen in
   the capture. It is not the operating system's final thread count.
 

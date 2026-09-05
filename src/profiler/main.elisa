@@ -13,6 +13,31 @@ struct ProfilerNativeTimespec:
     seconds: i64
     nanoseconds: i64
 
+# `wait4` writes the POSIX `struct rusage` returned for the reaped child. The
+# profiler targets the 64-bit hosts supported by the native compiler, where
+# `time_t`, `suseconds_t`, and `long` occupy one 64-bit slot. Keep the complete
+# layout here: passing a truncated struct would let libc overwrite adjacent
+# Elisa state even though only four fields are consumed below.
+struct ProfilerNativeRusage:
+    user_seconds: i64
+    user_microseconds: i64
+    system_seconds: i64
+    system_microseconds: i64
+    maximum_resident_set_bytes: i64
+    integral_shared_memory: i64
+    integral_unshared_data: i64
+    integral_unshared_stack: i64
+    page_reclaims: i64
+    page_faults: i64
+    swaps: i64
+    block_input_operations: i64
+    block_output_operations: i64
+    messages_sent: i64
+    messages_received: i64
+    signals_received: i64
+    voluntary_context_switches: i64
+    involuntary_context_switches: i64
+
 @link_name("read")
 extern profiler_ffi_read(fd: i64, buf: u8&, count: usize) -> i64 can[Console]
 @link_name("write")
@@ -49,6 +74,10 @@ extern profiler_ffi_execv(path: cstr, argv: mutable cstr&&) -> i64
 extern profiler_ffi_execvp(path: cstr, argv: mutable cstr&&) -> i64
 @link_name("waitpid")
 extern profiler_ffi_waitpid(pid: i64, status: mutable i64&, options: i64) -> i64
+@link_name("wait4")
+extern profiler_ffi_wait4(pid: i64, status: mutable i64&, options: i64, usage: mutable ProfilerNativeRusage&) -> i64
+@link_name("uname")
+extern profiler_ffi_uname(name: mutable u8&) -> i64
 @link_name("setpgid")
 extern profiler_ffi_setpgid(process: i64, process_group: i64) -> i64
 @link_name("kill")
@@ -657,6 +686,7 @@ extend ProfilerNative:
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
+            cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool,
             working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
         ) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"schema_version\":")
@@ -775,7 +805,27 @@ extend ProfilerNative:
             append_millis(buffer, execution_median_ns)
             append_text(buffer, ",\"execution_ms_stdev\":")
             append_millis(buffer, execution_stdev_ns)
-            append_text(buffer, ",\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"warmup_ms\":")
+            append_text(buffer, ",\"cpu_user_ms\":")
+            if resource_metrics_available:
+                append_millis(buffer, cpu_user_ns)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"cpu_system_ms\":")
+            if resource_metrics_available:
+                append_millis(buffer, cpu_system_ns)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"cpu_ms\":")
+            if resource_metrics_available:
+                append_millis(buffer, cpu_user_ns + cpu_system_ns)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"peak_rss_bytes\":")
+            if resource_metrics_available:
+                append_i64(buffer, peak_rss_bytes)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"warmup_ms\":")
             append_millis(buffer, warmup_ns)
             append_text(buffer, ",\"warmup_repetitions\":")
             append_i64(buffer, warmup_repetitions)
@@ -1347,6 +1397,14 @@ extend ProfilerNative:
             repetition_records: mutable darray[u8] = []
             all_execution_times: mutable darray[i64] = []
             measurement_execution_times: mutable darray[i64] = []
+            all_cpu_user_times: mutable darray[i64] = []
+            all_cpu_system_times: mutable darray[i64] = []
+            all_peak_rss_values: mutable darray[i64] = []
+            all_resource_availability: mutable darray[i64] = []
+            measurement_cpu_user_times: mutable darray[i64] = []
+            measurement_cpu_system_times: mutable darray[i64] = []
+            measurement_peak_rss_values: mutable darray[i64] = []
+            measurement_resource_availability: mutable darray[i64] = []
             warmup_ns: mutable i64 = NATIVE_ZERO
             warmup_index: mutable i64 = NATIVE_ONE
             while warmup_index <= warmup_repetitions |warmup_index, warmup_ns|:
@@ -1369,7 +1427,7 @@ extend ProfilerNative:
             failed_repetitions: mutable i64 = NATIVE_ZERO
             overall_timed_out: mutable bool = false
             repetition: mutable i64 = NATIVE_ONE
-            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out|:
+            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, all_cpu_user_times, all_cpu_system_times, all_peak_rss_values, all_resource_availability, measurement_cpu_user_times, measurement_cpu_system_times, measurement_peak_rss_values, measurement_resource_availability, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out|:
                 capture_fd: i64 = open_output_file(capture_path)
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
@@ -1395,10 +1453,18 @@ extend ProfilerNative:
                 merge_capture_summary(&summary, current_summary)
                 append_repetition_record(&repetition_records, repetition, requested_repetitions, run_result, current_summary, event_trace, recent_path)
                 all_execution_times.push(run_result.elapsed_ns)
+                all_cpu_user_times.push(run_result.cpu_user_ns)
+                all_cpu_system_times.push(run_result.cpu_system_ns)
+                all_peak_rss_values.push(run_result.peak_rss_bytes)
+                all_resource_availability.push(NATIVE_ONE if run_result.resource_available else NATIVE_ZERO)
                 completed_repetitions <- completed_repetitions + 1
                 if run_result.status == NATIVE_ZERO:
                     successful_repetitions <- successful_repetitions + 1
                     measurement_execution_times.push(run_result.elapsed_ns)
+                    measurement_cpu_user_times.push(run_result.cpu_user_ns)
+                    measurement_cpu_system_times.push(run_result.cpu_system_ns)
+                    measurement_peak_rss_values.push(run_result.peak_rss_bytes)
+                    measurement_resource_availability.push(NATIVE_ONE if run_result.resource_available else NATIVE_ZERO)
                 else:
                     failed_repetitions <- failed_repetitions + 1
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
@@ -1410,6 +1476,24 @@ extend ProfilerNative:
                 metric_times.extend(measurement_execution_times)
             else:
                 metric_times.extend(all_execution_times)
+            selected_cpu_user_times: mutable darray[i64] = []
+            selected_cpu_system_times: mutable darray[i64] = []
+            selected_peak_rss_values: mutable darray[i64] = []
+            selected_resource_availability: mutable darray[i64] = []
+            if successful_repetitions > NATIVE_ZERO:
+                selected_cpu_user_times.extend(measurement_cpu_user_times)
+                selected_cpu_system_times.extend(measurement_cpu_system_times)
+                selected_peak_rss_values.extend(measurement_peak_rss_values)
+                selected_resource_availability.extend(measurement_resource_availability)
+            else:
+                selected_cpu_user_times.extend(all_cpu_user_times)
+                selected_cpu_system_times.extend(all_cpu_system_times)
+                selected_peak_rss_values.extend(all_peak_rss_values)
+                selected_resource_availability.extend(all_resource_availability)
+            resource_metrics_available: mutable bool = selected_resource_availability.count == metric_times.count
+            if resource_metrics_available:
+                for index in 0..<selected_resource_availability.count |index, selected_resource_availability, resource_metrics_available|:
+                    resource_metrics_available <- false if selected_resource_availability[index] == NATIVE_ZERO
             sort_i64(metric_times)
             total_execution_ns: mutable i64 = NATIVE_ZERO
             for index in 0..<metric_times.count |index, metric_times, total_execution_ns|:
@@ -1427,6 +1511,16 @@ extend ProfilerNative:
                 variance <- variance + difference * difference
             variance <- variance / metric_times.count.i64()
             execution_stdev_ns: i64 = integer_sqrt(variance) * NATIVE_NANOS_PER_MICROSECOND
+            cpu_user_ns: mutable i64 = NATIVE_ZERO
+            cpu_system_ns: mutable i64 = NATIVE_ZERO
+            peak_rss_bytes: mutable i64 = NATIVE_ZERO
+            if resource_metrics_available:
+                for index in 0..<selected_cpu_user_times.count |index, selected_cpu_user_times, cpu_user_ns|:
+                    cpu_user_ns <- cpu_user_ns + selected_cpu_user_times[index]
+                for index in 0..<selected_cpu_system_times.count |index, selected_cpu_system_times, cpu_system_ns|:
+                    cpu_system_ns <- cpu_system_ns + selected_cpu_system_times[index]
+                for index in 0..<selected_peak_rss_values.count |index, selected_peak_rss_values, peak_rss_bytes|:
+                    peak_rss_bytes <- selected_peak_rss_values[index] if selected_peak_rss_values[index] > peak_rss_bytes
             final_exit_code: i64 = system_exit_code(overall_status)
             report: mutable darray[u8] = []
             if format_text:
@@ -1438,7 +1532,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

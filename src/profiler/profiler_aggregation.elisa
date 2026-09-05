@@ -122,7 +122,27 @@ extend ProfilerNative:
             append_millis(buffer, result.elapsed_ns)
             append_text(buffer, ",\"timed_out\":")
             append_text(buffer, "true" if result.timed_out else "false")
-            append_text(buffer, ",\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"trace_events\":")
+            append_text(buffer, ",\"cpu_user_ms\":")
+            if result.resource_available:
+                append_millis(buffer, result.cpu_user_ns)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"cpu_system_ms\":")
+            if result.resource_available:
+                append_millis(buffer, result.cpu_system_ns)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"cpu_ms\":")
+            if result.resource_available:
+                append_millis(buffer, result.cpu_user_ns + result.cpu_system_ns)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"peak_rss_bytes\":")
+            if result.resource_available:
+                append_i64(buffer, result.peak_rss_bytes)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"trace_events\":")
             append_i64(buffer, summary.events)
             append_text(buffer, ",\"trace_locations\":")
             append_i64(buffer, summary.locations)

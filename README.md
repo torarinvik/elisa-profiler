@@ -135,9 +135,9 @@ attributed wall time and functions by inclusive duration; without timing it
 retains event-count ordering.
 Timed reports also rank call-graph edges by inclusive duration; count-only
 reports rank them by observed call events.
-Each measured repetition also records child user/system CPU time when the host
-provides Python's `resource` interface; aggregate CPU time is kept separate
-from wall-clock execution time.
+Each measured repetition records child user/system CPU time and peak resident
+set size from the native `wait4` resource result when the host provides it;
+aggregate CPU time is kept separate from wall-clock execution time.
 Each repetition also records its trace event/location totals, traced-thread
 count, dropped-event count, and stack-depth diagnostics, so merged reports can
 be audited run by run.
