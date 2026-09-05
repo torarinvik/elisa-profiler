@@ -71,6 +71,7 @@ profiler-native-smoke: profiler-native
 	@set -eu; native_work="$$(mktemp -d)"; trap 'rm -rf "$$native_work"' EXIT; \
 		"$(NATIVE_PROFILER_BIN)" doctor --format json --output "$$native_work/doctor.json"; \
 		grep -Fq '"ok":true' "$$native_work/doctor.json"; \
+		grep -Fq '"compiler_manifest":true' "$$native_work/doctor.json"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --event-trace --max-event-trace-events 10 --format json --output "$$native_work/report.json"; \
 		test -s "$$native_work/report.json"; \
 		"$(NATIVE_PROFILER_BIN)" record "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format json --output "$$native_work/record.json" --artifact-output "$$native_work/profile.elisaprof"; \

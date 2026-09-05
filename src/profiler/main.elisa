@@ -854,11 +854,20 @@ extend ProfilerNative:
             environment_or("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime)
             collector: mutable darray[u8] = []
             environment_or("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", collector)
+            manifest_path: darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
             compiler_ok: bool = readable_file(compiler_root)
             stage1_ok: bool = executable_available(stage1)
             runtime_ok: bool = readable_file(runtime)
             collector_ok: bool = readable_file(collector)
-            all_ok: bool = compiler_ok and stage1_ok and runtime_ok and collector_ok
+            manifest_data: darray[u8] = read_file(manifest_path)
+            manifest_ok: mutable bool = false
+            if manifest_data.count > NATIVE_ZERO.usize():
+                freshness_start: i64 = json_key_value_start(manifest_data, "freshness", NATIVE_ZERO.usize(), manifest_data.count)
+                if freshness_start >= NATIVE_ZERO:
+                    freshness_stop: i64 = json_object_end(manifest_data, freshness_start.usize(), manifest_data.count)
+                    manifest_usable: mutable bool = false
+                    manifest_ok <- freshness_stop >= NATIVE_ZERO and json_read_bool_field(manifest_data, "usable", freshness_start.usize(), freshness_stop.usize(), &manifest_usable) and manifest_usable
+            all_ok: bool = compiler_ok and stage1_ok and runtime_ok and collector_ok and manifest_ok
             report: mutable darray[u8] = []
             append_text(report, "{\"ok\":")
             append_text(report, "true" if all_ok else "false")
@@ -872,12 +881,16 @@ extend ProfilerNative:
             append_text(report, "true" if runtime_ok else "false")
             append_text(report, ",\"collector_source\":")
             append_text(report, "true" if collector_ok else "false")
+            append_text(report, ",\"compiler_manifest\":")
+            append_text(report, "true" if manifest_ok else "false")
             append_text(report, "},\"paths\":{\"stage1_binary\":")
             append_json_string(report, stage1)
             append_text(report, ",\"runtime_object\":")
             append_json_string(report, runtime)
             append_text(report, ",\"collector_source\":")
             append_json_string(report, collector)
+            append_text(report, ",\"compiler_manifest\":")
+            append_json_string(report, manifest_path)
             append_text(report, "}}\n")
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, report)
