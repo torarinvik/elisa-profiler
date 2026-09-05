@@ -104,6 +104,10 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &field_last)
             cursor <- protocol_field_into(data, cursor, stop, &field_interval)
             cursor <- protocol_field_into(data, cursor, stop, &field_max_interval)
+            if cursor != stop:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_LOCATION
+                return
             kind_name: mutable sview = ""
             if protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_STATEMENT:
                 kind_name <- "statement"
@@ -232,6 +236,10 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &calls_field)
             cursor <- protocol_field_into(data, cursor, stop, &completed_field)
             cursor <- protocol_field_into(data, cursor, stop, &inclusive_field)
+            if cursor != stop:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
+                return
             if caller_field.count == NATIVE_ZERO.usize() or callee_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(inclusive_field):
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
@@ -259,6 +267,10 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &calls_field)
             cursor <- protocol_field_into(data, cursor, stop, &completed_field)
             cursor <- protocol_field_into(data, cursor, stop, &self_field)
+            if cursor != stop:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
+                return
             if stack_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(self_field):
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
@@ -298,6 +310,10 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &variable_field)
             cursor <- protocol_field_into(data, cursor, stop, &signed_field)
             cursor <- protocol_field_into(data, cursor, stop, &value_field)
+            if cursor != stop:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_EVENT
+                return
             kind_name: mutable sview = ""
             if protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_STATEMENT:
                 kind_name <- "statement"
@@ -471,5 +487,4 @@ extend ProfilerNative:
             summary.folded_records <- folded_records
             summary.event_records <- event_records
             return summary
-
 
