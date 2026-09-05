@@ -112,6 +112,8 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop-diagnostic.html
     scripts/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
+    scripts/elisa-profiler recover profiles/hot-loop.json.manifest.json \
+        --format json -o profiles/hot-loop-recovered.json
     scripts/elisa-profiler doctor
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
@@ -258,6 +260,10 @@ using the same stack weights, ready to open in Speedscope or another compatible
 viewer.
 The `report` command renders an existing JSON report offline, so changing
 format or display limits never reruns the compiler or target.
+The `recover` command reads a progress manifest and its still-present framed
+capture, validates the source identity, ignores an incomplete tail, and emits
+a clearly marked `quality.capture = recovered` report without claiming missing
+termination or timing data.
 The `doctor` command performs a read-only prerequisite check for the compiler
 worktree, branch coverage, stage1 freshness, LLVM tools, runtime ABI, and the
 content-validated runtime manifest. `doctor --json` is suitable for scripts.

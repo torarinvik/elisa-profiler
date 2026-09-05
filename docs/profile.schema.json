@@ -101,7 +101,7 @@
       "properties": {
         "capture": {
           "type": "string",
-          "enum": ["complete", "target_exit", "target_signal", "timeout", "profiler_failure"]
+          "enum": ["complete", "target_exit", "target_signal", "timeout", "profiler_failure", "recovered"]
         },
         "detail": { "type": "string", "enum": ["complete", "degraded"] },
         "event_counts": { "type": "string", "enum": ["exact", "partial"] },

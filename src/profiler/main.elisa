@@ -469,7 +469,7 @@ extend ProfilerNative:
             append_text(buffer, "}\n")
 
 
-        def write_capture_manifest(path: darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, capture_path: darray[u8]&, state: sview, requested: i64, completed: i64, successful: i64, failed: i64, summary: CaptureSummary, capture_bytes: i64, valid_frames: i64, valid_capture_bytes: i64) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def write_capture_manifest(path: darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, capture_path: darray[u8]&, state: sview, requested: i64, completed: i64, successful: i64, failed: i64, summary: CaptureSummary, capture_bytes: i64, valid_frames: i64, valid_capture_bytes: i64) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             return true if path.count == NATIVE_ZERO.usize()
             manifest: mutable darray[u8] = []
             source_digest: darray[u8] = sha256_hex(source_bytes)
@@ -483,6 +483,8 @@ extend ProfilerNative:
             append_json_string(manifest, source)
             append_text(manifest, ",\"source_sha256\":")
             append_json_string(manifest, source_digest)
+            append_text(manifest, ",\"collection_mode\":")
+            append_json_string(manifest, mode)
             append_text(manifest, ",\"capture_path\":")
             append_json_string(manifest, capture_path)
             append_text(manifest, ",\"requested_repetitions\":")
@@ -567,12 +569,14 @@ extend ProfilerNative:
             append_i64(buffer, system_exit_code(status)) if status >= NATIVE_ZERO and signal < NATIVE_ZERO
 
 
-        def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
             detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
             append_text(buffer, "\"quality\":{\"capture\":\"")
-            if status < NATIVE_ZERO:
+            if recovered:
+                append_text(buffer, "recovered")
+            elif status < NATIVE_ZERO:
                 append_text(buffer, "profiler_failure")
             elif timed_out:
                 append_text(buffer, "timeout")
@@ -586,7 +590,7 @@ extend ProfilerNative:
             append_text(buffer, "degraded" if detail_degraded else "complete")
             append_text(buffer, "\",\"event_counts\":\"")
             append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO else "exact")
-            capture_incomplete: bool = status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
+            capture_incomplete: bool = recovered or status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
             append_text(buffer, "\",\"completeness\":{\"events\":\"")
             append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
             append_text(buffer, "\",\"locations\":\"")
@@ -601,7 +605,10 @@ extend ProfilerNative:
             append_text(buffer, "partial" if capture_incomplete else "exact")
             append_text(buffer, "\"},\"reasons\":[")
             first_reason: mutable bool = true
-            if status < NATIVE_ZERO:
+            if recovered:
+                append_text(buffer, "\"recovered_partial\"")
+                first_reason <- false
+            elif status < NATIVE_ZERO:
                 append_text(buffer, "\"wait_failure\"")
                 first_reason <- false
             if signal >= NATIVE_ZERO:
@@ -612,7 +619,7 @@ extend ProfilerNative:
                 append_text(buffer, "," if not first_reason else "")
                 append_text(buffer, "\"timeout\"")
                 first_reason <- false
-            if target_exit != NATIVE_ZERO and signal < NATIVE_ZERO:
+            if not recovered and target_exit != NATIVE_ZERO and signal < NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
                 append_text(buffer, "\"target_exit\"")
                 first_reason <- false
@@ -777,7 +784,7 @@ extend ProfilerNative:
 
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
-            status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
+            status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
             cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool,
@@ -872,7 +879,7 @@ extend ProfilerNative:
             else:
                 append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
             append_text(buffer, "},")
-            append_quality(buffer, summary, status, event_trace, timed_out)
+            append_quality(buffer, summary, status, event_trace, timed_out, recovered)
             append_text(buffer, ",\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
             append_i64(buffer, NATIVE_ZERO)
             append_text(buffer, ",\"unmapped_locations\":")
@@ -1097,6 +1104,159 @@ extend ProfilerNative:
             return NATIVE_ZERO if all_ok else NATIVE_TWO
 
 
+        def append_recovery_metadata(buffer: mutable darray[u8]&, manifest_path: darray[u8]&, capture_path: darray[u8]&, state: darray[u8]&, source_digest: darray[u8]&, capture_bytes: i64, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            return if buffer.count < NATIVE_TWO.usize()
+            buffer.count <- buffer.count - NATIVE_TWO.usize()
+            append_text(buffer, ",\"recovery\":{\"kind\":\"partial-capture\",\"state\":")
+            append_json_string(buffer, state)
+            append_text(buffer, ",\"manifest\":")
+            append_json_string(buffer, manifest_path)
+            append_text(buffer, ",\"capture_path\":")
+            append_json_string(buffer, capture_path)
+            append_text(buffer, ",\"source_sha256\":")
+            append_json_string(buffer, source_digest)
+            append_text(buffer, ",\"capture_bytes\":")
+            append_i64(buffer, capture_bytes)
+            append_text(buffer, ",\"valid_frames\":")
+            append_i64(buffer, summary.valid_frames)
+            append_text(buffer, ",\"valid_bytes\":")
+            append_i64(buffer, summary.valid_capture_bytes)
+            append_text(buffer, ",\"tail_truncated\":")
+            append_text(buffer, "true" if summary.valid_capture_bytes < capture_bytes else "false")
+            append_text(buffer, "}}\n")
+
+
+        def append_recovered_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, summary: CaptureSummary, manifest_path: darray[u8]&, capture_path: darray[u8]&, state: darray[u8]&, source_digest: darray[u8]&, capture_bytes: i64) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            compiler_root: mutable darray[u8] = []
+            compiler_branch: mutable darray[u8] = []
+            compiler_commit: mutable darray[u8] = []
+            runtime_object: mutable darray[u8] = []
+            append_text(compiler_root, "unavailable-recovery")
+            append_text(compiler_branch, "unavailable-recovery")
+            append_text(compiler_commit, "unavailable-recovery")
+            append_text(runtime_object, "unavailable-recovery")
+            repetition_records: mutable darray[u8] = []
+            empty_program_stderr: mutable darray[u8] = []
+            empty_working_directory: mutable darray[u8] = []
+            empty_stdin_path: mutable darray[u8] = []
+            empty_environment: mutable darray[u8] = []
+            empty_target_arguments: mutable darray[darray[u8]] = []
+            recovery_result: TargetRunResult = TargetRunResult{
+                status: NATIVE_NEGATIVE_ONE,
+                elapsed_ns: NATIVE_ZERO,
+                timed_out: false,
+                resource_available: false,
+                cpu_user_ns: NATIVE_ZERO,
+                cpu_system_ns: NATIVE_ZERO,
+                peak_rss_bytes: NATIVE_ZERO,
+            }
+            append_repetition_record(&repetition_records, NATIVE_ONE, NATIVE_ONE, recovery_result, summary, false, false)
+            append_report(buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit, true, runtime_object, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true, NATIVE_ZERO, empty_program_stderr, NATIVE_ZERO, NATIVE_ZERO, repetition_records, NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, false, empty_working_directory, empty_stdin_path, empty_environment, empty_target_arguments)
+            append_recovery_metadata(buffer, manifest_path, capture_path, state, source_digest, capture_bytes, summary)
+
+
+        def recover_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return report_error("usage: elisa-profiler recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            manifest_path: mutable darray[u8] = []
+            output_path: mutable darray[u8] = []
+            format_json: mutable bool = false
+            format_text: mutable bool = false
+            format_folded: mutable bool = false
+            format_speedscope: mutable bool = false
+            format_html: mutable bool = false
+            manifest_seen: mutable bool = false
+            index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
+            while index < argc |index, slots, manifest_path, output_path, format_json, format_text, format_folded, format_speedscope, format_html, manifest_seen|:
+                argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
+                    return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
+                    if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
+                        format_json <- true
+                        format_text <- false
+                        format_folded <- false
+                        format_speedscope <- false
+                        format_html <- false
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- true
+                        format_folded <- false
+                        format_speedscope <- false
+                        format_html <- false
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- false
+                        format_folded <- true
+                        format_speedscope <- false
+                        format_html <- false
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "speedscope") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- false
+                        format_folded <- false
+                        format_speedscope <- true
+                        format_html <- false
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- false
+                        format_folded <- false
+                        format_speedscope <- false
+                        format_html <- true
+                    else:
+                        return report_error("--format requires json, text, folded, speedscope, or html")
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("--output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if argument[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS:
+                    return report_error("unknown recover option")
+                return report_error("recover accepts exactly one manifest path") if manifest_seen
+                copy_cstr(manifest_path, argument)
+                manifest_seen <- true
+                index <- index + NATIVE_ONE
+            return report_error("recover requires a manifest path") if not manifest_seen
+            return report_error("recover requires --format json, text, folded, speedscope, or html") if not format_json and not format_text and not format_folded and not format_speedscope and not format_html
+            manifest: darray[u8] = read_file(manifest_path)
+            return report_error("capture manifest could not be read") if manifest.count == NATIVE_ZERO.usize()
+            manifest_state: mutable darray[u8] = []
+            source: mutable darray[u8] = []
+            source_digest: mutable darray[u8] = []
+            mode: mutable darray[u8] = []
+            capture_path: mutable darray[u8] = []
+            return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "state", NATIVE_ZERO.usize(), manifest.count, &manifest_state)
+            return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "source", NATIVE_ZERO.usize(), manifest.count, &source)
+            return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "source_sha256", NATIVE_ZERO.usize(), manifest.count, &source_digest)
+            return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "collection_mode", NATIVE_ZERO.usize(), manifest.count, &mode)
+            return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "capture_path", NATIVE_ZERO.usize(), manifest.count, &capture_path)
+            capture: darray[u8] = read_file(capture_path)
+            return report_error("indexed capture file could not be read") if capture.count == NATIVE_ZERO.usize()
+            source_bytes: darray[u8] = read_file(source)
+            return report_error("source file could not be read for recovery") if source_bytes.count == NATIVE_ZERO.usize()
+            return report_error("source changed since capture; recovery would misattribute locations") if not byte_arrays_equal(source_digest, sha256_hex(source_bytes))
+            summary: CaptureSummary = parse_capture(capture, source, true)
+            return report_protocol_error(summary) if summary.malformed
+            return report_error("capture contains no complete framed records") if summary.valid_frames == NATIVE_ZERO
+            recovered: mutable darray[u8] = []
+            append_recovered_report(&recovered, source, source_bytes, mode, summary, manifest_path, capture_path, manifest_state, source_digest, capture.count.i64())
+            rendered: mutable darray[u8] = []
+            if format_text:
+                return report_error("recovered capture is not a native JSON profile") if not append_offline_text_report(&rendered, recovered)
+            elif format_folded:
+                return report_error("recovered capture is not a native JSON profile") if not append_offline_folded_report(&rendered, recovered)
+            elif format_speedscope:
+                return report_error("recovered capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, recovered)
+            elif format_html:
+                return report_error("recovered capture is not a native JSON profile") if not append_offline_html_report(&rendered, recovered)
+            else:
+                rendered.extend(recovered)
+            if output_path.count > NATIVE_ZERO.usize():
+                return NATIVE_ZERO if write_file(output_path, rendered)
+                return report_error("could not write recovered profile")
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, rendered) can Console
+            return NATIVE_ZERO
+
+
         def report_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             return report_error("usage: elisa-profiler report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_PATH_ARGUMENTS
             capture_path: mutable darray[u8] = []
@@ -1185,13 +1345,14 @@ extend ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [options] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [options] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
+            return recover_offline(argc, slots) if profiler_ffi_strcmp(first, "recover") == NATIVE_ZERO
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
-            return report_error("unknown command; use profile, record, report, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO
+            return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
             return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
@@ -1559,7 +1720,7 @@ extend ProfilerNative:
             last_capture_bytes: mutable i64 = NATIVE_ZERO
             last_valid_frames: mutable i64 = NATIVE_ZERO
             last_valid_capture_bytes: mutable i64 = NATIVE_ZERO
-            return report_error("could not create capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "running", requested_repetitions, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
+            return report_error("could not create capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, "running", requested_repetitions, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
             warmup_ns: mutable i64 = NATIVE_ZERO
             warmup_index: mutable i64 = NATIVE_ONE
             while warmup_index <= warmup_repetitions |warmup_index, warmup_ns|:
@@ -1596,7 +1757,7 @@ extend ProfilerNative:
                         cleanup_temp(temporary)
                         return report_error("native target produced no collector capture")
                 else:
-                    current_summary <- parse_capture(capture, source)
+                    current_summary <- parse_capture(capture, source, run_result.timed_out)
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)
@@ -1630,7 +1791,7 @@ extend ProfilerNative:
                     failed_repetitions <- failed_repetitions + 1
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
                 overall_timed_out <- true if run_result.timed_out
-                if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "running", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes):
+                if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, "running", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes):
                     cleanup_temp(temporary)
                     return report_error("could not update capture manifest")
                 repetition <- repetition + 1
@@ -1700,19 +1861,19 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)
             manifest_state: mutable sview = "complete"
             manifest_state <- "partial" if overall_timed_out or failed_repetitions > NATIVE_ZERO or not summary.capture_complete
-            return report_error("could not finalize capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, "finalizing", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
+            return report_error("could not finalize capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, "finalizing", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
             cleanup_temp(temporary)
             if artifact_output.count > NATIVE_ZERO.usize():
                 return report_error("could not write profile artifact") if not write_file(artifact_output, artifact)
             if output.count > NATIVE_ZERO.usize():
                 return report_error("could not write native profile report") if not write_file(output, report)
-            return report_error("could not complete capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, capture_path, manifest_state, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
+            return report_error("could not complete capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, manifest_state, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
             return final_exit_code if output.count > NATIVE_ZERO.usize()
             _ = write_all_fd(NATIVE_STANDARD_OUTPUT, report) can Console
             return final_exit_code

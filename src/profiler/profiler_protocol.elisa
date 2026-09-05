@@ -433,7 +433,7 @@ extend ProfilerNative:
             return value
         
         
-        def parse_capture(data: darray[u8]&, source: darray[u8]&) -> CaptureSummary:
+        def parse_capture(data: darray[u8]&, source: darray[u8]&, allow_partial_tail: bool) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
@@ -526,6 +526,9 @@ extend ProfilerNative:
                             summary.valid_frames <- summary.valid_frames + NATIVE_ONE
                             summary.valid_capture_bytes <- (line_stop + (NATIVE_ONE.usize() if line_stop < data.count else NATIVE_ZERO.usize())).i64()
                         else:
+                            truncated_tail: bool = allow_partial_tail and line_stop == data.count and line_stop > line_start
+                            if truncated_tail:
+                                break
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
                     elif framed_capture and not line_prefix(data, line_start, line_stop, crash_prefix):

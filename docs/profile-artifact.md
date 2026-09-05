@@ -48,3 +48,12 @@ bytes and their SHA-256 digest. Snapshots are intentionally optional because
 they increase report size.
 The quality object inside the embedded capture is authoritative about target
 termination and bounded-detail loss.
+
+If a `running`, `finalizing`, or `partial` manifest remains beside a capture,
+`elisa-profiler recover MANIFEST --format json` reconstructs a v1 report from
+the checksum-validated framed records. Recovery verifies the source digest and
+stops before an incomplete trailing frame. The result is marked
+`quality.capture = recovered`, includes a `recovery` object with the manifest,
+capture, and validated-boundary metadata, and never invents target exit or
+elapsed-time values. A missing capture or changed source is an actionable
+failure rather than a guessed report.

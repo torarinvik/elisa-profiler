@@ -146,9 +146,12 @@ profile-workload-compare-smoke: profiler-native
 native-timeout-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/native_timeout_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
-.PHONY: native-regression-smoke
+.PHONY: native-regression-smoke recovery-smoke
 native-regression-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/native_regression_smoke.py"
+
+recovery-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/recovery_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
 test: native-regression-smoke
 
@@ -215,4 +218,4 @@ bootstrap-path-smoke: profiler-native
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke profile-budget-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke

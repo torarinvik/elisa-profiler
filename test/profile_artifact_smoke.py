@@ -22,7 +22,7 @@ def main() -> int:
     capture = artifact["capture"]
     assert capture["schema_version"] == 1
     assert capture["quality"]["capture"] in {
-        "complete", "target_exit", "target_signal", "profiler_failure"
+        "complete", "target_exit", "target_signal", "timeout", "profiler_failure", "recovered"
     }
     encoded = json.dumps(capture, ensure_ascii=False, separators=(",", ":"))
     assert artifact["manifest"]["capture_bytes"] > 0
