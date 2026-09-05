@@ -6,3 +6,4 @@ profiles/
 *.wasm
 .DS_Store
 __pycache__/
+/IMPLEMENTATION_PLAN.md

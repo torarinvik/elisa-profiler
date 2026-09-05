@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
 from html import escape
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
@@ -204,14 +206,100 @@ def git_value(root: Path, *arguments: str, fallback: str = "unknown") -> str:
     return fallback
 
 
-def compiler_metadata(compiler_root: Path, runtime_object: Path) -> dict[str, Any]:
-    status = git_value(compiler_root, "status", "--porcelain", fallback="")
+def file_sha256(path: Path) -> str | None:
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def paths_sha256(root: Path, paths: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        try:
+            relative = path.relative_to(root).as_posix().encode("utf-8")
+            content_digest = file_sha256(path)
+        except (OSError, ValueError):
+            content_digest = None
+            relative = str(path).encode("utf-8")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update((content_digest or "missing").encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def compiler_status_details(compiler_root: Path) -> tuple[str, list[str], str]:
+    status = git_value(
+        compiler_root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        fallback="",
+    )
+    dirty_files = [line[3:] for line in status.splitlines() if len(line) >= 4]
+    status_digest = hashlib.sha256(status.encode("utf-8")).hexdigest()
+    return status, dirty_files, status_digest
+
+
+def tool_version(tool: str) -> str:
+    result = run_command([tool, "--version"])
+    if result.returncode != 0:
+        return "unknown"
+    first_line = result.stdout.splitlines()[0] if result.stdout else ""
+    return first_line.strip() or "unknown"
+
+
+def compiler_metadata(
+    compiler_root: Path,
+    runtime_object: Path,
+    *,
+    stage1_binary: Path | None = None,
+    toolchain: dict[str, Any] | None = None,
+    build_options: dict[str, Any] | None = None,
+    runtime_build: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    status, dirty_files, status_digest = compiler_status_details(compiler_root)
+    stage1_binary = stage1_binary or compiler_root / "bin" / "elisac-stage1"
     return {
         "root": str(compiler_root),
         "branch": git_value(compiler_root, "branch", "--show-current"),
         "commit": git_value(compiler_root, "rev-parse", "HEAD"),
         "dirty": bool(status),
+        "dirty_files": dirty_files,
+        "status_sha256": status_digest,
+        "stage1_binary": str(stage1_binary),
+        "stage1_sha256": file_sha256(stage1_binary),
         "runtime_object": str(runtime_object),
+        "runtime_object_sha256": file_sha256(runtime_object),
+        "host": {
+            "platform": sys.platform,
+            "machine": platform.machine(),
+            "python": platform.python_version(),
+        },
+        "toolchain": toolchain or {},
+        "build_options": build_options or {},
+        "runtime_build": runtime_build or {},
+    }
+
+
+def load_runtime_build_manifest(runtime_object: Path) -> dict[str, Any]:
+    manifest_path = Path(f"{runtime_object}.manifest.json")
+    try:
+        value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return {"path": str(manifest_path), "present": False}
+    if not isinstance(value, dict):
+        return {"path": str(manifest_path), "present": False}
+    return {
+        "path": str(manifest_path),
+        "present": True,
+        "fingerprint": value.get("fingerprint", {}),
+        "runtime_object_sha256": value.get("runtime_object_sha256"),
     }
 
 
@@ -223,14 +311,38 @@ def ensure_runtime(
     rebuild: bool,
     env: dict[str, str],
 ) -> None:
-    if runtime_object.is_file() and not rebuild and not runtime_sources_newer(
-        compiler_root, runtime_object
-    ):
-        return
     build_script = compiler_root / "scripts" / "build_runtime_object.sh"
+    stage0_binary = stage0_core / "compiler" / "bin" / "elisac"
+    runtime_source_root = compiler_root / "elisacore_std"
+    runtime_sources = [
+        source
+        for source in runtime_source_root.rglob("*")
+        if source.is_file() and source.suffix in {".elisa", ".elisai"}
+    ] if runtime_source_root.is_dir() else []
+    _, _, compiler_status_sha256 = compiler_status_details(compiler_root)
+    runtime_fingerprint = {
+        "format": 1,
+        "compiler_commit": git_value(compiler_root, "rev-parse", "HEAD"),
+        "compiler_status_sha256": compiler_status_sha256,
+        "runtime_sources_sha256": paths_sha256(runtime_source_root, runtime_sources),
+        "runtime_source_count": len(runtime_sources),
+        "build_script_sha256": file_sha256(build_script),
+        "stage0_binary_sha256": file_sha256(stage0_binary),
+    }
+    manifest_path = Path(f"{runtime_object}.manifest.json")
+    if runtime_object.is_file() and not rebuild:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError):
+            manifest = None
+        if (
+            isinstance(manifest, dict)
+            and manifest.get("fingerprint") == runtime_fingerprint
+            and manifest.get("runtime_object_sha256") == file_sha256(runtime_object)
+        ):
+            return
     if not build_script.is_file():
         raise ProfilerError(f"runtime builder is missing: {build_script}")
-    stage0_binary = stage0_core / "compiler" / "bin" / "elisac"
     if not stage0_binary.is_file():
         raise ProfilerError(
             f"stage0 compiler is missing: {stage0_binary}; set ELISA_STAGE0_CORE or build the local stage0 compiler"
@@ -242,27 +354,31 @@ def ensure_runtime(
     if result.returncode != 0 or not runtime_object.is_file():
         message = result.stderr.strip() or result.stdout.strip() or "runtime build failed"
         raise ProfilerError(message)
-
-
-def runtime_sources_newer(compiler_root: Path, runtime_object: Path) -> bool:
-    """Return whether a source that contributes to the cached runtime is newer."""
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_data = {
+        "fingerprint": runtime_fingerprint,
+        "runtime_object_sha256": file_sha256(runtime_object),
+    }
+    temporary_manifest = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=manifest_path.parent,
+        prefix=f".{manifest_path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    temporary_name = Path(temporary_manifest.name)
     try:
-        runtime_mtime = runtime_object.stat().st_mtime_ns
-    except OSError:
-        return True
-    runtime_source_root = compiler_root / "elisacore_std"
-    if not runtime_source_root.is_dir():
-        return False
-    try:
-        for source in runtime_source_root.rglob("*"):
-            if source.is_file() and source.suffix in {".elisa", ".elisai"}:
-                if source.stat().st_mtime_ns > runtime_mtime:
-                    return True
-    except OSError:
-        # Let the actual builder report an actionable error if a source disappears
-        # during the dependency scan.
-        return True
-    return False
+        with temporary_manifest:
+            json.dump(manifest_data, temporary_manifest, indent=2, sort_keys=True)
+            temporary_manifest.write("\n")
+        os.replace(temporary_name, manifest_path)
+    except OSError as error:
+        try:
+            temporary_name.unlink()
+        except OSError:
+            pass
+        raise ProfilerError(f"could not write runtime build manifest {manifest_path}: {error}") from error
 
 
 def defined_symbols(nm: str, object_path: Path) -> set[str]:
@@ -374,7 +490,7 @@ def parse_protocol_value(value: str, line: str, is_signed: bool) -> int:
 def parse_profile(
     stderr: str, *, allow_missing: bool = False
 ) -> tuple[
-    dict[str, int],
+    dict[str, Any],
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -382,12 +498,17 @@ def parse_profile(
     list[dict[str, Any]],
     dict[str, Any] | None,
 ]:
-    meta: dict[str, int] | None = None
+    meta: dict[str, Any] | None = None
     locations: list[dict[str, Any]] = []
     call_edges: list[dict[str, Any]] = []
     stacks: list[dict[str, Any]] = []
     recent_events: list[dict[str, Any]] = []
     active_stack: dict[str, Any] | None = None
+    trace_enabled = 0
+    trace_captured = 0
+    trace_omitted = 0
+    trace_limit = 0
+    trace_record_seen = False
     program_stderr: list[str] = []
     for line in stderr.splitlines():
         if not line.startswith("ELISA_PROFILE\t"):
@@ -410,6 +531,17 @@ def parse_profile(
                 meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
                 meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
                 meta["thread_count"] = parse_protocol_uint(fields[8], line)
+            continue
+        if len(fields) == 7 and fields[2] == "trace":
+            if trace_record_seen:
+                raise ProfilerError(f"duplicate profiler trace status record: {line}")
+            trace_record_seen = True
+            trace_enabled = parse_protocol_uint(fields[3], line)
+            if trace_enabled not in (0, 1):
+                raise ProfilerError(f"invalid profiler trace enabled flag: {line}")
+            trace_captured = parse_protocol_uint(fields[4], line)
+            trace_omitted = parse_protocol_uint(fields[5], line)
+            trace_limit = parse_protocol_uint(fields[6], line)
             continue
         if len(fields) == 10 and fields[2] == "path":
             kind = parse_protocol_uint(fields[4], line)
@@ -500,6 +632,10 @@ def parse_profile(
                     "max_stack_depth": 0,
                     "stack_overflow_entries": 0,
                     "thread_count": 0,
+                    "trace_enabled": 0,
+                    "trace_captured": 0,
+                    "trace_omitted": 0,
+                    "trace_limit": 0,
                 },
                 [],
                 [],
@@ -509,6 +645,10 @@ def parse_profile(
                 active_stack,
             )
         raise ProfilerError("profile runtime produced no ELISA_PROFILE metadata")
+    meta["trace_enabled"] = trace_enabled
+    meta["trace_captured"] = trace_captured
+    meta["trace_omitted"] = trace_omitted
+    meta["trace_limit"] = trace_limit
     return (
         meta,
         locations,
@@ -523,7 +663,7 @@ def parse_profile(
 def merge_profiles(
     results: list[
         tuple[
-            dict[str, int],
+            dict[str, Any],
             list[dict[str, Any]],
             list[dict[str, Any]],
             list[dict[str, Any]],
@@ -533,7 +673,7 @@ def merge_profiles(
         ]
     ],
 ) -> tuple[
-    dict[str, int],
+    dict[str, Any],
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -549,6 +689,10 @@ def merge_profiles(
     max_stack_depth = 0
     stack_overflow_entries = 0
     thread_count = 0
+    trace_enabled = 0
+    trace_captured = 0
+    trace_omitted = 0
+    trace_limit = 0
     recent_events: list[dict[str, Any]] = []
     active_stack: dict[str, Any] | None = None
     program_stderr: list[str] = []
@@ -558,6 +702,10 @@ def merge_profiles(
         max_stack_depth = max(max_stack_depth, meta.get("max_stack_depth", 0))
         stack_overflow_entries += meta.get("stack_overflow_entries", 0)
         thread_count = max(thread_count, meta.get("thread_count", 0))
+        trace_enabled = max(trace_enabled, meta.get("trace_enabled", 0))
+        trace_captured += meta.get("trace_captured", 0)
+        trace_omitted += meta.get("trace_omitted", 0)
+        trace_limit = max(trace_limit, meta.get("trace_limit", 0))
         if stderr:
             program_stderr.append(f"run {repetition}:\n{stderr.rstrip()}")
         if path:
@@ -646,6 +794,10 @@ def merge_profiles(
             "max_stack_depth": max_stack_depth,
             "stack_overflow_entries": stack_overflow_entries,
             "thread_count": thread_count,
+            "trace_enabled": trace_enabled,
+            "trace_captured": trace_captured,
+            "trace_omitted": trace_omitted,
+            "trace_limit": trace_limit,
         },
         locations,
         call_edges,
@@ -765,6 +917,15 @@ def text_report(report: dict[str, Any], top: int) -> str:
         )
     if run["peak_rss_bytes"] is not None:
         lines[1] += f" peak-rss={run['peak_rss_bytes'] / (1024 * 1024):.2f} MiB"
+    if run.get("trace_event_limit") is not None:
+        limit = run["trace_event_limit"] or "unlimited"
+        completeness = "complete" if run.get("trace_complete") else "truncated"
+        lines[1] += (
+            f" event-trace={completeness}"
+            f" captured={run['trace_events_captured']}"
+            f" omitted={run['trace_events_omitted']}"
+            f" limit={limit}"
+        )
     lines.extend(["", "Measured repetitions:"])
     for repetition in run["repetitions"]:
         detail = (
@@ -782,6 +943,15 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f", threads={repetition['trace_threads']}"
             f", dropped={repetition['trace_dropped']}"
         )
+        if repetition.get("trace_event_limit") is not None:
+            limit = repetition["trace_event_limit"] or "unlimited"
+            completeness = "complete" if repetition.get("trace_complete") else "truncated"
+            detail += (
+                f", event-trace={completeness}"
+                f" ({repetition['trace_events_captured']} captured"
+                f", {repetition['trace_events_omitted']} omitted"
+                f", limit={limit})"
+            )
         lines.append(detail)
     display_locations = report["locations"]
     if run["location_timing"]:
@@ -1066,12 +1236,33 @@ def html_report(report: dict[str, Any], top: int) -> str:
                 repetition["trace_events"],
                 repetition["trace_threads"],
                 repetition["trace_dropped"],
+                (
+                    f"{repetition['trace_events_captured']} captured / "
+                    f"{repetition['trace_events_omitted']} omitted"
+                    + (
+                        " / complete"
+                        if repetition.get("trace_complete") is True
+                        else " / truncated"
+                        if repetition.get("trace_complete") is False
+                        else ""
+                    )
+                ),
             ]
         )
     sections = [
         html_table(
             "Measured repetitions",
-            ["Run", "Status", "Wall time", "CPU", "Peak RSS", "Trace events", "Threads", "Dropped"],
+            [
+                "Run",
+                "Status",
+                "Wall time",
+                "CPU",
+                "Peak RSS",
+                "Trace events",
+                "Threads",
+                "Dropped",
+                "Full trace",
+            ],
             repetition_rows,
         ),
         html_table(
@@ -1356,6 +1547,31 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
     if not isinstance(report.get("source"), str):
         invalid_profile_field(path, "source", "a string")
 
+    compiler = report["compiler"]
+    for field in (
+        "root",
+        "branch",
+        "commit",
+        "runtime_object",
+        "stage1_binary",
+        "status_sha256",
+    ):
+        if field in compiler:
+            validate_profile_string(compiler[field], path, f"compiler.{field}", allow_null=False)
+    for field in ("stage1_sha256", "runtime_object_sha256"):
+        if field in compiler:
+            validate_profile_string(compiler[field], path, f"compiler.{field}")
+    if "dirty" in compiler and not isinstance(compiler["dirty"], bool):
+        invalid_profile_field(path, "compiler.dirty", "a boolean")
+    if "dirty_files" in compiler:
+        if not isinstance(compiler["dirty_files"], list) or not all(
+            isinstance(value, str) for value in compiler["dirty_files"]
+        ):
+            invalid_profile_field(path, "compiler.dirty_files", "an array of strings")
+    for field in ("host", "toolchain", "build_options", "runtime_build"):
+        if field in compiler and not isinstance(compiler[field], dict):
+            invalid_profile_field(path, f"compiler.{field}", "an object")
+
     for field in (
         "events",
         "locations",
@@ -1366,11 +1582,22 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
         "max_stack_depth",
         "stack_overflow_entries",
         "thread_count",
+        "trace_events_captured",
+        "trace_events_omitted",
+        "trace_event_limit",
     ):
         if field in report["summary"]:
             validate_profile_nonnegative_integer(
-                report["summary"][field], path, f"summary.{field}", allow_null=False
+                report["summary"][field],
+                path,
+                f"summary.{field}",
+                allow_null=field == "trace_event_limit",
             )
+    if "trace_complete" in report["summary"] and not (
+        report["summary"]["trace_complete"] is None
+        or isinstance(report["summary"]["trace_complete"], bool)
+    ):
+        invalid_profile_field(path, "summary.trace_complete", "a boolean or null")
 
     run = report["run"]
     for field in ("exit_code", "signal"):
@@ -1401,6 +1628,14 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
     ):
         if field in run:
             validate_profile_nonnegative_number(run[field], path, f"run.{field}")
+    for field in ("trace_events_captured", "trace_events_omitted", "trace_event_limit"):
+        if field in run:
+            validate_profile_nonnegative_integer(
+                run[field],
+                path,
+                f"run.{field}",
+                allow_null=field == "trace_event_limit",
+            )
     if "opt_level" in run:
         validate_profile_string(run["opt_level"], path, "run.opt_level")
     if "timing_clock" in run:
@@ -1413,6 +1648,10 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
         invalid_profile_field(path, "run.location_timing", "a boolean")
     if "event_trace_enabled" in run and not isinstance(run["event_trace_enabled"], bool):
         invalid_profile_field(path, "run.event_trace_enabled", "a boolean")
+    if "trace_complete" in run and not (
+        run["trace_complete"] is None or isinstance(run["trace_complete"], bool)
+    ):
+        invalid_profile_field(path, "run.trace_complete", "a boolean or null")
     repetitions = run.get("repetitions")
     if "repetitions" in run:
         if not isinstance(repetitions, list):
@@ -1433,10 +1672,16 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
                 "trace_threads",
                 "trace_max_stack_depth",
                 "trace_stack_overflow_entries",
+                "trace_events_captured",
+                "trace_events_omitted",
+                "trace_event_limit",
             ):
                 if field in repetition:
                     validate_profile_nonnegative_integer(
-                        repetition[field], path, f"{field_prefix}.{field}", allow_null=False
+                        repetition[field],
+                        path,
+                        f"{field_prefix}.{field}",
+                        allow_null=field == "trace_event_limit",
                     )
             for field in (
                 "execution_ms",
@@ -1451,9 +1696,21 @@ def validate_profile_report(report: dict[str, Any], path: Path) -> None:
                     )
             if "timed_out" in repetition and not isinstance(repetition["timed_out"], bool):
                 invalid_profile_field(path, f"{field_prefix}.timed_out", "a boolean")
+            if "trace_complete" in repetition and not (
+                repetition["trace_complete"] is None
+                or isinstance(repetition["trace_complete"], bool)
+            ):
+                invalid_profile_field(path, f"{field_prefix}.trace_complete", "a boolean or null")
             for event_field in ("recent_events", "event_trace"):
                 if event_field in repetition and not isinstance(repetition[event_field], list):
                     invalid_profile_field(path, f"{field_prefix}.{event_field}", "an array")
+            if "event_trace" in repetition and "trace_events_captured" in repetition:
+                if len(repetition["event_trace"]) > repetition["trace_events_captured"]:
+                    invalid_profile_field(
+                        path,
+                        f"{field_prefix}.event_trace",
+                        "no more entries than trace_events_captured",
+                    )
 
     for section in ("functions", "call_edges", "stacks", "locations"):
         for index, item in enumerate(report[section]):
@@ -2315,7 +2572,7 @@ document.addEventListener("DOMContentLoaded", () => {
 def build_report(
     source: Path,
     compiler: dict[str, Any],
-    meta: dict[str, int],
+    meta: dict[str, Any],
     locations: list[dict[str, Any]],
     call_edges: list[dict[str, Any]],
     stacks: list[dict[str, Any]],
@@ -2335,6 +2592,7 @@ def build_report(
     active_stack: dict[str, Any] | None,
     timing_clock: str | None = None,
     event_trace_enabled: bool = False,
+    trace_event_limit: int | None = None,
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
@@ -2401,6 +2659,14 @@ def build_report(
     )
     summary["function_events"] = sum(
         location["count"] for location in locations if location["kind"] == "function"
+    )
+    summary["trace_events_captured"] = meta.get("trace_captured", 0)
+    summary["trace_events_omitted"] = meta.get("trace_omitted", 0)
+    summary["trace_event_limit"] = trace_event_limit
+    summary["trace_complete"] = (
+        all(record.get("trace_complete") is True for record in run_records)
+        if event_trace_enabled
+        else None
     )
     called_function_names = {call_edge["callee"] for call_edge in call_edges}
     root_inclusive_ns = sum(
@@ -2473,6 +2739,18 @@ def build_report(
             "location_timing": location_timing,
             "timing_clock": timing_clock,
             "event_trace_enabled": event_trace_enabled,
+            "trace_events_captured": sum(
+                record.get("trace_events_captured", 0) for record in run_records
+            ),
+            "trace_events_omitted": sum(
+                record.get("trace_events_omitted", 0) for record in run_records
+            ),
+            "trace_event_limit": trace_event_limit,
+            "trace_complete": (
+                all(record.get("trace_complete") is True for record in run_records)
+                if event_trace_enabled
+                else None
+            ),
             "opt_level": opt_level,
             "execution_ms": execution_ms,
             "timeout_s": timeout_s,
@@ -2589,6 +2867,12 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="capture every trace event for each measured run in JSON output",
     )
+    parser.add_argument(
+        "--max-event-trace-events",
+        type=int,
+        default=1_000_000,
+        help="maximum events retained by --event-trace; 0 means unlimited (default: 1000000)",
+    )
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
     parser.add_argument(
         "--compiler-root",
@@ -2606,6 +2890,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         parser.error("--top must be positive")
     if args.event_trace and args.format != "json":
         parser.error("--event-trace requires --format json")
+    if args.max_event_trace_events < 0:
+        parser.error("--max-event-trace-events cannot be negative")
     if args.repeat < 1:
         parser.error("--repeat must be positive")
     if args.warmup < 0:
@@ -2638,6 +2924,9 @@ def profile(args: argparse.Namespace) -> int:
     env["ELISA_COMPILER_ROOT"] = str(args.compiler_root)
     env["ELISA_PROFILE_RECENT_PATH"] = "1" if args.recent_path else "0"
     env["ELISA_PROFILE_EVENT_TRACE"] = "1" if args.event_trace else "0"
+    env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = str(
+        args.max_event_trace_events if args.event_trace else 0
+    )
     ensure_runtime(
         args.compiler_root,
         args.runtime_object,
@@ -2727,6 +3016,7 @@ def profile(args: argparse.Namespace) -> int:
             warmup_env = env.copy()
             warmup_env["ELISA_PROFILE_RECENT_PATH"] = "0"
             warmup_env["ELISA_PROFILE_EVENT_TRACE"] = "0"
+            warmup_env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = "0"
             warmup_status, _, _, warmup_timed_out, _ = execute_program(
                 executable_path, args.timeout, env=warmup_env
             )
@@ -2741,7 +3031,7 @@ def profile(args: argparse.Namespace) -> int:
 
         profile_results: list[
             tuple[
-                dict[str, int],
+                dict[str, Any],
                 list[dict[str, Any]],
                 list[dict[str, Any]],
                 list[dict[str, Any]],
@@ -2814,6 +3104,22 @@ def profile(args: argparse.Namespace) -> int:
                 "trace_threads": meta.get("thread_count", 0),
                 "trace_max_stack_depth": meta.get("max_stack_depth", 0),
                 "trace_stack_overflow_entries": meta.get("stack_overflow_entries", 0),
+                "trace_events_captured": meta.get("trace_captured", 0),
+                "trace_events_omitted": meta.get("trace_omitted", 0),
+                "trace_event_limit": (
+                    args.max_event_trace_events if args.event_trace else None
+                ),
+                "trace_complete": (
+                    bool(
+                        args.event_trace
+                        and meta.get("trace_enabled", 0) == 1
+                        and meta.get("trace_omitted", 0) == 0
+                        and meta.get("trace_captured", 0) == meta["events"]
+                        and len(recent_events) == meta.get("trace_captured", 0)
+                    )
+                    if args.event_trace
+                    else None
+                ),
             }
             if args.event_trace:
                 run_record["event_trace"] = recent_events
@@ -2864,9 +3170,32 @@ def profile(args: argparse.Namespace) -> int:
         else:
             exit_code = failed_run["exit_code"]
             signal = failed_run["signal"]
+        compiler_info = compiler_metadata(
+            args.compiler_root,
+            args.runtime_object,
+            stage1_binary=args.compiler_root / "bin" / "elisac-stage1",
+            toolchain={
+                "clang": str(clang),
+                "clang_version": tool_version(clang),
+                "objcopy": str(objcopy),
+                "objcopy_version": tool_version(objcopy),
+                "nm": str(nm),
+                "nm_version": tool_version(nm),
+            },
+            build_options={
+                "compiler_flags": ["-g", "-ftrace", f"-O{args.opt_level}"],
+                "location_timing": args.location_timing,
+                "timing_clock": args.timing_clock if args.location_timing else None,
+                "event_trace_enabled": args.event_trace,
+                "event_trace_limit": (
+                    args.max_event_trace_events if args.event_trace else None
+                ),
+            },
+            runtime_build=load_runtime_build_manifest(args.runtime_object),
+        )
         report = build_report(
             args.source,
-            compiler_metadata(args.compiler_root, args.runtime_object),
+            compiler_info,
             meta,
             locations,
             call_edges,
@@ -2886,6 +3215,9 @@ def profile(args: argparse.Namespace) -> int:
             recent_events=[] if args.event_trace else recent_events,
             active_stack=active_stack,
             event_trace_enabled=args.event_trace,
+            trace_event_limit=(
+                args.max_event_trace_events if args.event_trace else None
+            ),
         )
         if args.format == "json":
             rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"

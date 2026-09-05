@@ -82,6 +82,11 @@ The summary includes the number of distinct threads that emitted trace events,
 which makes worker activity visible in threaded targets.
 The machine-readable contract is published at
 [`docs/profile.schema.json`](docs/profile.schema.json).
+Compiler provenance includes the stage1 and runtime object hashes, source
+status digest and dirty-file list, host/toolchain information, profiling build
+options, and the content fingerprint used to validate the cached runtime
+object. A report therefore identifies both the compiler checkout and the
+actual binaries used to produce the capture.
 Function timing also includes mean inclusive/self duration and percentages of
 the root function's inclusive time, so the JSON report is useful without a
 separate post-processing step.
@@ -121,7 +126,11 @@ run record, as well as the most recent path at the report top level, for
 execution-path diagnostics.
 Pass `--event-trace` to stream every trace event into each measured JSON run
 record. This is intentionally opt-in because a hot loop can produce a large
-trace; the default recent path remains capped at 256 events.
+trace. Full traces have a one-million-event safety budget by default; use
+`--max-event-trace-events 0` only when an unbounded trace is intentional. Each
+run reports captured and omitted trace records plus `trace_complete`, so a
+truncated trace cannot be mistaken for a complete execution. The default
+recent path remains capped at 256 events.
 
 Useful controls:
 
@@ -135,6 +144,7 @@ Useful controls:
     --timing-clock wall|cpu choose wall time or per-thread CPU time for location timing
     --recent-path          include the last 256 trace events in each measured run
     --event-trace          include every trace event in each measured JSON run
+    --max-event-trace-events N  cap full-trace records per run (0 means unlimited)
     --compiler-root PATH   use another isolated compiler worktree
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable

@@ -30,6 +30,29 @@ assert all(
 print("event trace smoke OK")
 PY
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+    --event-trace --max-event-trace-events 10 --format json \
+    --output "$WORK/capped-event-trace-report.json"
+python3 - "$WORK/capped-event-trace-report.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    capped_report = json.load(stream)
+
+assert capped_report["run"]["event_trace_enabled"] is True
+assert capped_report["run"]["trace_event_limit"] == 10
+assert capped_report["run"]["trace_complete"] is False
+assert capped_report["summary"]["trace_events_captured"] == 10
+assert capped_report["summary"]["trace_events_omitted"] > 0
+repetition = capped_report["run"]["repetitions"][0]
+assert repetition["trace_events_captured"] == 10
+assert repetition["trace_events_omitted"] == repetition["trace_events"] - 10
+assert len(repetition["event_trace"]) == 10
+assert [event["sequence"] for event in repetition["event_trace"]] == list(range(10))
+assert capped_report["summary"]["events"] > 10
+print("capped event trace smoke OK")
+PY
+"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format folded --output "$WORK/hot-loop.folded"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
@@ -158,6 +181,11 @@ with open(sys.argv[1], encoding="utf-8") as stream:
 
 assert report["schema_version"] == 1
 assert report["summary"]["events"] == 104
+assert report["compiler"]["stage1_sha256"]
+assert report["compiler"]["runtime_object_sha256"]
+assert report["compiler"]["status_sha256"]
+assert report["compiler"]["runtime_build"]["present"] is True
+assert report["compiler"]["runtime_build"]["fingerprint"]["format"] == 1
 assert report["summary"]["dropped"] == 0
 assert report["summary"]["max_stack_depth"] == 2
 assert report["summary"]["stack_overflow_entries"] == 0

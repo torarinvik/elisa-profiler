@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <pthread.h>
@@ -102,6 +103,9 @@ static uint64_t profile_stack_overflow_entries;
 static FILE *profile_output_stream;
 static pthread_once_t profile_output_once = PTHREAD_ONCE_INIT;
 static int profile_event_trace_enabled;
+static uint64_t profile_event_trace_limit;
+static uint64_t profile_event_trace_captured;
+static uint64_t profile_event_trace_omitted;
 
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
@@ -645,7 +649,9 @@ static void profile_record(const char *function_name, uint32_t line,
             .value = value,
         };
     ++profile_recent_position;
-    if (profile_event_trace_enabled) {
+    if (profile_event_trace_enabled &&
+        (profile_event_trace_limit == 0 ||
+         profile_event_trace_captured < profile_event_trace_limit)) {
         fprintf(stderr, "ELISA_PROFILE\t1\tpath\t%" PRIu64 "\t%u\t",
                 profile_event_count - 1, kind);
         profile_print_field(function_name);
@@ -657,6 +663,9 @@ static void profile_record(const char *function_name, uint32_t line,
         } else {
             fprintf(stderr, "%" PRIu64 "\n", value);
         }
+        ++profile_event_trace_captured;
+    } else if (profile_event_trace_enabled) {
+        ++profile_event_trace_omitted;
     }
 
     if (profile_capacity == 0 || (profile_size + 1) * 10 >= profile_capacity * 7) {
@@ -1005,6 +1014,15 @@ static void profile_print_call_path(const profile_call_path *path) {
 static void profile_dump(void);
 static void profile_dump_from_signal(void);
 
+static void profile_dump_trace_status(void) {
+    fprintf(stderr, "ELISA_PROFILE\t1\ttrace\t%u\t%" PRIu64 "\t%" PRIu64
+                    "\t%" PRIu64 "\n",
+            profile_event_trace_enabled ? 1U : 0U,
+            profile_event_trace_captured,
+            profile_event_trace_omitted,
+            profile_event_trace_limit);
+}
+
 static void profile_dump_recent_path(void) {
     uint64_t start = profile_recent_position > PROFILE_RECENT_CAPACITY
                         ? profile_recent_position - PROFILE_RECENT_CAPACITY
@@ -1093,6 +1111,7 @@ static void profile_dump_body(void) {
                 profile_event_count, profile_dropped_count,
                 profile_max_call_depth, profile_stack_overflow_entries,
                 profile_thread_count);
+        profile_dump_trace_status();
         if (!profile_event_trace_enabled &&
             (profile_crash_dumped || profile_recent_path_enabled)) {
             profile_dump_recent_path();
@@ -1115,6 +1134,7 @@ static void profile_dump_body(void) {
             profile_event_count, output_count, profile_dropped_count,
             profile_max_call_depth, profile_stack_overflow_entries,
             profile_thread_count);
+    profile_dump_trace_status();
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];
         fprintf(stderr, "ELISA_PROFILE\t1\tlocation\t%u\t", entry->kind);
@@ -1227,11 +1247,27 @@ static void profile_dump_from_signal(void) {
 #ifndef ELISA_PROFILE_NO_MAIN
 extern int64_t elisa_profile_target_main(void);
 
+static uint64_t profile_read_uint64_environment(const char *name) {
+    const char *text = getenv(name);
+    if (text == NULL || *text == '\0' || *text < '0' || *text > '9') {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    unsigned long long value = strtoull(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || value > UINT64_MAX) {
+        return 0;
+    }
+    return (uint64_t)value;
+}
+
 int main(void) {
     const char *recent_path = getenv("ELISA_PROFILE_RECENT_PATH");
     profile_recent_path_enabled = recent_path != NULL && strcmp(recent_path, "1") == 0;
     const char *event_trace = getenv("ELISA_PROFILE_EVENT_TRACE");
     profile_event_trace_enabled = event_trace != NULL && strcmp(event_trace, "1") == 0;
+    profile_event_trace_limit = profile_read_uint64_environment(
+        "ELISA_PROFILE_EVENT_TRACE_LIMIT");
     profile_install_crash_handlers();
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main();
