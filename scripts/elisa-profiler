@@ -2828,9 +2828,37 @@ def parse_compare_arguments(argv: list[str]) -> argparse.Namespace:
     return args
 
 
+def parse_report_arguments(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="elisa-profiler report",
+        description="Render an existing JSON profiler report without rerunning the target.",
+    )
+    parser.add_argument("profile", type=Path, help="JSON profiler report")
+    parser.add_argument(
+        "--format",
+        choices=("text", "json", "folded", "html", "speedscope"),
+        default="text",
+        help="report format (default: text)",
+    )
+    parser.add_argument(
+        "--top", type=int, default=20, help="number of hot rows in text/HTML output"
+    )
+    parser.add_argument("-o", "--output", type=Path, help="write the rendered report to this file")
+    args = parser.parse_args(argv)
+    if args.top < 1:
+        parser.error("--top must be positive")
+    args.profile = args.profile.resolve()
+    if args.output is not None:
+        args.output = args.output.resolve()
+    args.command = "report"
+    return args
+
+
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
     if argv and argv[0] == "compare":
         return parse_compare_arguments(argv[1:])
+    if argv and argv[0] == "report":
+        return parse_report_arguments(argv[1:])
     if argv and argv[0] == "profile":
         argv = argv[1:]
     parser = argparse.ArgumentParser(
@@ -3219,16 +3247,7 @@ def profile(args: argparse.Namespace) -> int:
                 args.max_event_trace_events if args.event_trace else None
             ),
         )
-        if args.format == "json":
-            rendered = json.dumps(report, indent=2, sort_keys=False) + "\n"
-        elif args.format == "folded":
-            rendered = folded_report(report)
-        elif args.format == "speedscope":
-            rendered = speedscope_report(report)
-        elif args.format == "html":
-            rendered = html_report(report, args.top)
-        else:
-            rendered = text_report(report, args.top)
+        rendered = render_profile(report, args.format, args.top)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(rendered, encoding="utf-8")
@@ -3267,11 +3286,36 @@ def compare_profiles(args: argparse.Namespace) -> int:
     return 0
 
 
+def render_profile(report: dict[str, Any], format_name: str, top: int) -> str:
+    if format_name == "json":
+        return json.dumps(report, indent=2, sort_keys=False) + "\n"
+    if format_name == "folded":
+        return folded_report(report)
+    if format_name == "speedscope":
+        return speedscope_report(report)
+    if format_name == "html":
+        return html_report(report, top)
+    return text_report(report, top)
+
+
+def report_profile(args: argparse.Namespace) -> int:
+    report = load_profile_report(args.profile)
+    rendered = render_profile(report, args.format, args.top)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+    else:
+        sys.stdout.write(rendered)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_arguments(sys.argv[1:] if argv is None else argv)
         if args.command == "compare":
             return compare_profiles(args)
+        if args.command == "report":
+            return report_profile(args)
         return profile(args)
     except ProfilerError as error:
         print(f"elisa-profiler: {error}", file=sys.stderr)

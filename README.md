@@ -67,6 +67,8 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop.speedscope.json
     scripts/elisa-profiler profile examples/hot_loop.elisa --format html \
         -o profiles/hot-loop.html
+    scripts/elisa-profiler report profiles/hot-loop.json --format html \
+        -o profiles/hot-loop.html
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
         --format html -o profiles/comparison.html
@@ -181,6 +183,8 @@ entries as weights.
 The `speedscope` format emits a self-contained sampled-profile JSON document
 using the same stack weights, ready to open in Speedscope or another compatible
 viewer.
+The `report` command renders an existing JSON report offline, so changing
+format or display limits never reruns the compiler or target.
 The HTML format is a self-contained local report with summary cards, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies.

@@ -8,6 +8,12 @@ trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --warmup 1 --repeat 2 --location-timing --recent-path --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
+ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler" report \
+    "$WORK/report.json" --format html --top 5 --output "$WORK/offline.html"
+ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler" report \
+    "$WORK/report.json" --format folded --output "$WORK/offline.folded"
+grep -q 'Elisa profile' "$WORK/offline.html"
+grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/offline.folded"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --event-trace --format json --output "$WORK/event-trace-report.json"
 test -s "$WORK/event-trace-report.json"
