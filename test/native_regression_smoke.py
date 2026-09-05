@@ -164,6 +164,7 @@ def main():
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
+        assert measured["run"]["collection_mode"] == "full"
         assert len(measured["workload"]["source_sha256"]) == 64
         assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
         repetitions = measured["run"]["repetitions"]
@@ -183,6 +184,41 @@ def main():
         assert abs(measured["run"]["execution_ms_median"] - mean_of_middle) <= 0.002
         expected_stdev = statistics.pstdev(item["execution_ms"] for item in repetitions)
         assert abs(measured["run"]["execution_ms_stdev"] - expected_stdev) <= 0.002
+
+        functions_capture = work / "functions.json"
+        values_capture = work / "values.json"
+        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "functions",
+            "--format", "json", "--output", functions_capture)
+        functions_report = json.loads(functions_capture.read_text())
+        assert functions_report["run"]["collection_mode"] == "functions"
+        assert functions_report["summary"]["statement_events"] == 0
+        assert functions_report["summary"]["value_events"] == 0
+        assert functions_report["summary"]["function_events"] > 0
+
+        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "statements",
+            "--format", "json", "--output", output)
+        statements_report = json.loads(output.read_text())
+        assert statements_report["run"]["collection_mode"] == "statements"
+        assert statements_report["summary"]["statement_events"] > 0
+        assert statements_report["summary"]["value_events"] == 0
+
+        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "values",
+            "--format", "json", "--output", values_capture)
+        values_report = json.loads(values_capture.read_text())
+        assert values_report["run"]["collection_mode"] == "values"
+        assert values_report["summary"]["statement_events"] == 0
+        assert values_report["summary"]["value_events"] > 0
+
+        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "diagnostic",
+            "--format", "json", "--output", output)
+        diagnostic_report = json.loads(output.read_text())
+        assert diagnostic_report["run"]["collection_mode"] == "diagnostic"
+        assert diagnostic_report["run"]["event_trace_enabled"] is True
+        mode_comparison = json.loads(run("compare", functions_capture, values_capture, "--format", "json"))
+        assert mode_comparison["collection_mode_match"] is False
+        assert any("different collection modes" in warning for warning in mode_comparison["warnings"])
+        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "sampling",
+            "--format", "json", "--output", output, ok=False)
     print("native regression smoke OK")
 
 

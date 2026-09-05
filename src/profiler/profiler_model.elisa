@@ -217,6 +217,7 @@ module ProfilerNative:
         struct ComparisonCapture:
             source: mutable darray[u8]
             workload_identity: mutable darray[u8]
+            collection_mode: mutable darray[u8]
             compiler_branch: mutable darray[u8]
             compiler_commit: mutable darray[u8]
             opt_level: mutable darray[u8]

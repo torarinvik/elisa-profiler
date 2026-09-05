@@ -11,6 +11,22 @@ digests for readable source/stdin bytes. It is descriptive provenance, not a
 claim that paths or stdin contents remain available after a capture is moved;
 an unreadable optional input digest is represented as `null`.
 
+## Collection modes
+
+`run.collection_mode` records the event policy used for the capture:
+
+- `full` retains function, statement, and scalar-value records.
+- `functions` retains function records and their caller/callee and folded-path
+  context, without statement or scalar-value records.
+- `statements` retains statement and function records, without scalar values.
+- `values` retains scalar-value and function records, without statement records.
+- `diagnostic` retains full instrumentation and enables the bounded event trace.
+
+These are instrumented event modes, not statistical sampling modes. A sampling
+request is rejected instead of being mislabeled as an instrumented capture.
+The mode is a report identity field and must be considered when comparing
+captures or interpreting missing event classes.
+
 ## Units and clocks
 
 - `events`, `locations`, `statement_events`, `value_events`, and

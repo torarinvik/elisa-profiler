@@ -609,7 +609,7 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details>")
 
 
-        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, compile_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, mode: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, compile_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
@@ -637,6 +637,8 @@ extend ProfilerNative:
             append_text(buffer, "exceeded" if summary.budget_exceeded != NATIVE_ZERO else "not exceeded")
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
             append_i64(buffer, summary.thread_count)
+            append_text(buffer, "</dd></div><div><dt>Collection mode</dt><dd>")
+            append_html_escaped(buffer, mode)
             append_text(buffer, "</dd></div></dl>")
             append_html_function_browser(buffer, summary.function_records)
             append_html_section(buffer, "Call edges", summary.call_edge_records)
@@ -699,7 +701,7 @@ extend ProfilerNative:
 
 
         def append_report(
-            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
+            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
@@ -783,7 +785,9 @@ extend ProfilerNative:
             append_i64(buffer, NATIVE_ZERO)
             append_text(buffer, ",\"unmapped_locations\":")
             append_i64(buffer, summary.locations)
-            append_text(buffer, "},\"run\":{\"exit_code\":")
+            append_text(buffer, "},\"run\":{\"collection_mode\":")
+            append_json_string(buffer, mode)
+            append_text(buffer, ",\"exit_code\":")
             append_observed_exit_code(buffer, status, summary)
             append_text(buffer, ",\"signal\":")
             append_observed_signal(buffer, status, summary)
@@ -870,12 +874,16 @@ extend ProfilerNative:
             append_text(buffer, "}\n")
 
 
-        def append_text_report(buffer: mutable darray[u8]&, source: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, event_trace: bool, recent_path: bool, execution_ns: i64, compile_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_text_report(buffer: mutable darray[u8]&, source: darray[u8]&, mode: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, event_trace: bool, recent_path: bool, execution_ns: i64, compile_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "Elisa profiler\nsource: ")
             for index in 0..<source.count |buffer, source|:
                 buffer.push(source[index])
             append_text(buffer, "\nstatus: ")
             append_text(buffer, "ok\n" if exit_code == NATIVE_ZERO else "target failed\n")
+            append_text(buffer, "collection mode: ")
+            for index in 0..<mode.count |buffer, mode|:
+                buffer.push(mode[index])
+            append_text(buffer, "\n")
             append_text(buffer, "signal: ")
             append_observed_signal(buffer, status, summary)
             append_text(buffer, "\ntimeout: ")
@@ -1102,6 +1110,10 @@ extend ProfilerNative:
             format_folded: mutable bool = false
             format_html: mutable bool = false
             format_speedscope: mutable bool = false
+            mode: mutable darray[u8] = []
+            append_text(mode, "full")
+            mode_seen: mutable bool = false
+            diagnostic_mode: mutable bool = false
             requested_repetitions: mutable i64 = NATIVE_ONE
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
@@ -1113,7 +1125,7 @@ extend ProfilerNative:
             target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1166,6 +1178,17 @@ extend ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--artifact-output") == NATIVE_ZERO:
                     return report_error("--artifact-output requires a path") if index + NATIVE_ONE >= argc
                     copy_cstr(artifact_output, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--mode") == NATIVE_ZERO:
+                    return report_error("--mode requires full, functions, statements, values, or diagnostic") if index + NATIVE_ONE >= argc or mode_seen
+                    selected_mode: cstr = slots[index + NATIVE_ONE].cast[cstr]
+                    return report_error("sampling mode is not available in this build; use functions, statements, values, full, or diagnostic") if profiler_ffi_strcmp(selected_mode, "sample") == NATIVE_ZERO or profiler_ffi_strcmp(selected_mode, "sampling") == NATIVE_ZERO
+                    return report_error("--mode requires full, functions, statements, values, or diagnostic") if profiler_ffi_strcmp(selected_mode, "full") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "functions") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "statements") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "values") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "diagnostic") != NATIVE_ZERO
+                    mode <- []
+                    copy_cstr(mode, selected_mode)
+                    mode_seen <- true
+                    diagnostic_mode <- profiler_ffi_strcmp(selected_mode, "diagnostic") == NATIVE_ZERO
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--cwd") == NATIVE_ZERO:
@@ -1252,8 +1275,11 @@ extend ProfilerNative:
                 copy_cstr(source, argument)
                 source_seen <- true
                 index <- index + NATIVE_ONE
-        
+
             return report_error("profile requires a source path") if not source_seen
+            if diagnostic_mode:
+                event_trace <- true
+                recent_path <- false
             return report_error("--artifact-output requires --format json") if artifact_output.count > NATIVE_ZERO.usize() and (format_text or format_folded or format_html or format_speedscope)
             source_check: darray[u8] = read_file(source)
             return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
@@ -1429,7 +1455,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
+                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 warmup_ns <- warmup_ns + warmup_result.elapsed_ns
                 if warmup_result.status != NATIVE_ZERO:
@@ -1449,7 +1475,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
-                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
+                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
                 current_summary: mutable CaptureSummary = empty_capture_summary()
@@ -1541,15 +1567,15 @@ extend ProfilerNative:
             final_exit_code: i64 = system_exit_code(overall_status)
             report: mutable darray[u8] = []
             if format_text:
-                append_text_report(report, source, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
+                append_text_report(report, source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
             elif format_folded:
                 append_folded_report(report, summary)
             elif format_speedscope:
                 append_speedscope_report(report, source, summary.folded_records, true)
             elif format_html:
-                append_html_report(report, source, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
+                append_html_report(report, source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, source_check, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, source, source_check, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

@@ -104,12 +104,24 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop.speedscope.json
     scripts/elisa-profiler profile examples/hot_loop.elisa --format html \
         -o profiles/hot-loop.html
+    scripts/elisa-profiler profile examples/hot_loop.elisa --mode functions --format json \
+        -o profiles/hot-loop-functions.json
+    scripts/elisa-profiler profile examples/hot_loop.elisa --mode diagnostic --format html \
+        -o profiles/hot-loop-diagnostic.html
     scripts/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
     scripts/elisa-profiler doctor
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
         --format html -o profiles/comparison.html
+
+The default `full` mode records function, statement, and scalar-value events.
+`functions` keeps function/call-path evidence, `statements` keeps statement
+and function evidence, and `values` keeps scalar values plus function context.
+`diagnostic` enables the bounded event trace in addition to full instrumentation.
+Sampling is not claimed by this instrumented build; an explicit sampling mode
+request fails with an actionable error. The selected mode is recorded in
+`run.collection_mode` and shown by text/HTML reports.
 
 The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, selected optimization level,
@@ -130,11 +142,9 @@ actual binaries used to produce the capture.
 Function timing also includes mean inclusive/self duration and percentages of
 the root function's inclusive time, so the JSON report is useful without a
 separate post-processing step.
-When `--location-timing` is enabled, the text report ranks locations by
-attributed wall time and functions by inclusive duration; without timing it
-retains event-count ordering.
-Timed reports also rank call-graph edges by inclusive duration; count-only
-reports rank them by observed call events.
+Native reports use the collector's wall-clock interval attribution and rank
+locations, functions, and call-graph edges using the observed duration when it
+is available; count fields remain explicit for count-only evidence.
 Each measured repetition records child user/system CPU time and peak resident
 set size from the native `wait4` resource result when the host provides it;
 aggregate CPU time is kept separate from wall-clock execution time.
@@ -155,8 +165,8 @@ Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records
 whether that mapping succeeded. A nonzero target exit status is reported and
-returned by the profiler. Use --show-output to forward the target's
-stdout/stderr. JSON reports also include call_edges with observed and completed
+returned by the profiler. Target stdout and stderr are captured as separate
+artifacts in the profile workspace. JSON reports also include call_edges with observed and completed
 caller-to-callee calls. A panic or timeout report also includes the last 256
 trace events in execution order, when the collector received the terminating signal,
 plus `active_stack` with the tracked function names and any untracked overflow
@@ -188,13 +198,11 @@ available.
 Useful controls:
 
     --format text|json|folded|html|speedscope  choose the profile report format (default: text)
-    --opt-level 0..3       choose the compiler optimization level (default: 0)
-    --top N                number of locations in the text report (default: 20)
+    --mode full|functions|statements|values|diagnostic  choose event detail (default: full)
+    -O0|-O1|-O2|-O3        choose the compiler optimization level (default: -O0)
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --timeout SECONDS      terminate a runaway execution and retain its partial report
-    --location-timing      attribute selected clock time between trace events to locations
-    --timing-clock wall|cpu choose wall time or per-thread CPU time for location timing
     --recent-path          include the last 256 trace events in each measured run
     --event-trace          include every trace event in each measured JSON run
     --max-event-trace-events N  cap full-trace records per run (0 means unlimited)
@@ -202,23 +210,21 @@ Useful controls:
     ELISA_PROFILE_MAX_LOCATIONS=N  cap distinct source-location records (0 means unlimited)
     ELISA_PROFILE_MAX_CALL_EDGES=N  cap distinct caller-to-callee records (0 means unlimited)
     ELISA_PROFILE_MAX_STACKS=N  cap distinct folded call-path records (0 means unlimited)
-    --compiler-root PATH   use another isolated compiler worktree
     --cwd PATH             run the target from PATH
     --stdin PATH           provide PATH as target standard input
     --env KEY=VALUE        set a target environment variable (repeatable)
     -- TARGET_ARG...       forward target arguments without shell re-parsing
-    --rebuild-runtime      rebuild the selected compiler runtime object
-    --keep-temp            retain generated objects and the linked executable
 
 The runtime collector uses the backend's complete-run trace callbacks, rather
 than the runtime's bounded crash-debug ring, so loop counts are not truncated to
 the last 256 events. Targets may use either the legacy `main() -> i64` entry or
 the argv-aware `main(argc: i64, argv: mutable void&) -> i64` form. Repeated runs stop after the first nonzero target status and the
 report retains every completed repetition, including min/mean/median/max and
-population standard deviation for measured execution time. With
---location-timing, locations also receive attributed time from the selected timing clock and their
-largest observed gap to the next trace event; function summaries aggregate the
-same measurements and add inclusive/self timing plus completed-call counts.
+population standard deviation for measured execution time. Locations receive
+attributed wall-clock time from the native collector when trace timestamps are
+available, together with their largest observed gap to the next trace event;
+function summaries aggregate the same measurements and add inclusive/self
+timing plus completed-call counts.
 Text and HTML reports also list every measured repetition with its status, wall
 time, CPU time, and peak RSS when available.
 The summary also records the maximum call-stack depth tracked by the collector
@@ -226,11 +232,9 @@ and the number of entries beyond its 1024-frame capacity; a nonzero
 `stack_overflow_entries` value means folded paths are necessarily incomplete.
 Function call-events count observed entries, while completed-call counts include
 only functions whose return hook was observed; panic and timeout reports can
-therefore contain incomplete calls. Inclusive/self timings are available with
---location-timing. This is an opt-in diagnostic estimate: it includes collector
-overhead and is not statistical CPU sampling. Wall timing includes sleeps and waits;
-`--timing-clock cpu` uses each thread's CPU clock, which is often a better signal for
-compute hotspots in threaded programs.
+therefore contain incomplete calls. Timing is an instrumented diagnostic
+estimate: it includes collector overhead and is not statistical CPU sampling.
+Wall timing includes sleeps and waits.
 Collector records are sent over a dedicated inherited file descriptor during
 normal profiler runs, so target stderr—including lines that resemble the
 `ELISA_PROFILE` protocol prefix—remains available as program diagnostics and

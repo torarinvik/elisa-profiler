@@ -122,6 +122,7 @@
     "run": {
       "type": "object",
       "required": [
+        "collection_mode",
         "exit_code",
         "signal",
         "location_timing",
@@ -151,6 +152,7 @@
         "compile_ms"
       ],
       "properties": {
+        "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "diagnostic"] },
         "exit_code": { "type": ["integer", "null"] },
         "signal": { "type": ["integer", "null"] },
         "location_timing": { "type": "boolean" },

@@ -68,6 +68,11 @@ enum {
     PROFILE_KIND_STATEMENT = 1,
     PROFILE_KIND_VALUE = 2,
     PROFILE_KIND_FUNCTION = 3,
+    PROFILE_MODE_FULL = 0,
+    PROFILE_MODE_FUNCTIONS = 1,
+    PROFILE_MODE_STATEMENTS = 2,
+    PROFILE_MODE_VALUES = 3,
+    PROFILE_MODE_DIAGNOSTIC = 4,
     PROFILE_RECENT_CAPACITY = 256,
     PROFILE_CALL_STACK_CAPACITY = 1024,
     PROFILE_DEFAULT_LOCATION_LIMIT = 32768,
@@ -113,6 +118,7 @@ static volatile sig_atomic_t profile_dumped;
 static int profile_recent_path_enabled;
 static profile_recent_entry profile_recent[PROFILE_RECENT_CAPACITY];
 static uint64_t profile_recent_position;
+static int profile_mode = PROFILE_MODE_FULL;
 
 static profile_call_edge *profile_call_edges;
 static size_t profile_call_edge_capacity;
@@ -756,10 +762,28 @@ static uint64_t profile_event_trace_bytes(const char *function_name,
     return bytes;
 }
 
+static int profile_mode_allows_kind(uint8_t kind) {
+    switch (profile_mode) {
+    case PROFILE_MODE_FUNCTIONS:
+        return kind == PROFILE_KIND_FUNCTION;
+    case PROFILE_MODE_STATEMENTS:
+        return kind == PROFILE_KIND_STATEMENT || kind == PROFILE_KIND_FUNCTION;
+    case PROFILE_MODE_VALUES:
+        return kind == PROFILE_KIND_VALUE || kind == PROFILE_KIND_FUNCTION;
+    case PROFILE_MODE_DIAGNOSTIC:
+    case PROFILE_MODE_FULL:
+    default:
+        return 1;
+    }
+}
+
 static void profile_record(const char *function_name, uint32_t line,
                            const char *variable_name, uint64_t value, uint8_t kind,
                            uint8_t is_signed, size_t call_depth,
                            int stack_overflowed) {
+    if (!profile_mode_allows_kind(kind)) {
+        return;
+    }
     function_name = function_name == NULL ? "<unknown>" : function_name;
     pthread_mutex_lock(&profile_lock);
     profile_thread_state *thread = profile_get_thread_locked();
@@ -1465,6 +1489,18 @@ static uint64_t profile_read_limit_environment(const char *name, uint64_t fallba
 int main(int argc, char **argv) {
     const char *recent_path = getenv("ELISA_PROFILE_RECENT_PATH");
     profile_recent_path_enabled = recent_path != NULL && strcmp(recent_path, "1") == 0;
+    const char *mode = getenv("ELISA_PROFILE_MODE");
+    if (mode != NULL) {
+        if (strcmp(mode, "functions") == 0) {
+            profile_mode = PROFILE_MODE_FUNCTIONS;
+        } else if (strcmp(mode, "statements") == 0) {
+            profile_mode = PROFILE_MODE_STATEMENTS;
+        } else if (strcmp(mode, "values") == 0) {
+            profile_mode = PROFILE_MODE_VALUES;
+        } else if (strcmp(mode, "diagnostic") == 0) {
+            profile_mode = PROFILE_MODE_DIAGNOSTIC;
+        }
+    }
     const char *event_trace = getenv("ELISA_PROFILE_EVENT_TRACE");
     profile_event_trace_enabled = event_trace != NULL && strcmp(event_trace, "1") == 0;
     profile_event_trace_limit = profile_read_uint64_environment(

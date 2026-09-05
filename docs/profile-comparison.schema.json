@@ -9,6 +9,7 @@
     "kind",
     "baseline",
     "candidate",
+    "collection_mode_match",
     "threshold_percent",
     "metrics",
     "functions",
@@ -25,6 +26,7 @@
     "baseline": { "$ref": "#/$defs/identity" },
     "candidate": { "$ref": "#/$defs/identity" },
     "workload_metadata_match": { "type": "boolean" },
+    "collection_mode_match": { "type": "boolean" },
     "threshold_percent": { "type": "number", "minimum": 0 },
     "metrics": {
       "type": "object",
@@ -85,6 +87,7 @@
         "source": { "type": ["string", "null"] },
         "compiler": { "type": "object", "additionalProperties": true },
         "opt_level": { "type": ["string", "null"] },
+        "collection_mode": { "type": ["string", "null"], "enum": ["full", "functions", "statements", "values", "diagnostic", ""] },
         "location_timing": { "type": ["boolean", "null"] },
         "timing_clock": { "type": ["string", "null"], "enum": ["wall", "cpu", null] },
         "completed_repetitions": { "type": ["integer", "null"], "minimum": 0 },

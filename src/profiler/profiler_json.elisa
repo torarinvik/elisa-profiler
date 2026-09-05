@@ -489,6 +489,10 @@ extend ProfilerNative:
             return false if source_start < NATIVE_ZERO
             return false if json_string_into(data, source_start.usize(), data.count, &capture.source) < NATIVE_ZERO
             return false if not json_read_optional_object_field(data, "workload", NATIVE_ZERO.usize(), data.count, &capture.workload_identity)
+            capture.collection_mode <- []
+            mode_start: i64 = json_key_value_start(data, "collection_mode", run_start.usize(), run_stop.usize())
+            if mode_start >= NATIVE_ZERO:
+                return false if not json_read_string_field(data, "collection_mode", run_start.usize(), run_stop.usize(), &capture.collection_mode)
             return false if not json_read_string_field(data, "branch", compiler_start.usize(), compiler_stop.usize(), &capture.compiler_branch)
             return false if not json_read_string_field(data, "commit", compiler_start.usize(), compiler_stop.usize(), &capture.compiler_commit)
             return false if not json_read_string_field(data, "opt_level", run_start.usize(), run_stop.usize(), &capture.opt_level)
