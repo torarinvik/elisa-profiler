@@ -43,7 +43,7 @@ def assert_unsupported_version(profiler, record: str) -> None:
 def main() -> int:
     profiler = load_profiler()
     extended_meta = profiler.parse_profile(
-        "ELISA_PROFILE\t1\tmeta\t64\t2\t3\t4\t5\t6\t7\t8\t9\t1\t10\t11"
+        "ELISA_PROFILE\t1\tmeta\t64\t2\t3\t4\t5\t6\t7\t8\t9\t1\t10\t11\t1024\t512\t64"
     )[0]
     assert extended_meta["location_limit"] == 7
     assert extended_meta["call_edge_limit"] == 8
@@ -51,6 +51,9 @@ def main() -> int:
     assert extended_meta["budget_exceeded"] == 1
     assert extended_meta["call_edge_dropped"] == 10
     assert extended_meta["stack_dropped"] == 11
+    assert extended_meta["capture_byte_limit"] == 1024
+    assert extended_meta["capture_bytes_used"] == 512
+    assert extended_meta["capture_bytes_dropped"] == 64
     assert_unsupported_version(profiler, "ELISA_PROFILE\t2\tmeta\t0\t0\t0")
     assert_malformed(profiler, "ELISA_PROFILE\t1\tmeta\tnot-a-number\t0\t0")
     assert_malformed(profiler, "ELISA_PROFILE\t1\tmeta\t-1\t0\t0")

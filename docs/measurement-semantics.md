@@ -85,6 +85,17 @@ or allocation failure drops detail, the corresponding counter is incremented
 and the quality reason is retained. A zero value in a metric is not a synonym
 for missing data; unsupported metrics remain `null` in the schema.
 
+`capture_byte_limit` is the shared per-run collector budget. It covers the
+collector's aggregate tables, registered thread state, call-path nodes, and
+estimated retained event-trace records. `capture_bytes_used` is the currently
+reserved collector detail budget at flush time; `capture_bytes_dropped` is the
+saturated sum of detail reservations refused by that budget. A zero byte limit
+means unlimited. Aggregate event counts remain exact when only detail
+reservations are refused, while `quality.detail` becomes `degraded` and the
+`capture_byte_budget` reason is emitted. Repetition summaries report the
+per-run values; the aggregate summary sums used/dropped bytes across measured
+runs and retains the last configured limit.
+
 The current version-1 JSON writer emits integer values directly. Consumers
 that must preserve values beyond JavaScript's exact integer range should parse
 the raw JSON with an integer-capable decoder; the planned version-2 artifact

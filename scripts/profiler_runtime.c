@@ -73,6 +73,8 @@ enum {
     PROFILE_DEFAULT_LOCATION_LIMIT = 32768,
     PROFILE_DEFAULT_CALL_EDGE_LIMIT = 16384,
     PROFILE_DEFAULT_CALL_PATH_LIMIT = 32768,
+    PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT = 64 * 1024 * 1024,
+    PROFILE_EVENT_TRACE_FIXED_BYTES = 64,
     PROFILE_INITIAL_LOCATION_CAPACITY = 256,
     PROFILE_INITIAL_CALL_EDGE_CAPACITY = 64,
     PROFILE_INITIAL_CALL_PATH_CAPACITY = 64,
@@ -102,6 +104,9 @@ static uint64_t profile_location_limit;
 static uint64_t profile_call_edge_limit;
 static uint64_t profile_call_path_limit;
 static int profile_budget_exceeded;
+static uint64_t profile_capture_byte_limit;
+static uint64_t profile_capture_bytes_used;
+static uint64_t profile_capture_bytes_dropped;
 static pthread_mutex_t profile_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile sig_atomic_t profile_crash_dumped;
 static volatile sig_atomic_t profile_dumped;
@@ -165,6 +170,8 @@ typedef struct profile_thread_state profile_thread_state;
 
 struct profile_thread_state {
     profile_thread_state *next;
+    uint64_t event_count;
+    uint64_t bytes_dropped;
 #if ELISA_PROFILE_TIMING
     const char *timing_function_name;
     const char *timing_variable_name;
@@ -178,6 +185,29 @@ struct profile_thread_state {
 
 static profile_thread_state *profile_threads;
 static uint64_t profile_thread_count;
+
+static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right) {
+    return UINT64_MAX - left < right ? UINT64_MAX : left + right;
+}
+
+static int profile_reserve_bytes_locked(uint64_t bytes) {
+    if (bytes > UINT64_MAX - profile_capture_bytes_used ||
+        (profile_capture_byte_limit != 0 &&
+         bytes > profile_capture_byte_limit - profile_capture_bytes_used)) {
+        profile_capture_bytes_dropped =
+            profile_saturating_add_u64(profile_capture_bytes_dropped, bytes);
+        profile_budget_exceeded = 1;
+        return 0;
+    }
+    profile_capture_bytes_used += bytes;
+    return 1;
+}
+
+static void profile_release_bytes_locked(uint64_t bytes) {
+    profile_capture_bytes_used = bytes > profile_capture_bytes_used
+                                     ? 0
+                                     : profile_capture_bytes_used - bytes;
+}
 
 /* Trace strings are ABI data, not guaranteed to be interned by the compiler. */
 static int profile_strings_equal(const char *left, const char *right) {
@@ -361,8 +391,13 @@ static int profile_grow_call_edges_locked(void) {
     size_t new_capacity = profile_call_edge_capacity == 0
                               ? PROFILE_INITIAL_CALL_EDGE_CAPACITY
                               : profile_call_edge_capacity * PROFILE_CAPACITY_GROWTH_FACTOR;
+    uint64_t new_bytes = (uint64_t)new_capacity * sizeof(*profile_call_edges);
+    if (!profile_reserve_bytes_locked(new_bytes)) {
+        return 0;
+    }
     profile_call_edge *new_edges = calloc(new_capacity, sizeof(*new_edges));
     if (new_edges == NULL) {
+        profile_release_bytes_locked(new_bytes);
         return 0;
     }
     for (size_t index = 0; index < profile_call_edge_capacity; ++index) {
@@ -377,7 +412,9 @@ static int profile_grow_call_edges_locked(void) {
         }
         new_edges[slot] = edge;
     }
+    uint64_t old_bytes = (uint64_t)profile_call_edge_capacity * sizeof(*profile_call_edges);
     free(profile_call_edges);
+    profile_release_bytes_locked(old_bytes);
     profile_call_edges = new_edges;
     profile_call_edge_capacity = new_capacity;
     return 1;
@@ -466,8 +503,13 @@ static int profile_grow_call_paths_locked(void) {
     size_t new_capacity = profile_call_path_capacity == 0
                               ? PROFILE_INITIAL_CALL_PATH_CAPACITY
                               : profile_call_path_capacity * PROFILE_CAPACITY_GROWTH_FACTOR;
+    uint64_t new_bytes = (uint64_t)new_capacity * sizeof(*profile_call_paths);
+    if (!profile_reserve_bytes_locked(new_bytes)) {
+        return 0;
+    }
     profile_call_path **new_paths = calloc(new_capacity, sizeof(*new_paths));
     if (new_paths == NULL) {
+        profile_release_bytes_locked(new_bytes);
         return 0;
     }
     for (size_t index = 0; index < profile_call_path_capacity; ++index) {
@@ -482,7 +524,9 @@ static int profile_grow_call_paths_locked(void) {
         }
         new_paths[slot] = path;
     }
+    uint64_t old_bytes = (uint64_t)profile_call_path_capacity * sizeof(*profile_call_paths);
     free(profile_call_paths);
+    profile_release_bytes_locked(old_bytes);
     profile_call_paths = new_paths;
     profile_call_path_capacity = new_capacity;
     return 1;
@@ -536,8 +580,14 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
     }
     profile_call_path *path = profile_call_paths[slot];
     if (path == NULL) {
+        if (!profile_reserve_bytes_locked(sizeof(*path))) {
+            ++profile_call_path_dropped_count;
+            pthread_mutex_unlock(&profile_lock);
+            return NULL;
+        }
         path = calloc(1, sizeof(*path));
         if (path == NULL) {
+            profile_release_bytes_locked(sizeof(*path));
             ++profile_call_path_dropped_count;
             pthread_mutex_unlock(&profile_lock);
             return NULL;
@@ -571,8 +621,13 @@ static profile_thread_state *profile_get_thread_locked(void) {
     if (profile_current_thread != NULL) {
         return profile_current_thread;
     }
-    profile_thread_state *thread = calloc(1, sizeof(*thread));
+    profile_thread_state *thread = NULL;
+    if (!profile_reserve_bytes_locked(sizeof(*thread))) {
+        return NULL;
+    }
+    thread = calloc(1, sizeof(*thread));
     if (thread == NULL) {
+        profile_release_bytes_locked(sizeof(*thread));
         return NULL;
     }
     thread->next = profile_threads;
@@ -658,8 +713,13 @@ static int profile_grow_locked(void) {
     size_t new_capacity = profile_capacity == 0
                               ? PROFILE_INITIAL_LOCATION_CAPACITY
                               : profile_capacity * PROFILE_CAPACITY_GROWTH_FACTOR;
+    uint64_t new_bytes = (uint64_t)new_capacity * sizeof(*profile_table);
+    if (!profile_reserve_bytes_locked(new_bytes)) {
+        return 0;
+    }
     profile_entry *new_table = calloc(new_capacity, sizeof(*new_table));
     if (new_table == NULL) {
+        profile_release_bytes_locked(new_bytes);
         return 0;
     }
 
@@ -676,10 +736,24 @@ static int profile_grow_locked(void) {
         new_table[slot] = entry;
     }
 
+    uint64_t old_bytes = (uint64_t)profile_capacity * sizeof(*profile_table);
     free(profile_table);
+    profile_release_bytes_locked(old_bytes);
     profile_table = new_table;
     profile_capacity = new_capacity;
     return 1;
+}
+
+static uint64_t profile_event_trace_bytes(const char *function_name,
+                                          const char *variable_name) {
+    uint64_t bytes = PROFILE_EVENT_TRACE_FIXED_BYTES;
+    if (function_name != NULL) {
+        bytes = profile_saturating_add_u64(bytes, strlen(function_name));
+    }
+    if (variable_name != NULL) {
+        bytes = profile_saturating_add_u64(bytes, strlen(variable_name));
+    }
+    return bytes;
 }
 
 static void profile_record(const char *function_name, uint32_t line,
@@ -692,6 +766,9 @@ static void profile_record(const char *function_name, uint32_t line,
 #if !ELISA_PROFILE_TIMING
     (void)thread;
 #endif
+    if (thread != NULL) {
+        ++thread->event_count;
+    }
     if (call_depth > profile_max_call_depth) {
         profile_max_call_depth = call_depth;
     }
@@ -712,9 +789,11 @@ static void profile_record(const char *function_name, uint32_t line,
             .value = value,
         };
     ++profile_recent_position;
-    if (profile_event_trace_enabled &&
-        (profile_event_trace_limit == 0 ||
-         profile_event_trace_captured < profile_event_trace_limit)) {
+    int trace_allowed = profile_event_trace_enabled &&
+                        (profile_event_trace_limit == 0 ||
+                         profile_event_trace_captured < profile_event_trace_limit);
+    if (trace_allowed &&
+        profile_reserve_bytes_locked(profile_event_trace_bytes(function_name, variable_name))) {
         fprintf(stderr, "ELISA_PROFILE\t1\tpath\t%" PRIu64 "\t%u\t",
                 profile_event_count - 1, kind);
         profile_print_field(function_name);
@@ -729,6 +808,9 @@ static void profile_record(const char *function_name, uint32_t line,
         ++profile_event_trace_captured;
     } else if (profile_event_trace_enabled) {
         ++profile_event_trace_omitted;
+        if (thread != NULL) {
+            ++thread->bytes_dropped;
+        }
     }
 
     profile_entry *existing = profile_find_locked(
@@ -1105,13 +1187,15 @@ static void profile_dump_metadata(size_t location_count) {
     fprintf(stderr,
             "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t%zu\t%" PRIu64
             "\t%zu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64
-            "\t%" PRIu64 "\t%d\t%" PRIu64 "\t%" PRIu64 "\n",
+            "\t%" PRIu64 "\t%d\t%" PRIu64 "\t%" PRIu64
+            "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
             profile_event_count, location_count, profile_dropped_count,
             profile_max_call_depth, profile_stack_overflow_entries,
             profile_thread_count, profile_location_limit,
             profile_call_edge_limit, profile_call_path_limit,
             profile_budget_exceeded, profile_call_edge_dropped_count,
-            profile_call_path_dropped_count);
+            profile_call_path_dropped_count, profile_capture_byte_limit,
+            profile_capture_bytes_used, profile_capture_bytes_dropped);
 }
 
 static void profile_dump_recent_path(void) {
@@ -1387,6 +1471,8 @@ int main(void) {
         "ELISA_PROFILE_MAX_CALL_EDGES", PROFILE_DEFAULT_CALL_EDGE_LIMIT);
     profile_call_path_limit = profile_read_limit_environment(
         "ELISA_PROFILE_MAX_STACKS", PROFILE_DEFAULT_CALL_PATH_LIMIT);
+    profile_capture_byte_limit = profile_read_limit_environment(
+        "ELISA_PROFILE_MAX_CAPTURE_BYTES", PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT);
     (void)profile_output();
     profile_install_crash_handlers();
     atexit(profile_dump);

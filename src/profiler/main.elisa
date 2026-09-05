@@ -90,6 +90,7 @@ module ProfilerNative:
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192
         const NATIVE_DEFAULT_TRACE_LIMIT: i64 = 1000000
+        const NATIVE_DEFAULT_CAPTURE_BYTES: i64 = 67108864
         const NATIVE_DIRECTORY_MODE: i64 = 448
         const NATIVE_COMMAND_ARGUMENT_INDEX: i64 = 1
         const NATIVE_FIRST_OPTION_INDEX: i64 = 2
@@ -208,6 +209,9 @@ module ProfilerNative:
             location_limit: mutable i64
             call_edge_limit: mutable i64
             stack_limit: mutable i64
+            capture_byte_limit: mutable i64
+            capture_bytes_used: mutable i64
+            capture_bytes_dropped: mutable i64
             budget_exceeded: mutable i64
             call_edge_dropped: mutable i64
             stack_dropped: mutable i64
@@ -611,6 +615,7 @@ module ProfilerNative:
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_FD")
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_EVENT_TRACE")
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_EVENT_TRACE_LIMIT")
+            _ = profiler_ffi_unsetenv("ELISA_PROFILE_MAX_CAPTURE_BYTES")
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_RECENT_PATH")
 
 
@@ -672,7 +677,7 @@ module ProfilerNative:
             return true
 
 
-        def run_target_direct(executable: darray[u8]&, stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, event_trace: bool, recent_path: bool, trace_limit: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+        def run_target_direct(executable: darray[u8]&, stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, event_trace: bool, recent_path: bool, trace_limit: i64, capture_byte_limit: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             stdout_fd: i64 = open_output_file(stdout_path)
             return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO} if stdout_fd < NATIVE_ZERO
             stderr_fd: i64 = open_output_file(stderr_path)
@@ -704,6 +709,15 @@ module ProfilerNative:
             limit_text.push(NATIVE_BYTE_NUL)
             limit_cstr: cstr = (&limit_text[0]).cast[cstr] can Unsafe.PointerCast
             if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE_LIMIT", limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+                _ = profiler_ffi_close(stdout_fd)
+                _ = profiler_ffi_close(stderr_fd)
+                clear_target_environment()
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
+            capture_byte_limit_text: mutable darray[u8] = []
+            append_i64(capture_byte_limit_text, capture_byte_limit)
+            capture_byte_limit_text.push(NATIVE_BYTE_NUL)
+            capture_byte_limit_cstr: cstr = (&capture_byte_limit_text[0]).cast[cstr] can Unsafe.PointerCast
+            if profiler_ffi_setenv("ELISA_PROFILE_MAX_CAPTURE_BYTES", capture_byte_limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
@@ -1142,6 +1156,9 @@ module ProfilerNative:
                 location_limit: NATIVE_ZERO,
                 call_edge_limit: NATIVE_ZERO,
                 stack_limit: NATIVE_ZERO,
+                capture_byte_limit: NATIVE_ZERO,
+                capture_bytes_used: NATIVE_ZERO,
+                capture_bytes_dropped: NATIVE_ZERO,
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
@@ -1183,6 +1200,10 @@ module ProfilerNative:
                     summary.budget_exceeded <- parse_protocol_number(data, &cursor, line_stop)
                     summary.call_edge_dropped <- parse_protocol_number(data, &cursor, line_stop)
                     summary.stack_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                    if cursor < line_stop:
+                        summary.capture_byte_limit <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.capture_bytes_used <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.capture_bytes_dropped <- parse_protocol_number(data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, trace_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(trace_prefix)
                     summary.trace_enabled <- parse_protocol_number(data, &cursor, line_stop)
@@ -1234,6 +1255,9 @@ module ProfilerNative:
                 location_limit: NATIVE_ZERO,
                 call_edge_limit: NATIVE_ZERO,
                 stack_limit: NATIVE_ZERO,
+                capture_byte_limit: NATIVE_ZERO,
+                capture_bytes_used: NATIVE_ZERO,
+                capture_bytes_dropped: NATIVE_ZERO,
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
@@ -1266,6 +1290,9 @@ module ProfilerNative:
             destination.location_limit <- incoming.location_limit
             destination.call_edge_limit <- incoming.call_edge_limit
             destination.stack_limit <- incoming.stack_limit
+            destination.capture_byte_limit <- incoming.capture_byte_limit
+            destination.capture_bytes_used <- destination.capture_bytes_used + incoming.capture_bytes_used
+            destination.capture_bytes_dropped <- destination.capture_bytes_dropped + incoming.capture_bytes_dropped
             destination.budget_exceeded <- incoming.budget_exceeded if incoming.budget_exceeded != NATIVE_ZERO
             destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
             destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped
@@ -1335,6 +1362,12 @@ module ProfilerNative:
             append_i64(buffer, summary.call_edge_limit)
             append_text(buffer, ",\"stack_limit\":")
             append_i64(buffer, summary.stack_limit)
+            append_text(buffer, ",\"capture_byte_limit\":")
+            append_i64(buffer, summary.capture_byte_limit)
+            append_text(buffer, ",\"capture_bytes_used\":")
+            append_i64(buffer, summary.capture_bytes_used)
+            append_text(buffer, ",\"capture_bytes_dropped\":")
+            append_i64(buffer, summary.capture_bytes_dropped)
             append_text(buffer, ",\"detail_budget_exceeded\":")
             append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
             append_text(buffer, ",\"dropped_call_edges\":")
@@ -1401,7 +1434,7 @@ module ProfilerNative:
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
-            detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
+            detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
             append_text(buffer, "\"quality\":{\"capture\":\"")
             if status < NATIVE_ZERO:
                 append_text(buffer, "profiler_failure")
@@ -1439,6 +1472,10 @@ module ProfilerNative:
             if summary.stack_dropped > NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
                 append_text(buffer, "\"dropped_stacks\"")
+                first_reason <- false
+            if summary.capture_bytes_dropped > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"capture_byte_budget\"")
                 first_reason <- false
             if summary.stack_overflow_entries > NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
@@ -2377,6 +2414,12 @@ module ProfilerNative:
             append_i64(buffer, summary.call_edge_limit)
             append_text(buffer, ",\"stack_limit\":")
             append_i64(buffer, summary.stack_limit)
+            append_text(buffer, ",\"capture_byte_limit\":")
+            append_i64(buffer, summary.capture_byte_limit)
+            append_text(buffer, ",\"capture_bytes_used\":")
+            append_i64(buffer, summary.capture_bytes_used)
+            append_text(buffer, ",\"capture_bytes_dropped\":")
+            append_i64(buffer, summary.capture_bytes_dropped)
             append_text(buffer, ",\"detail_budget_exceeded\":")
             append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
             append_text(buffer, ",\"dropped_call_edges\":")
@@ -2663,7 +2706,7 @@ module ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json|text|folded|speedscope|html] [--output PATH] [--artifact-output PATH] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json|text|folded|speedscope|html] [--output PATH] [--artifact-output PATH] [--max-capture-bytes N] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
@@ -2685,12 +2728,13 @@ module ProfilerNative:
             requested_repetitions: mutable i64 = NATIVE_ONE
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
+            capture_byte_limit: mutable i64 = NATIVE_DEFAULT_CAPTURE_BYTES
             working_directory: mutable darray[u8] = []
             stdin_path: mutable darray[u8] = []
             environment: mutable darray[u8] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, working_directory, stdin_path, environment, source_seen|:
+            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, working_directory, stdin_path, environment, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
                     return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
@@ -2782,6 +2826,14 @@ module ProfilerNative:
                     limit: i64 = parse_nonnegative_cstr(limit_text)
                     return report_error("--max-event-trace-events requires a non-negative integer") if limit < NATIVE_ZERO
                     trace_limit <- limit
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-capture-bytes") == NATIVE_ZERO:
+                    return report_error("--max-capture-bytes requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    byte_limit_text: cstr = slots[index + NATIVE_ONE].cast[cstr]
+                    byte_limit: i64 = parse_nonnegative_cstr(byte_limit_text)
+                    return report_error("--max-capture-bytes requires a non-negative integer") if byte_limit < NATIVE_ZERO
+                    capture_byte_limit <- byte_limit
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "-O0") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--opt-level=0") == NATIVE_ZERO:
@@ -2975,7 +3027,7 @@ module ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO)
+                warmup_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO, capture_byte_limit)
                 _ = profiler_ffi_close(capture_fd)
                 warmup_ns <- warmup_ns + warmup_result.elapsed_ns
                 if warmup_result.status != NATIVE_ZERO:
@@ -2994,7 +3046,7 @@ module ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
-                run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit)
+                run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
                 return report_error("native target produced no collector capture") if capture.count == NATIVE_ZERO.usize()

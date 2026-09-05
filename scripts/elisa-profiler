@@ -546,7 +546,7 @@ def parse_profile(
             if crash_signal < 1 or crash_signal > 128:
                 raise ProfilerError(f"invalid profiler crash signal: {line}")
             continue
-        if len(fields) in (6, 8, 9, 15) and fields[2] == "meta":
+        if len(fields) in (6, 8, 9, 15, 18) and fields[2] == "meta":
             meta = {
                 "events": parse_protocol_uint(fields[3], line),
                 "locations": parse_protocol_uint(fields[4], line),
@@ -562,7 +562,7 @@ def parse_profile(
                 meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
                 meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
                 meta["thread_count"] = parse_protocol_uint(fields[8], line)
-            elif len(fields) == 15:
+            elif len(fields) in (15, 18):
                 meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
                 meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
                 meta["thread_count"] = parse_protocol_uint(fields[8], line)
@@ -574,6 +574,10 @@ def parse_profile(
                     raise ProfilerError(f"invalid profiler detail budget flag: {line}")
                 meta["call_edge_dropped"] = parse_protocol_uint(fields[13], line)
                 meta["stack_dropped"] = parse_protocol_uint(fields[14], line)
+                if len(fields) == 18:
+                    meta["capture_byte_limit"] = parse_protocol_uint(fields[15], line)
+                    meta["capture_bytes_used"] = parse_protocol_uint(fields[16], line)
+                    meta["capture_bytes_dropped"] = parse_protocol_uint(fields[17], line)
             continue
         if len(fields) == 7 and fields[2] == "trace":
             if trace_record_seen:
@@ -685,6 +689,9 @@ def parse_profile(
                     "budget_exceeded": 0,
                     "call_edge_dropped": 0,
                     "stack_dropped": 0,
+                    "capture_byte_limit": 0,
+                    "capture_bytes_used": 0,
+                    "capture_bytes_dropped": 0,
                     "crash_signal": crash_signal,
                 },
                 [],
@@ -748,6 +755,9 @@ def merge_profiles(
     location_limit = 0
     call_edge_limit = 0
     stack_limit = 0
+    capture_byte_limit = 0
+    capture_bytes_used = 0
+    capture_bytes_dropped = 0
     budget_exceeded = 0
     call_edge_dropped = 0
     stack_dropped = 0
@@ -768,6 +778,9 @@ def merge_profiles(
         location_limit = meta.get("location_limit", location_limit)
         call_edge_limit = meta.get("call_edge_limit", call_edge_limit)
         stack_limit = meta.get("stack_limit", stack_limit)
+        capture_byte_limit = meta.get("capture_byte_limit", capture_byte_limit)
+        capture_bytes_used += meta.get("capture_bytes_used", 0)
+        capture_bytes_dropped += meta.get("capture_bytes_dropped", 0)
         budget_exceeded = max(budget_exceeded, meta.get("budget_exceeded", 0))
         call_edge_dropped += meta.get("call_edge_dropped", 0)
         stack_dropped += meta.get("stack_dropped", 0)
@@ -868,6 +881,9 @@ def merge_profiles(
             "location_limit": location_limit,
             "call_edge_limit": call_edge_limit,
             "stack_limit": stack_limit,
+            "capture_byte_limit": capture_byte_limit,
+            "capture_bytes_used": capture_bytes_used,
+            "capture_bytes_dropped": capture_bytes_dropped,
             "budget_exceeded": budget_exceeded,
             "call_edge_dropped": call_edge_dropped,
             "stack_dropped": stack_dropped,
@@ -2808,6 +2824,9 @@ def build_report(
     summary["location_limit"] = meta.get("location_limit", 0)
     summary["call_edge_limit"] = meta.get("call_edge_limit", 0)
     summary["stack_limit"] = meta.get("stack_limit", 0)
+    summary["capture_byte_limit"] = meta.get("capture_byte_limit", 0)
+    summary["capture_bytes_used"] = meta.get("capture_bytes_used", 0)
+    summary["capture_bytes_dropped"] = meta.get("capture_bytes_dropped", 0)
     summary["detail_budget_exceeded"] = bool(meta.get("budget_exceeded", 0))
     summary["dropped_call_edges"] = meta.get("call_edge_dropped", 0)
     summary["dropped_stacks"] = meta.get("stack_dropped", 0)
@@ -2950,6 +2969,8 @@ def build_report(
         quality_reasons.append("dropped_call_edges")
     if summary.get("dropped_stacks", 0) > 0:
         quality_reasons.append("dropped_stacks")
+    if summary.get("capture_bytes_dropped", 0) > 0:
+        quality_reasons.append("capture_byte_budget")
     if summary.get("stack_overflow_entries", 0) > 0:
         quality_reasons.append("stack_overflow")
     if summary.get("trace_events_omitted", 0) > 0:
@@ -2960,6 +2981,7 @@ def build_report(
             "dropped_locations",
             "dropped_call_edges",
             "dropped_stacks",
+            "capture_byte_budget",
             "stack_overflow",
             "trace_omitted",
         )
@@ -3140,6 +3162,12 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         default=1_000_000,
         help="maximum events retained by --event-trace; 0 means unlimited (default: 1000000)",
     )
+    parser.add_argument(
+        "--max-capture-bytes",
+        type=int,
+        default=64 * 1024 * 1024,
+        help="shared collector byte budget; 0 means unlimited (default: 67108864)",
+    )
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3"), default="0")
     parser.add_argument(
         "--compiler-root",
@@ -3159,6 +3187,8 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         parser.error("--event-trace requires --format json")
     if args.max_event_trace_events < 0:
         parser.error("--max-event-trace-events cannot be negative")
+    if args.max_capture_bytes < 0:
+        parser.error("--max-capture-bytes cannot be negative")
     if args.repeat < 1:
         parser.error("--repeat must be positive")
     if args.warmup < 0:
@@ -3211,6 +3241,7 @@ def profile(args: argparse.Namespace) -> int:
     env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = str(
         args.max_event_trace_events if args.event_trace else 0
     )
+    env["ELISA_PROFILE_MAX_CAPTURE_BYTES"] = str(args.max_capture_bytes)
     target_env = env.copy()
     apply_environment_overrides(target_env, args.environment)
     # Profiler control variables are owned by this invocation; an --env entry
@@ -3218,6 +3249,7 @@ def profile(args: argparse.Namespace) -> int:
     target_env["ELISA_PROFILE_RECENT_PATH"] = env["ELISA_PROFILE_RECENT_PATH"]
     target_env["ELISA_PROFILE_EVENT_TRACE"] = env["ELISA_PROFILE_EVENT_TRACE"]
     target_env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = env["ELISA_PROFILE_EVENT_TRACE_LIMIT"]
+    target_env["ELISA_PROFILE_MAX_CAPTURE_BYTES"] = env["ELISA_PROFILE_MAX_CAPTURE_BYTES"]
     ensure_runtime(
         args.compiler_root,
         args.runtime_object,
@@ -3405,6 +3437,9 @@ def profile(args: argparse.Namespace) -> int:
                 "location_limit": meta.get("location_limit", 0),
                 "call_edge_limit": meta.get("call_edge_limit", 0),
                 "stack_limit": meta.get("stack_limit", 0),
+                "capture_byte_limit": meta.get("capture_byte_limit", 0),
+                "capture_bytes_used": meta.get("capture_bytes_used", 0),
+                "capture_bytes_dropped": meta.get("capture_bytes_dropped", 0),
                 "detail_budget_exceeded": bool(meta.get("budget_exceeded", 0)),
                 "dropped_call_edges": meta.get("call_edge_dropped", 0),
                 "dropped_stacks": meta.get("stack_dropped", 0),
