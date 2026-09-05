@@ -10,6 +10,7 @@
     "schema_version": { "const": 1 },
     "baseline": { "$ref": "#/$defs/identity" },
     "candidate": { "$ref": "#/$defs/identity" },
+    "workload_metadata_match": { "type": "boolean" },
     "metrics": {
       "type": "object",
       "required": [

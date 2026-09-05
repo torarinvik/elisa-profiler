@@ -25,6 +25,9 @@ extend ProfilerNative:
             buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool
         ) -> void can[Abort.Panic, Memory.Allocate]:
             source_mismatch: bool = not byte_arrays_equal(baseline.source, candidate.source)
+            workload_mismatch: mutable bool = false
+            if baseline.workload_identity.count > NATIVE_ZERO.usize() or candidate.workload_identity.count > NATIVE_ZERO.usize():
+                workload_mismatch <- not byte_arrays_equal(baseline.workload_identity, candidate.workload_identity)
             compiler_mismatch: bool = not byte_arrays_equal(baseline.compiler_commit, candidate.compiler_commit)
             optimization_mismatch: bool = not byte_arrays_equal(baseline.opt_level, candidate.opt_level)
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
@@ -43,6 +46,8 @@ extend ProfilerNative:
                 append_text(buffer, "same\n" if not compiler_mismatch else "different\n")
                 append_text(buffer, "optimization: ")
                 append_text(buffer, "same\n" if not optimization_mismatch else "different\n")
+                append_text(buffer, "workload metadata: ")
+                append_text(buffer, "same\n" if not workload_mismatch else "different\n")
                 append_text(buffer, "wall mean: baseline=")
                 append_micros_as_millis(buffer, baseline.execution_mean_micros)
                 append_text(buffer, " ms candidate=")
@@ -74,9 +79,10 @@ extend ProfilerNative:
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.stack_overflow_entries)
                 append_text(buffer, "\n")
-                if source_mismatch or compiler_mismatch or optimization_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or compiler_mismatch or optimization_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
                     append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
+                    append_comparison_warning_text(buffer, "baseline and candidate use different workload metadata", workload_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different compiler commits", compiler_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different optimization levels", optimization_mismatch)
                     append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
@@ -104,7 +110,9 @@ extend ProfilerNative:
             append_json_string(buffer, candidate.opt_level)
             append_text(buffer, ",\"exit_code\":")
             append_i64(buffer, candidate.exit_code)
-            append_text(buffer, "},\"metrics\":{\"execution_ms_mean\":{\"baseline\":")
+            append_text(buffer, "},\"workload_metadata_match\":")
+            append_text(buffer, "false" if workload_mismatch else "true")
+            append_text(buffer, ",\"metrics\":{\"execution_ms_mean\":{\"baseline\":")
             append_micros_as_millis(buffer, baseline.execution_mean_micros)
             append_text(buffer, ",\"candidate\":")
             append_micros_as_millis(buffer, candidate.execution_mean_micros)
@@ -156,6 +164,7 @@ extend ProfilerNative:
             warning_first: mutable bool = true
             warning_count: mutable i64 = NATIVE_ZERO
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different source paths or contents", source_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different workload metadata", workload_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different compiler commits", compiler_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different optimization levels", optimization_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline or candidate target execution failed", target_failure, &warning_first)
@@ -201,12 +210,12 @@ extend ProfilerNative:
             return report_error("baseline artifact is malformed or unsupported") if not unwrap_profile_artifact(baseline_data, &baseline_capture)
             return report_error("candidate artifact is malformed or unsupported") if not unwrap_profile_artifact(candidate_data, &candidate_capture)
             baseline: mutable ComparisonCapture = ComparisonCapture{
-                source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
+                source: [], workload_identity: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
-                source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
+                source: [], workload_identity: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
@@ -219,5 +228,3 @@ extend ProfilerNative:
                 return report_error("could not write native comparison report")
             _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &rendered[0], rendered.count) can Console
             return NATIVE_ZERO
-
-

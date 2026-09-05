@@ -216,6 +216,10 @@
         "environment_override_keys": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "arguments": {
+          "type": "array",
+          "items": { "type": "string" }
         }
       },
       "additionalProperties": true

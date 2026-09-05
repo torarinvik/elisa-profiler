@@ -24,6 +24,7 @@
     "kind": { "const": "profile_comparison" },
     "baseline": { "$ref": "#/$defs/identity" },
     "candidate": { "$ref": "#/$defs/identity" },
+    "workload_metadata_match": { "type": "boolean" },
     "threshold_percent": { "type": "number", "minimum": 0 },
     "metrics": {
       "type": "object",
