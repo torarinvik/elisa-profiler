@@ -67,9 +67,10 @@ The canonical implementation is Elisa. The native executable is built with
 implementation helpers private. Invoke the built executable directly as
 `bin/elisa-profiler`. The former Python implementation remains only at
 `scripts/elisa-profiler-legacy.py` as a migration oracle for legacy fixture
-tests; no user-facing command dispatches to it. The launcher exports absolute
+tests; no user-facing command dispatches to it. The native executable resolves
 defaults for the dedicated compiler worktree, runtime object, and collector
-source, so it is safe to invoke from outside the repository directory.
+source relative to its own location, so it is safe to invoke from outside the
+repository directory.
 
 The native build pipeline passes compiler, object-copy, collector, linker, and
 Git metadata operations through direct argument vectors. It does not construct
