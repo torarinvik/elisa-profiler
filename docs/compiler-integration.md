@@ -8,24 +8,27 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-9c5ca036 Merge branch 'work' into codex/profiler
+095ca058 Merge branch 'codex/wasm-sdk' into codex/profiler
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
 found in the compiler worktrees during profiler setup, the qualified-module
 error-call lowering fix from `codex/wasm-sdk`, and the later packed-header
-storage fix from the main compiler checkout. The `codex/wasm-sdk` tip
-`4f368a66` is included through merge `330633ea`; `d8cadbb1` then corrects
-generated C-header accounting for inline dynamic-AoS common fields versus
-side-table common fields and records the packed side-table offsets accurately.
+storage fix from the main compiler checkout. The dedicated branch now includes
+the complete `codex/wasm-sdk` tip `88448c3f` through merge `095ca058`.
+That ancestry includes the packed-store activation, effect-identity lowering,
+qualified-owner error-call preservation, semantic-gate documentation, nested
+stage0 resolution, bounded self-host reproducibility probes, and gen2
+construction guard from that branch. `d8cadbb1` then corrects generated
+C-header accounting for inline dynamic-AoS common fields versus side-table
+common fields and records the packed side-table offsets accurately.
 `5028591f` fixes the parity harness defaults so a compiler worktree nested
 under `elisa-compiler-worktrees/` resolves the sibling stage0 checkout at
 `../../../Go projects/structpy-tree` instead of the nonexistent path under
-`Elisa Projects/`. The dedicated branch then merged the current `work` tip as
-`9c5ca036`, bringing the packed-store, effect-identity, and semantic-gate
-commits into the audited ancestry. The source trees for the packed/effect
-changes were already represented by equivalent or newer dedicated changes, so
-the semantic merge result changed only the remaining documentation files while
+`Elisa Projects/`. The dedicated branch first merged the current `work` tip as
+`9c5ca036`, then merged `codex/wasm-sdk` as `095ca058`. Several source changes
+were already represented by equivalent or newer dedicated changes, so the
+latter semantic merge changed only the remaining backend/test files while
 retaining every source commit in history. The dedicated compiler branch also
 contains the previously committed profiler-facing CLI fix and the complete
 committed ancestry of the local compiler branches. `make
@@ -82,9 +85,9 @@ mutating their original worktrees:
 - The transpiler stage1 worktree: module code generation, packed-register and type
   table code generation, machine-statement and aggregate-type parsing, and breadth
   object-emission coverage.
-- The wasm SDK compiler branch: qualified module error-call lowering and its
-  parity/reproduction fixtures, merged as committed source rather than copied
-  over the sibling worktree.
+- The wasm SDK compiler branch: qualified module error-call lowering plus its
+  packed/effect/semantic-gate and self-host regression fixes, merged through
+  committed ancestry rather than copied over the sibling worktree.
 
 The other audited worktrees were inspected as well. Worktrees whose only delta was
 `.DS_Store` were not imported; the Neural Workshop worktree had no missing compiler
