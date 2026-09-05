@@ -147,6 +147,22 @@ def main() -> int:
                 "native comparison failed at the largest bounded timing value: "
                 f"{rendered_large.stderr or rendered_large.stdout}"
             )
+
+        control_path = root / "control-character.json"
+        control_bytes = json.dumps(capture([])).encode("utf-8").replace(
+            b"fixture.elisa", b"fixture\ninvalid"
+        )
+        # The literal newline is intentionally invalid JSON; it exercises the
+        # native parser rather than Python's JSON writer.
+        control_path.write_bytes(control_bytes)
+        rejected_control = subprocess.run(
+            [str(profiler), "compare", control_path, control_path, "--format", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if rejected_control.returncode == 0:
+            raise SystemExit("native comparison accepted a raw control character in JSON")
     print("native workload comparison smoke OK")
     return 0
 

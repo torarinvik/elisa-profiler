@@ -65,6 +65,8 @@ extend ProfilerNative:
                         escaped <- false
                     elif byte == NATIVE_BYTE_BACKSLASH:
                         escaped <- true
+                    elif byte < NATIVE_BYTE_CONTROL_LIMIT:
+                        return NATIVE_NEGATIVE_ONE
                     elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
                         in_string <- false
                 elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
@@ -131,6 +133,7 @@ extend ProfilerNative:
                 if byte == NATIVE_BYTE_DOUBLE_QUOTE:
                     return (cursor + NATIVE_ONE.usize()).i64()
                 if byte != NATIVE_BYTE_BACKSLASH:
+                    return NATIVE_NEGATIVE_ONE if byte < NATIVE_BYTE_CONTROL_LIMIT
                     destination.push(byte)
                     cursor <- cursor + NATIVE_ONE.usize()
                     continue
