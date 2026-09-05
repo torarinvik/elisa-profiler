@@ -70,6 +70,7 @@
         "capture_byte_limit": { "type": "integer", "minimum": 0 },
         "capture_bytes_used": { "type": "integer", "minimum": 0 },
         "capture_bytes_dropped": { "type": "integer", "minimum": 0 },
+        "frame_dropped": { "type": "integer", "minimum": 0 },
         "detail_budget_exceeded": { "type": "boolean" },
         "dropped_call_edges": { "type": "integer", "minimum": 0 },
         "dropped_stacks": { "type": "integer", "minimum": 0 },
@@ -160,6 +161,16 @@
           "properties": {
             "event_classes": { "type": "array", "items": { "type": "string", "enum": ["function", "statement", "value"] }, "minItems": 1, "uniqueItems": true },
             "trace": { "type": "string", "enum": ["full", "disabled"] },
+            "transport": {
+              "type": "object",
+              "required": ["framing", "checksum", "sequence"],
+              "properties": {
+                "framing": { "type": "string", "enum": ["record"] },
+                "checksum": { "type": "string", "enum": ["fnv1a64"] },
+                "sequence": { "type": "string", "enum": ["strict"] }
+              },
+              "additionalProperties": false
+            },
             "recent_path": { "type": "string", "enum": ["last_256", "disabled"] },
             "timing": { "type": "string", "enum": ["wall"] },
             "sampling": { "type": "string", "enum": ["unsupported"] },
@@ -323,6 +334,7 @@
         "capture_byte_limit": { "type": "integer", "minimum": 0 },
         "capture_bytes_used": { "type": "integer", "minimum": 0 },
         "capture_bytes_dropped": { "type": "integer", "minimum": 0 },
+        "frame_dropped": { "type": "integer", "minimum": 0 },
         "detail_budget_exceeded": { "type": "boolean" },
         "dropped_call_edges": { "type": "integer", "minimum": 0 },
         "dropped_stacks": { "type": "integer", "minimum": 0 },

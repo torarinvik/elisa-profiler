@@ -40,6 +40,32 @@ extend ProfilerNative:
             return true
 
 
+        def protocol_unsigned_u64(value: darray[u8]&) -> bool can[Abort.Panic]:
+            false return if value.count == NATIVE_ZERO.usize()
+            parsed: mutable u64 = 0
+            for index in 0..<value.count |value, parsed|:
+                false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
+                digit: u64 = (value[index] - NATIVE_BYTE_ASCII_ZERO).u64()
+                false return if parsed > (NATIVE_U64_MAX - digit) / NATIVE_DECIMAL_BASE.u64()
+                parsed <- parsed * NATIVE_DECIMAL_BASE.u64() + digit
+            return true
+
+
+        def protocol_u64_number_field(value: darray[u8]&) -> u64 can[Abort.Panic]:
+            return 0 if not protocol_unsigned_u64(value)
+            result: mutable u64 = 0
+            for index in 0..<value.count |result, value|:
+                result <- result * NATIVE_DECIMAL_BASE.u64() + (value[index] - NATIVE_BYTE_ASCII_ZERO).u64()
+            return result
+
+
+        def frame_checksum(data: darray[u8]&, start: usize, stop: usize) -> u64 can[Abort.Panic]:
+            checksum: mutable u64 = NATIVE_FRAME_FNV_OFFSET
+            for index in start..<stop |checksum, data|:
+                checksum <- (checksum ^ data[index].u64()) * NATIVE_FRAME_FNV_PRIME
+            return checksum
+
+
         def protocol_signed(value: darray[u8]&, allow_overflow: bool) -> bool can[Abort.Panic]:
             return true if allow_overflow and protocol_field_is(value, "overflow")
             false return if value.count == NATIVE_ZERO.usize()
@@ -432,6 +458,7 @@ extend ProfilerNative:
                 capture_byte_limit: NATIVE_ZERO,
                 capture_bytes_used: NATIVE_ZERO,
                 capture_bytes_dropped: NATIVE_ZERO,
+                frame_dropped: NATIVE_ZERO,
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
@@ -458,8 +485,12 @@ extend ProfilerNative:
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
             crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
+            frame_prefix: sview = "ELISA_PROFILE\t1\tframe\t"
+            protocol_prefix: sview = "ELISA_PROFILE\t1\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
             line_count: mutable usize = NATIVE_ZERO.usize()
+            framed_capture: mutable bool = false
+            next_frame_sequence: mutable i64 = NATIVE_ZERO
             while line_start < data.count |line_start, line_count, data, summary|:
                 if line_count >= NATIVE_MAX_PROTOCOL_LINES:
                     summary.malformed <- true
@@ -472,84 +503,112 @@ extend ProfilerNative:
                 if line_stop - line_start > NATIVE_MAX_PROTOCOL_LINE_BYTES:
                     summary.malformed <- true
                     summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                elif line_prefix(data, line_start, line_stop, begin_prefix):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len(begin_prefix)
-                    marker: i64 = parse_protocol_number(data, &cursor, line_stop)
-                    if cursor != line_stop or marker != NATIVE_ONE or line_count != NATIVE_ONE.usize() or summary.capture_started or summary.capture_complete:
+                else:
+                    record_start: mutable usize = line_start
+                    frame_valid: mutable bool = true
+                    if line_prefix(data, line_start, line_stop, frame_prefix):
+                        framed_capture <- true
+                        frame_cursor: mutable usize = line_start + profiler_ffi_sview_len(frame_prefix)
+                        frame_sequence: i64 = parse_protocol_number(data, &frame_cursor, line_stop)
+                        frame_length: i64 = parse_protocol_number(data, &frame_cursor, line_stop)
+                        checksum_field: mutable darray[u8] = []
+                        frame_cursor <- protocol_field_into(data, frame_cursor, line_stop, &checksum_field)
+                        frame_valid <- frame_sequence == next_frame_sequence and frame_sequence >= NATIVE_ZERO
+                        frame_valid <- frame_valid and frame_length >= NATIVE_ZERO and frame_cursor <= line_stop
+                        frame_valid <- frame_valid and protocol_unsigned_u64(checksum_field)
+                        frame_valid <- frame_valid and frame_length == (line_stop - frame_cursor).i64()
+                        frame_valid <- frame_valid and frame_checksum(data, frame_cursor, line_stop) == protocol_u64_number_field(checksum_field)
+                        if frame_valid:
+                            record_start <- frame_cursor
+                            next_frame_sequence <- next_frame_sequence + NATIVE_ONE
+                        else:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
+                    elif framed_capture and not line_prefix(data, line_start, line_stop, crash_prefix):
+                        frame_valid <- false
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
+                    if frame_valid and line_prefix(data, record_start, line_stop, begin_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(begin_prefix)
+                        marker: i64 = parse_protocol_number(data, &cursor, line_stop)
+                        if cursor != line_stop or marker != NATIVE_ONE or line_count != NATIVE_ONE.usize() or summary.capture_started or summary.capture_complete:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                        else:
+                            summary.capture_started <- true
+                    elif frame_valid and line_prefix(data, record_start, line_stop, end_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(end_prefix)
+                        marker: i64 = parse_protocol_number(data, &cursor, line_stop)
+                        if cursor != line_stop or marker != NATIVE_ONE or not summary.capture_started or summary.capture_complete:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                        else:
+                            summary.capture_complete <- true
+                    elif frame_valid and summary.capture_complete and line_prefix(data, record_start, line_stop, protocol_prefix):
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                    else:
-                        summary.capture_started <- true
-                elif line_prefix(data, line_start, line_stop, end_prefix):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len(end_prefix)
-                    marker: i64 = parse_protocol_number(data, &cursor, line_stop)
-                    if cursor != line_stop or marker != NATIVE_ONE or not summary.capture_started or summary.capture_complete:
+                    elif frame_valid and line_prefix(data, record_start, line_stop, meta_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(meta_prefix)
+                        summary.events <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.locations <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.dropped <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.max_stack_depth <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.stack_overflow_entries <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.thread_count <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.location_limit <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.call_edge_limit <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.stack_limit <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.budget_exceeded <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.call_edge_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.stack_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.capture_byte_limit <- parse_protocol_number(data, &cursor, line_stop)
+                            summary.capture_bytes_used <- parse_protocol_number(data, &cursor, line_stop)
+                            summary.capture_bytes_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.frame_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor != line_stop:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                        if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO or summary.frame_dropped < NATIVE_ZERO:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    elif frame_valid and line_prefix(data, record_start, line_stop, trace_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(trace_prefix)
+                        summary.trace_enabled <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
+                        summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor != line_stop:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                        if summary.trace_enabled < NATIVE_ZERO or summary.trace_captured < NATIVE_ZERO or summary.trace_omitted < NATIVE_ZERO or summary.trace_limit < NATIVE_ZERO:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    elif frame_valid and line_prefix(data, record_start, line_stop, crash_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(crash_prefix)
+                        summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor != line_stop:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                        if summary.crash_signal < NATIVE_ZERO:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
+                        append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tcall\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tcall\t")
+                        append_call_record(&summary, &call_edge_records, data, &cursor, line_stop)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
+                        append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
+                        append_event_record(&summary, &event_records, data, &cursor, line_stop, source)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, protocol_prefix):
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                    else:
-                        summary.capture_complete <- true
-                elif summary.capture_complete and line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\t"):
-                    summary.malformed <- true
-                    summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                elif line_prefix(data, line_start, line_stop, meta_prefix):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len(meta_prefix)
-                    summary.events <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.locations <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.dropped <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.max_stack_depth <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.stack_overflow_entries <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.thread_count <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.location_limit <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.call_edge_limit <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.stack_limit <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.budget_exceeded <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.call_edge_dropped <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.stack_dropped <- parse_protocol_number(data, &cursor, line_stop)
-                    if cursor < line_stop:
-                        summary.capture_byte_limit <- parse_protocol_number(data, &cursor, line_stop)
-                        summary.capture_bytes_used <- parse_protocol_number(data, &cursor, line_stop)
-                        summary.capture_bytes_dropped <- parse_protocol_number(data, &cursor, line_stop)
-                    if cursor != line_stop:
-                        summary.malformed <- true
-                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                    if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO:
-                        summary.malformed <- true
-                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                elif line_prefix(data, line_start, line_stop, trace_prefix):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len(trace_prefix)
-                    summary.trace_enabled <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
-                    summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
-                    if cursor != line_stop:
-                        summary.malformed <- true
-                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                    if summary.trace_enabled < NATIVE_ZERO or summary.trace_captured < NATIVE_ZERO or summary.trace_omitted < NATIVE_ZERO or summary.trace_limit < NATIVE_ZERO:
-                        summary.malformed <- true
-                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                elif line_prefix(data, line_start, line_stop, crash_prefix):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len(crash_prefix)
-                    summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
-                    if cursor != line_stop:
-                        summary.malformed <- true
-                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                    if summary.crash_signal < NATIVE_ZERO:
-                        summary.malformed <- true
-                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
-                    append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source)
-                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tcall\t"):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tcall\t")
-                    append_call_record(&summary, &call_edge_records, data, &cursor, line_stop)
-                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
-                    append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop)
-                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
-                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
-                    append_event_record(&summary, &event_records, data, &cursor, line_stop, source)
-                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\t"):
-                    summary.malformed <- true
                 line_start <- line_stop + NATIVE_ONE.usize()
             summary.location_records <- location_records
             summary.function_records <- function_records

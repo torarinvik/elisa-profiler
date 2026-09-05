@@ -499,6 +499,7 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &capture.events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &capture.locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &capture.dropped)
+            return false if not json_read_optional_number_field(data, "frame_dropped", summary_start.usize(), summary_stop.usize(), &capture.frame_dropped)
             return false if not json_read_optional_number_field(data, "dropped_call_edges", summary_start.usize(), summary_stop.usize(), &capture.dropped_call_edges)
             return false if not json_read_optional_number_field(data, "dropped_stacks", summary_start.usize(), summary_stop.usize(), &capture.dropped_stacks)
             return false if not json_read_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &capture.stack_overflow_entries)

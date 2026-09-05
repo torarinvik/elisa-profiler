@@ -81,6 +81,8 @@ enum {
     PROFILE_DEFAULT_CALL_PATH_LIMIT = 32768,
     PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT = 64 * 1024 * 1024,
     PROFILE_EVENT_TRACE_FIXED_BYTES = 64,
+    PROFILE_FRAME_BUFFER_BYTES = 1024 * 1024,
+    PROFILE_FRAME_HEADER_BYTES = 128,
     PROFILE_INITIAL_LOCATION_CAPACITY = 256,
     PROFILE_INITIAL_CALL_EDGE_CAPACITY = 64,
     PROFILE_INITIAL_CALL_PATH_CAPACITY = 64,
@@ -89,6 +91,9 @@ enum {
     PROFILE_TABLE_LOAD_DENOMINATOR = 7,
     PROFILE_DECIMAL_DIGITS = 20,
 };
+
+static const uint64_t PROFILE_FRAME_FNV_OFFSET = UINT64_C(14695981039346656037);
+static const uint64_t PROFILE_FRAME_FNV_PRIME = UINT64_C(1099511628211);
 
 typedef struct {
     const char *function_name;
@@ -136,15 +141,158 @@ static uint64_t profile_event_trace_limit;
 static uint64_t profile_event_trace_captured;
 static uint64_t profile_event_trace_omitted;
 static int profile_output_fd = STDERR_FILENO;
+static int profile_framing_enabled;
+static uint64_t profile_frame_sequence;
+static uint64_t profile_frame_dropped_count;
+static char profile_frame_buffer[PROFILE_FRAME_BUFFER_BYTES];
+static size_t profile_frame_length;
+static int profile_frame_overflowed;
+
+static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
+
+static int profile_write_all(const char *buffer, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        ssize_t written = write(profile_output_fd, buffer + offset, length - offset);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 0;
+        }
+        if (written == 0) {
+            return 0;
+        }
+        offset += (size_t)written;
+    }
+    return 1;
+}
+
+static int profile_environment_is_true(const char *name) {
+    const char *value = getenv(name);
+    return value != NULL && strcmp(value, "1") == 0;
+}
+
+static void profile_record_reset(void) {
+    profile_frame_length = 0;
+    profile_frame_overflowed = 0;
+}
+
+static void profile_record_append_bytes(const char *bytes, size_t length) {
+    if (profile_frame_overflowed || length > PROFILE_FRAME_BUFFER_BYTES - profile_frame_length) {
+        profile_frame_overflowed = 1;
+        return;
+    }
+    memcpy(profile_frame_buffer + profile_frame_length, bytes, length);
+    profile_frame_length += length;
+}
+
+static void profile_record_append_text(const char *text) {
+    profile_record_append_bytes(text, strlen(text));
+}
+
+static void profile_record_append_char(char value) {
+    profile_record_append_bytes(&value, 1);
+}
+
+static void profile_record_append_uint64(uint64_t value) {
+    char digits[PROFILE_DECIMAL_DIGITS + 1];
+    int length = snprintf(digits, sizeof(digits), "%" PRIu64, value);
+    if (length < 0) {
+        profile_frame_overflowed = 1;
+        return;
+    }
+    profile_record_append_bytes(digits, (size_t)length);
+}
+
+static void profile_record_append_int64(int64_t value) {
+    char digits[PROFILE_DECIMAL_DIGITS + 2];
+    int length = snprintf(digits, sizeof(digits), "%" PRId64, value);
+    if (length < 0) {
+        profile_frame_overflowed = 1;
+        return;
+    }
+    profile_record_append_bytes(digits, (size_t)length);
+}
+
+static void profile_record_append_field(const char *value) {
+    if (value == NULL) {
+        profile_record_append_char('-');
+        return;
+    }
+    for (const unsigned char *cursor = (const unsigned char *)value;
+         *cursor != 0;
+         ++cursor) {
+        char output = (*cursor == '\t' || *cursor == '\n' || *cursor == '\r')
+                          ? '_'
+                          : (char)*cursor;
+        profile_record_append_char(output);
+    }
+}
+
+static uint64_t profile_frame_checksum(const char *bytes, size_t length) {
+    uint64_t checksum = PROFILE_FRAME_FNV_OFFSET;
+    for (size_t index = 0; index < length; ++index) {
+        checksum ^= (unsigned char)bytes[index];
+        checksum *= PROFILE_FRAME_FNV_PRIME;
+    }
+    return checksum;
+}
+
+static void profile_record_emit(void) {
+    if (profile_frame_overflowed) {
+        ++profile_frame_dropped_count;
+        profile_budget_exceeded = 1;
+        profile_capture_bytes_dropped = profile_saturating_add_u64(
+            profile_capture_bytes_dropped, profile_frame_length);
+        return;
+    }
+    if (!profile_framing_enabled) {
+        (void)profile_write_all(profile_frame_buffer, profile_frame_length);
+        static const char newline[] = "\n";
+        (void)profile_write_all(newline, sizeof(newline) - 1);
+        return;
+    }
+    char header[PROFILE_FRAME_HEADER_BYTES];
+    int header_length = snprintf(
+        header, sizeof(header), "ELISA_PROFILE\t1\tframe\t%" PRIu64 "\t%zu\t%" PRIu64 "\t",
+        profile_frame_sequence, profile_frame_length,
+        profile_frame_checksum(profile_frame_buffer, profile_frame_length));
+    if (header_length < 0 || (size_t)header_length >= sizeof(header)) {
+        ++profile_frame_dropped_count;
+        profile_budget_exceeded = 1;
+        return;
+    }
+    int header_written = profile_write_all(header, (size_t)header_length);
+    int payload_written = header_written &&
+                          profile_write_all(profile_frame_buffer, profile_frame_length);
+    static const char newline[] = "\n";
+    int newline_written = payload_written &&
+                          profile_write_all(newline, sizeof(newline) - 1);
+    if (!newline_written) {
+        ++profile_frame_dropped_count;
+        profile_budget_exceeded = 1;
+    }
+    ++profile_frame_sequence;
+}
+
+static void profile_record_begin(void) {
+    profile_record_reset();
+    profile_record_append_text("ELISA_PROFILE\t1\t");
+}
 
 static void profile_write_capture_begin(FILE *stream) {
-    fprintf(stream, "ELISA_PROFILE\t%u\tbegin\t%u\n",
-            PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
+    (void)stream;
+    profile_record_begin();
+    profile_record_append_text("begin\t");
+    profile_record_append_uint64(PROFILE_PROTOCOL_VERSION);
+    profile_record_emit();
 }
 
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
     profile_output_fd = STDERR_FILENO;
+    profile_framing_enabled = profile_environment_is_true("ELISA_PROFILE_FRAMED");
     const char *fd_text = getenv("ELISA_PROFILE_FD");
     if (fd_text == NULL || *fd_text == '\0') {
         profile_write_capture_begin(profile_output_stream);
@@ -278,8 +426,6 @@ static _Thread_local size_t profile_call_overflow_depth;
 static _Thread_local profile_overflow_frame *profile_call_overflow_stack;
 static _Thread_local size_t profile_call_overflow_untracked_depth;
 static _Thread_local profile_thread_state *profile_current_thread;
-
-static void profile_print_field(const char *value);
 
 static void profile_push_overflow_frame(const char *function_name, uint32_t line) {
     /* Once one allocation fails, keep later overflow entries untracked so a
@@ -829,17 +975,26 @@ static void profile_record(const char *function_name, uint32_t line,
                          profile_event_trace_captured < profile_event_trace_limit);
     if (trace_allowed &&
         profile_reserve_bytes_locked(profile_event_trace_bytes(function_name, variable_name))) {
-        fprintf(stderr, "ELISA_PROFILE\t1\tpath\t%" PRIu64 "\t%u\t",
-                profile_event_count - 1, kind);
-        profile_print_field(function_name);
-        fprintf(stderr, "\t%" PRIu32 "\t", line);
-        profile_print_field(variable_name);
-        fprintf(stderr, "\t%u\t", is_signed);
+        profile_record_begin();
+        profile_record_append_text("path\t");
+        profile_record_append_uint64(profile_event_count - 1);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(kind);
+        profile_record_append_char('\t');
+        profile_record_append_field(function_name);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(line);
+        profile_record_append_char('\t');
+        profile_record_append_field(variable_name);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(is_signed);
+        profile_record_append_char('\t');
         if (is_signed) {
-            fprintf(stderr, "%" PRId64 "\n", (int64_t)value);
+            profile_record_append_int64((int64_t)value);
         } else {
-            fprintf(stderr, "%" PRIu64 "\n", value);
+            profile_record_append_uint64(value);
         }
+        profile_record_emit();
         ++profile_event_trace_captured;
     } else if (profile_event_trace_enabled) {
         ++profile_event_trace_omitted;
@@ -1176,22 +1331,7 @@ static int profile_call_path_compare(const void *left_pointer, const void *right
     return strcmp(left->function_name, right->function_name);
 }
 
-static void profile_print_field(const char *value) {
-    /* Elisa identifiers cannot contain tabs/newlines; still keep the protocol safe. */
-    if (value == NULL) {
-        fputs("-", stderr);
-        return;
-    }
-    for (const unsigned char *cursor = (const unsigned char *)value; *cursor != 0; ++cursor) {
-        if (*cursor == '\t' || *cursor == '\n' || *cursor == '\r') {
-            fputc('_', stderr);
-        } else {
-            fputc(*cursor, stderr);
-        }
-    }
-}
-
-static void profile_print_call_path(const profile_call_path *path) {
+static void profile_record_append_call_path(const profile_call_path *path) {
     const profile_call_path *nodes[PROFILE_CALL_STACK_CAPACITY];
     size_t depth = 0;
     for (const profile_call_path *node = path;
@@ -1201,41 +1341,71 @@ static void profile_print_call_path(const profile_call_path *path) {
     }
     for (size_t index = depth; index > 0; --index) {
         if (index != depth) {
-            fputc(';', stderr);
+            profile_record_append_char(';');
         }
-        profile_print_field(nodes[index - 1]->function_name);
+        profile_record_append_field(nodes[index - 1]->function_name);
     }
 }
 
 static void profile_dump(void);
 
 static void profile_dump_end(void) {
-    fprintf(stderr, "ELISA_PROFILE\t%u\tend\t%u\n",
-            PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
+    profile_record_begin();
+    profile_record_append_text("end\t");
+    profile_record_append_uint64(PROFILE_PROTOCOL_VERSION);
+    profile_record_emit();
 }
 
 static void profile_dump_trace_status(void) {
-    fprintf(stderr, "ELISA_PROFILE\t1\ttrace\t%u\t%" PRIu64 "\t%" PRIu64
-                    "\t%" PRIu64 "\n",
-            profile_event_trace_enabled ? 1U : 0U,
-            profile_event_trace_captured,
-            profile_event_trace_omitted,
-            profile_event_trace_limit);
+    profile_record_begin();
+    profile_record_append_text("trace\t");
+    profile_record_append_uint64(profile_event_trace_enabled ? 1U : 0U);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_event_trace_captured);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_event_trace_omitted);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_event_trace_limit);
+    profile_record_emit();
 }
 
 static void profile_dump_metadata(size_t location_count) {
-    fprintf(stderr,
-            "ELISA_PROFILE\t1\tmeta\t%" PRIu64 "\t%zu\t%" PRIu64
-            "\t%zu\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64
-            "\t%" PRIu64 "\t%d\t%" PRIu64 "\t%" PRIu64
-            "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
-            profile_event_count, location_count, profile_dropped_count,
-            profile_max_call_depth, profile_stack_overflow_entries,
-            profile_thread_count, profile_location_limit,
-            profile_call_edge_limit, profile_call_path_limit,
-            profile_budget_exceeded, profile_call_edge_dropped_count,
-            profile_call_path_dropped_count, profile_capture_byte_limit,
-            profile_capture_bytes_used, profile_capture_bytes_dropped);
+    profile_record_begin();
+    profile_record_append_text("meta\t");
+    profile_record_append_uint64(profile_event_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(location_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_dropped_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_max_call_depth);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_stack_overflow_entries);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_thread_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_location_limit);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_call_edge_limit);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_call_path_limit);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_budget_exceeded);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_call_edge_dropped_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_call_path_dropped_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_capture_byte_limit);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_capture_bytes_used);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_capture_bytes_dropped);
+    if (profile_framing_enabled) {
+        profile_record_append_char('\t');
+        profile_record_append_uint64(profile_frame_dropped_count);
+    }
+    profile_record_emit();
 }
 
 static void profile_dump_recent_path(void) {
@@ -1245,17 +1415,26 @@ static void profile_dump_recent_path(void) {
     for (uint64_t sequence = start; sequence < profile_recent_position; ++sequence) {
         const profile_recent_entry *entry =
             &profile_recent[sequence % PROFILE_RECENT_CAPACITY];
-        fprintf(stderr, "ELISA_PROFILE\t1\tpath\t%" PRIu64 "\t%u\t",
-                sequence - start, entry->kind);
-        profile_print_field(entry->function_name);
-        fprintf(stderr, "\t%" PRIu32 "\t", entry->line);
-        profile_print_field(entry->variable_name);
-        fprintf(stderr, "\t%u\t", entry->is_signed);
+        profile_record_begin();
+        profile_record_append_text("path\t");
+        profile_record_append_uint64(sequence - start);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->kind);
+        profile_record_append_char('\t');
+        profile_record_append_field(entry->function_name);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->line);
+        profile_record_append_char('\t');
+        profile_record_append_field(entry->variable_name);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->is_signed);
+        profile_record_append_char('\t');
         if (entry->is_signed) {
-            fprintf(stderr, "%" PRId64 "\n", (int64_t)entry->value);
+            profile_record_append_int64((int64_t)entry->value);
         } else {
-            fprintf(stderr, "%" PRIu64 "\n", entry->value);
+            profile_record_append_uint64(entry->value);
         }
+        profile_record_emit();
     }
 }
 
@@ -1263,19 +1442,23 @@ static void profile_dump_active_stack(void) {
     if (profile_call_depth == 0 && profile_call_overflow_depth == 0) {
         return;
     }
-    fprintf(stderr, "ELISA_PROFILE\t1\tactive\t%zu\t%zu\t",
-            profile_call_depth, profile_call_overflow_depth);
+    profile_record_begin();
+    profile_record_append_text("active\t");
+    profile_record_append_uint64(profile_call_depth);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_call_overflow_depth);
+    profile_record_append_char('\t');
     if (profile_call_depth == 0) {
-        fputc('-', stderr);
+        profile_record_append_char('-');
     } else {
         for (size_t index = 0; index < profile_call_depth; ++index) {
             if (index != 0) {
-                fputc(';', stderr);
+                profile_record_append_char(';');
             }
-            profile_print_field(profile_call_stack[index].function_name);
+            profile_record_append_field(profile_call_stack[index].function_name);
         }
     }
-    fputc('\n', stderr);
+    profile_record_emit();
 }
 
 static size_t profile_signal_append_literal(char *buffer, size_t offset,
@@ -1374,38 +1557,59 @@ static void profile_dump_body(void) {
     profile_dump_trace_status();
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];
-        fprintf(stderr, "ELISA_PROFILE\t1\tlocation\t%u\t", entry->kind);
-        profile_print_field(entry->function_name);
-        fprintf(stderr, "\t%" PRIu32 "\t%" PRIu64 "\t", entry->line, entry->count);
-        profile_print_field(entry->variable_name);
-        fprintf(stderr, "\t%u\t", entry->is_signed);
+        profile_record_begin();
+        profile_record_append_text("location\t");
+        profile_record_append_uint64(entry->kind);
+        profile_record_append_char('\t');
+        profile_record_append_field(entry->function_name);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->line);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->count);
+        profile_record_append_char('\t');
+        profile_record_append_field(entry->variable_name);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->is_signed);
+        profile_record_append_char('\t');
         if (entry->kind == PROFILE_KIND_FUNCTION) {
-            fprintf(stderr, "%" PRIu64 "\t%" PRIu64 "\t%" PRIu64,
-                    entry->inclusive_ns, entry->self_ns, entry->completed_calls);
+            profile_record_append_uint64(entry->inclusive_ns);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(entry->self_ns);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(entry->completed_calls);
         } else if (entry->is_signed) {
-            fprintf(stderr, "%" PRId64 "\t%" PRId64 "\t",
-                    (int64_t)entry->minimum, (int64_t)entry->maximum);
+            profile_record_append_int64((int64_t)entry->minimum);
+            profile_record_append_char('\t');
+            profile_record_append_int64((int64_t)entry->maximum);
+            profile_record_append_char('\t');
             if (entry->signed_sum > (__int128_t)INT64_MAX ||
                 entry->signed_sum < (__int128_t)INT64_MIN) {
-                fputs("overflow", stderr);
+                profile_record_append_text("overflow");
             } else {
-                fprintf(stderr, "%" PRId64, (int64_t)entry->signed_sum);
+                profile_record_append_int64((int64_t)entry->signed_sum);
             }
         } else {
-            fprintf(stderr, "%" PRIu64 "\t%" PRIu64 "\t", entry->minimum, entry->maximum);
+            profile_record_append_uint64(entry->minimum);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(entry->maximum);
+            profile_record_append_char('\t');
             if (entry->sum > UINT64_MAX) {
-                fputs("overflow", stderr);
+                profile_record_append_text("overflow");
             } else {
-                fprintf(stderr, "%" PRIu64, (uint64_t)entry->sum);
+                profile_record_append_uint64((uint64_t)entry->sum);
             }
         }
+        profile_record_append_char('\t');
         if (entry->is_signed) {
-            fprintf(stderr, "\t%" PRId64, (int64_t)entry->last);
+            profile_record_append_int64((int64_t)entry->last);
         } else {
-            fprintf(stderr, "\t%" PRIu64, entry->last);
+            profile_record_append_uint64(entry->last);
         }
-        fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\n",
-                entry->interval_ns, entry->max_interval_ns);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->interval_ns);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(entry->max_interval_ns);
+        profile_record_emit();
     }
     profile_call_edge **call_edges = calloc(
         profile_call_edge_size == 0 ? 1 : profile_call_edge_size, sizeof(*call_edges));
@@ -1419,12 +1623,18 @@ static void profile_dump_body(void) {
         qsort(call_edges, call_output_count, sizeof(*call_edges), profile_call_edge_compare);
         for (size_t index = 0; index < call_output_count; ++index) {
             const profile_call_edge *edge = call_edges[index];
-            fputs("ELISA_PROFILE\t1\tcall\t", stderr);
-            profile_print_field(edge->caller_name);
-            fputc('\t', stderr);
-            profile_print_field(edge->callee_name);
-            fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
-                    edge->call_events, edge->completed_calls, edge->inclusive_ns);
+            profile_record_begin();
+            profile_record_append_text("call\t");
+            profile_record_append_field(edge->caller_name);
+            profile_record_append_char('\t');
+            profile_record_append_field(edge->callee_name);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(edge->call_events);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(edge->completed_calls);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(edge->inclusive_ns);
+            profile_record_emit();
         }
         free(call_edges);
     }
@@ -1440,10 +1650,16 @@ static void profile_dump_body(void) {
         qsort(paths, path_output_count, sizeof(*paths), profile_call_path_compare);
         for (size_t index = 0; index < path_output_count; ++index) {
             const profile_call_path *path = paths[index];
-            fputs("ELISA_PROFILE\t1\tstack\t", stderr);
-            profile_print_call_path(path);
-            fprintf(stderr, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\n",
-                    path->call_events, path->completed_calls, path->self_ns);
+            profile_record_begin();
+            profile_record_append_text("stack\t");
+            profile_record_append_call_path(path);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(path->call_events);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(path->completed_calls);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(path->self_ns);
+            profile_record_emit();
         }
         free(paths);
     }

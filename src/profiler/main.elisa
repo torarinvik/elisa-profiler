@@ -527,7 +527,7 @@ extend ProfilerNative:
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
-            detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
+            detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
             append_text(buffer, "\"quality\":{\"capture\":\"")
             if status < NATIVE_ZERO:
                 append_text(buffer, "profiler_failure")
@@ -588,6 +588,10 @@ extend ProfilerNative:
             if summary.capture_bytes_dropped > NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
                 append_text(buffer, "\"capture_byte_budget\"")
+                first_reason <- false
+            if summary.frame_dropped > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"framed_transport_loss\"")
                 first_reason <- false
             if summary.stack_overflow_entries > NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
@@ -714,6 +718,7 @@ extend ProfilerNative:
                 append_text(buffer, "\"function\",\"statement\",\"value\"")
             append_text(buffer, "],\"trace\":")
             append_text(buffer, "\"full\"" if event_trace else "\"disabled\"")
+            append_text(buffer, ",\"transport\":{\"framing\":\"record\",\"checksum\":\"fnv1a64\",\"sequence\":\"strict\"}")
             append_text(buffer, ",\"recent_path\":")
             append_text(buffer, "\"last_256\"" if recent_path else "\"disabled\"")
             append_text(buffer, ",\"timing\":\"wall\",\"sampling\":\"unsupported\",\"detail_limits\":{\"locations\":")
@@ -779,6 +784,8 @@ extend ProfilerNative:
             append_i64(buffer, summary.capture_bytes_used)
             append_text(buffer, ",\"capture_bytes_dropped\":")
             append_i64(buffer, summary.capture_bytes_dropped)
+            append_text(buffer, ",\"frame_dropped\":")
+            append_i64(buffer, summary.frame_dropped)
             append_text(buffer, ",\"detail_budget_exceeded\":")
             append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
             append_text(buffer, ",\"dropped_call_edges\":")

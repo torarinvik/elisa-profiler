@@ -31,6 +31,7 @@ module ProfilerNative:
         const NATIVE_HEX_DIGIT_ALPHA_VALUE: i64 = 10
         const NATIVE_I64_MAX: i64 = 9223372036854775807
         const NATIVE_I64_MIN: i64 = -9223372036854775807 - 1
+        const NATIVE_U64_MAX: u64 = 18446744073709551615
         const NATIVE_NANOS_PER_SECOND: i64 = 1000000000
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
@@ -163,6 +164,9 @@ module ProfilerNative:
         const NATIVE_PROTOCOL_ERROR_STACK: i64 = 3
         const NATIVE_PROTOCOL_ERROR_EVENT: i64 = 4
         const NATIVE_PROTOCOL_ERROR_META: i64 = 5
+        const NATIVE_PROTOCOL_ERROR_FRAME: i64 = 6
+        const NATIVE_FRAME_FNV_OFFSET: u64 = 14695981039346656037
+        const NATIVE_FRAME_FNV_PRIME: u64 = 1099511628211
         const NATIVE_DETAIL_ARRAY_FUNCTIONS: i64 = 1
         const NATIVE_DETAIL_ARRAY_CALL_EDGES: i64 = 2
         const NATIVE_DETAIL_ARRAY_STACKS: i64 = 3
@@ -201,6 +205,7 @@ module ProfilerNative:
             capture_byte_limit: mutable i64
             capture_bytes_used: mutable i64
             capture_bytes_dropped: mutable i64
+            frame_dropped: mutable i64
             budget_exceeded: mutable i64
             call_edge_dropped: mutable i64
             stack_dropped: mutable i64
@@ -226,6 +231,7 @@ module ProfilerNative:
             events: mutable i64
             locations: mutable i64
             dropped: mutable i64
+            frame_dropped: mutable i64
             dropped_call_edges: mutable i64
             dropped_stacks: mutable i64
             stack_overflow_entries: mutable i64

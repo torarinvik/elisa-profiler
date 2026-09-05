@@ -30,6 +30,7 @@ extend ProfilerNative:
                 capture_byte_limit: NATIVE_ZERO,
                 capture_bytes_used: NATIVE_ZERO,
                 capture_bytes_dropped: NATIVE_ZERO,
+                frame_dropped: NATIVE_ZERO,
                 budget_exceeded: NATIVE_ZERO,
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
@@ -71,6 +72,7 @@ extend ProfilerNative:
             destination.capture_byte_limit <- incoming.capture_byte_limit
             destination.capture_bytes_used <- destination.capture_bytes_used + incoming.capture_bytes_used
             destination.capture_bytes_dropped <- destination.capture_bytes_dropped + incoming.capture_bytes_dropped
+            destination.frame_dropped <- destination.frame_dropped + incoming.frame_dropped
             destination.budget_exceeded <- incoming.budget_exceeded if incoming.budget_exceeded != NATIVE_ZERO
             destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
             destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped
@@ -183,6 +185,8 @@ extend ProfilerNative:
             append_i64(buffer, summary.capture_bytes_used)
             append_text(buffer, ",\"capture_bytes_dropped\":")
             append_i64(buffer, summary.capture_bytes_dropped)
+            append_text(buffer, ",\"frame_dropped\":")
+            append_i64(buffer, summary.frame_dropped)
             append_text(buffer, ",\"detail_budget_exceeded\":")
             append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
             append_text(buffer, ",\"dropped_call_edges\":")

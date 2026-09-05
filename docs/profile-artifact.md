@@ -26,8 +26,11 @@ is validated with `docs/profile.schema.json`. `report` unwraps the envelope
 before rendering JSON, text, folded stacks, Speedscope, or HTML. `compare`
 also accepts either raw v1 reports or these envelopes.
 
-This is a compatibility container, not yet the final recoverable stream
-format. Chunk framing, checksums, progressive manifests, compression, source
-snapshots, and durable partial-capture recovery remain planned M2/M3 work.
+This is a compatibility container, not yet the final durable artifact format.
+The native collector transport is already record-framed: each streamed record
+carries a strict sequence number, byte length, and FNV-1a-64 checksum, and the
+Elisa decoder validates those fields before normalization. The JSON artifact
+still has no progressive manifest, compression, source snapshots, or durable
+partial-capture index; those remain planned M2/M3 work.
 The quality object inside the embedded capture is authoritative about target
 termination and bounded-detail loss.
