@@ -8,14 +8,16 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-095ca058 Merge branch 'codex/wasm-sdk' into codex/profiler
+ec2e76092aec4e7d87cb1852c0105a83d66b4704 Merge commit 'd58afa95b66b88684988a7be5de58452793a767e' into codex/profiler
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
 found in the compiler worktrees during profiler setup, the qualified-module
 error-call lowering fix from `codex/wasm-sdk`, and the later packed-header
 storage fix from the main compiler checkout. The dedicated branch now includes
-the complete `codex/wasm-sdk` tip `88448c3f` through merge `095ca058`.
+the complete `codex/wasm-sdk` tip `88448c3f` through merge `095ca058`. The
+current tip also contains the qualified-`usize` cast-inference fix from
+`d58afa95` and its parity fixture through `ec2e7609`.
 That ancestry includes the packed-store activation, effect-identity lowering,
 qualified-owner error-call preservation, semantic-gate documentation, nested
 stage0 resolution, bounded self-host reproducibility probes, and gen2
