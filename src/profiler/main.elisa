@@ -91,6 +91,7 @@ module ProfilerNative:
         const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192
+        const NATIVE_MAX_FILE_BYTES: usize = 134217728
         const NATIVE_DEFAULT_TRACE_LIMIT: i64 = 1000000
         const NATIVE_DEFAULT_CAPTURE_BYTES: i64 = 67108864
         const NATIVE_DIRECTORY_MODE: i64 = 448
@@ -803,7 +804,13 @@ module ProfilerNative:
             chunk: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_READ_CHUNK_BYTES]
             while true |result, chunk, fd|:
                 amount: i64 = profiler_ffi_read(fd, &chunk[0], chunk.count) can Console
-                break if amount <= NATIVE_ZERO
+                if amount < NATIVE_ZERO:
+                    _ = profiler_ffi_close(fd)
+                    return []
+                break if amount == NATIVE_ZERO
+                if amount.usize() > NATIVE_MAX_FILE_BYTES - result.count:
+                    _ = profiler_ffi_close(fd)
+                    return []
                 for index in 0..<amount.usize() |result, chunk|:
                     result.push(chunk[index])
             _ = profiler_ffi_close(fd)
