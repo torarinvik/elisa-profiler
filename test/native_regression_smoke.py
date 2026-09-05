@@ -61,6 +61,9 @@ def main():
             "opt_level": "-O0", "exit_code": 0, "execution_ms_mean": 1.25,
             "compile_ms": 2.5, "location_timing": True,
         },
+        "functions": [],
+        "call_edges": [],
+        "locations": [],
         "stacks": [
             {"stack": "root", "call_events": 1, "completed_calls": 1, "self_ns": 0},
             {"stack": "root;work", "call_events": 6, "completed_calls": 6, "self_ns": 123},
@@ -90,6 +93,8 @@ def main():
         speedscope = json.loads(run("report", capture, "--format", "speedscope"))
         assert speedscope["profiles"][0]["unit"] == "none"
         assert speedscope["profiles"][0]["weights"] == [1, 6]
+        offline_html = run("report", capture, "--format", "html")
+        assert b"<dt>Locations</dt><dd>2</dd>" in offline_html
 
         output = work / "output.txt"
         output.write_bytes(b"stale" * 10000)
