@@ -65,6 +65,7 @@ extern profiler_ffi_sview_at(view: sview, index: usize) -> u8
 include "./profiler_model.elisa"
 include "./profiler_protocol.elisa"
 include "./profiler_json.elisa"
+include "./profiler_comparison.elisa"
 include "./profiler_rendering.elisa"
 include "./profiler_execution.elisa"
 include "./profiler_aggregation.elisa"
