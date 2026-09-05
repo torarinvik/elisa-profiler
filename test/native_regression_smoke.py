@@ -3,7 +3,9 @@
 
 import copy
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import statistics
 import tempfile
@@ -15,9 +17,28 @@ ERROR_STATUS = 2
 
 
 def run(*args, ok=True, expected=None):
-    result = subprocess.run(
-        [str(NATIVE), *map(str, args)], capture_output=True, timeout=TIMEOUT_SECONDS
+    process = subprocess.Popen(
+        [str(NATIVE), *map(str, args)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=(os.name == "posix"),
     )
+    try:
+        stdout, stderr = process.communicate(timeout=TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as error:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        stdout, stderr = process.communicate()
+        raise AssertionError(
+            f"native regression command timed out after {TIMEOUT_SECONDS}s: {args}; "
+            f"stdout={stdout[-500:]!r} stderr={stderr[-500:]!r}"
+        ) from error
+    result = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
     assert result.returncode == (expected if expected is not None else (0 if ok else ERROR_STATUS)), (
         args, result.returncode, result.stderr
     )
@@ -91,6 +112,11 @@ def main():
             invalid["source"] = "REPLACE"
             capture.write_text(json.dumps(invalid).replace("REPLACE", escaped))
             run("compare", capture, capture, "--format", "json", ok=False)
+        invalid_stack = copy.deepcopy(report)
+        invalid_stack["stacks"][0]["stack"] = "raw\ncontrol"
+        invalid_stack_json = json.dumps(invalid_stack).replace(r"raw\ncontrol", "raw\ncontrol")
+        capture.write_bytes(invalid_stack_json.encode("utf-8"))
+        run("report", capture, "--format", "folded", ok=False)
         for option in ("--repeat", "--warmup", "--max-event-trace-events"):
             for invalid in ("", "9223372036854775808"):
                 run("profile", ROOT / "examples/hot_loop.elisa", option, invalid, ok=False)
