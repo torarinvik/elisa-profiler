@@ -1423,7 +1423,11 @@ static void profile_dump(void) {
 }
 
 #ifndef ELISA_PROFILE_NO_MAIN
-extern int64_t elisa_profile_target_main(void);
+/* The Elisa entry point may be the legacy no-argument form or the argv-aware
+ * form. An empty parameter list deliberately leaves the C declaration open so
+ * the wrapper can pass argc/argv without breaking legacy targets; both forms
+ * use the same platform calling convention for the leading return value. */
+extern int64_t elisa_profile_target_main();
 
 static uint64_t profile_read_uint64_environment(const char *name) {
     const char *text = getenv(name);
@@ -1458,7 +1462,7 @@ static uint64_t profile_read_limit_environment(const char *name, uint64_t fallba
     return (uint64_t)value;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     const char *recent_path = getenv("ELISA_PROFILE_RECENT_PATH");
     profile_recent_path_enabled = recent_path != NULL && strcmp(recent_path, "1") == 0;
     const char *event_trace = getenv("ELISA_PROFILE_EVENT_TRACE");
@@ -1476,7 +1480,7 @@ int main(void) {
     (void)profile_output();
     profile_install_crash_handlers();
     atexit(profile_dump);
-    int64_t result = elisa_profile_target_main();
+    int64_t result = elisa_profile_target_main((int64_t)argc, argv);
     profile_dump();
     return (int)(result & 0xff);
 }

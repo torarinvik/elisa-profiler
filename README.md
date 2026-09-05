@@ -80,11 +80,12 @@ regenerate text, folded-stack, Speedscope, and HTML artifacts offline;
 the native `compare` command emits schema-validated summary deltas and explicit
 warnings for mismatched or incomplete evidence.
 
-The native launcher also accepts `--cwd PATH`, `--stdin PATH`, and repeatable
-`--env KEY=VALUE` controls. These are applied only to the profiled child and are
-exercised by `examples/native_launch_probe.elisa`. Positional target-argument
-forwarding is intentionally still gated on a verified compiled-entry ABI; the
-current native target contract is `main() -> i64`.
+The native launcher also accepts `--cwd PATH`, `--stdin PATH`, repeatable
+`--env KEY=VALUE` controls, and a `--` separator followed by verbatim target
+arguments. These are applied only to the profiled child and are exercised by
+the native launch probes. The collector wrapper passes `argc`/`argv` to
+argv-aware Elisa targets while remaining compatible with the legacy
+`main() -> i64` entry form.
 
 ## Profile a program
 
@@ -202,14 +203,14 @@ Useful controls:
     --cwd PATH             run the target from PATH
     --stdin PATH           provide PATH as target standard input
     --env KEY=VALUE        set a target environment variable (repeatable)
+    -- TARGET_ARG...       forward target arguments without shell re-parsing
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable
 
 The runtime collector uses the backend's complete-run trace callbacks, rather
 than the runtime's bounded crash-debug ring, so loop counts are not truncated to
-the last 256 events. The first profiler ABI is intentionally for main() with no
-arguments; richer argument/benchmark control can be added without changing the
-report schema. Repeated runs stop after the first nonzero target status and the
+the last 256 events. Targets may use either the legacy `main() -> i64` entry or
+the argv-aware `main(argc: i64, argv: mutable void&) -> i64` form. Repeated runs stop after the first nonzero target status and the
 report retains every completed repetition, including min/mean/median/max and
 population standard deviation for measured execution time. With
 --location-timing, locations also receive attributed time from the selected timing clock and their

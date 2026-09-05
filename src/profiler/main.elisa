@@ -847,14 +847,14 @@ extend ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json|text|folded|speedscope|html] [--output PATH] [--artifact-output PATH] [--max-capture-bytes N] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [options] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -873,10 +873,19 @@ extend ProfilerNative:
             working_directory: mutable darray[u8] = []
             stdin_path: mutable darray[u8] = []
             environment: mutable darray[u8] = []
+            target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, working_directory, stdin_path, environment, source_seen|:
+            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
+                    index <- index + NATIVE_ONE
+                    while index < argc |index, slots, target_arguments|:
+                        target_argument: mutable darray[u8] = []
+                        copy_cstr(target_argument, slots[index].cast[cstr])
+                        target_arguments.push(target_argument)
+                        index <- index + NATIVE_ONE
+                    continue
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
                     return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
@@ -1168,7 +1177,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO, capture_byte_limit)
+                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO, capture_byte_limit)
                 _ = profiler_ffi_close(capture_fd)
                 warmup_ns <- warmup_ns + warmup_result.elapsed_ns
                 if warmup_result.status != NATIVE_ZERO:
@@ -1187,7 +1196,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
-                run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit)
+                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
                 return report_error("native target produced no collector capture") if capture.count == NATIVE_ZERO.usize()

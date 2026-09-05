@@ -1,0 +1,18 @@
+# Native profiler target-argument probe.
+# The launcher must preserve argument boundaries, including spaces, after `--`.
+
+const NATIVE_ARGV_PROBE_SUCCESS: i64 = 0
+const NATIVE_ARGV_PROBE_COUNT_ERROR: i64 = 1
+const NATIVE_ARGV_PROBE_FIRST_ERROR: i64 = 2
+const NATIVE_ARGV_PROBE_SECOND_ERROR: i64 = 3
+const NATIVE_ARGV_PROBE_EXPECTED_ARGUMENT_COUNT: i64 = 3
+
+@link_name("strcmp")
+extern native_argv_probe_strcmp(left: cstr, right: cstr) -> i64
+
+def main(argc: i64, argv: mutable void&) -> i64:
+    return NATIVE_ARGV_PROBE_COUNT_ERROR if argc != NATIVE_ARGV_PROBE_EXPECTED_ARGUMENT_COUNT
+    slots: mutable cstr&& = argv.cast[mutable cstr&&]
+    return NATIVE_ARGV_PROBE_FIRST_ERROR if native_argv_probe_strcmp(slots[1], "--alpha") != NATIVE_ARGV_PROBE_SUCCESS
+    return NATIVE_ARGV_PROBE_SECOND_ERROR if native_argv_probe_strcmp(slots[2], "two words") != NATIVE_ARGV_PROBE_SUCCESS
+    return NATIVE_ARGV_PROBE_SUCCESS

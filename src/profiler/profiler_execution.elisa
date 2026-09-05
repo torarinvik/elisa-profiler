@@ -128,7 +128,7 @@ extend ProfilerNative:
             return true
 
 
-        def run_target_direct(executable: darray[u8]&, stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, event_trace: bool, recent_path: bool, trace_limit: i64, capture_byte_limit: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+        def run_target_direct(executable: darray[u8]&, target_arguments: darray[darray[u8]], stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, event_trace: bool, recent_path: bool, trace_limit: i64, capture_byte_limit: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             stdout_fd: i64 = open_output_file(stdout_path)
             return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO} if stdout_fd < NATIVE_ZERO
             stderr_fd: i64 = open_output_file(stderr_path)
@@ -139,6 +139,18 @@ extend ProfilerNative:
             executable_arg.extend(executable)
             executable_arg.push(NATIVE_BYTE_NUL)
             executable_cstr: cstr = (&executable_arg[0]).cast[cstr] can Unsafe.PointerCast
+            target_argument_storage: mutable darray[darray[u8]] = []
+            for index in 0..<target_arguments.count |target_argument_storage, target_arguments|:
+                target_argument: mutable darray[u8] = []
+                target_argument.extend(target_arguments[index])
+                target_argument.push(NATIVE_BYTE_NUL)
+                target_argument_storage.push(target_argument)
+            target_argv: mutable darray[cstr] = []
+            target_argv.push(executable_cstr)
+            for index in 0..<target_argument_storage.count |target_argv, target_argument_storage|:
+                target_argument_cstr: cstr = (&target_argument_storage[index][0]).cast[cstr] can Unsafe.PointerCast
+                target_argv.push(target_argument_cstr)
+            target_argv.push(null)
             fd_text: mutable darray[u8] = []
             append_i64(fd_text, capture_fd)
             fd_text.push(NATIVE_BYTE_NUL)
@@ -207,9 +219,6 @@ extend ProfilerNative:
                 _ = profiler_ffi_close(stderr_fd)
                 if stdin_fd >= NATIVE_ZERO:
                     _ = profiler_ffi_close(stdin_fd)
-                target_argv: mutable darray[cstr] = []
-                target_argv.push(executable_cstr)
-                target_argv.push(null)
                 _ = profiler_ffi_execv(executable_cstr, (&target_argv[0]).cast[mutable cstr&&] can Unsafe.PointerCast)
                 profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
             if process < NATIVE_ZERO:
