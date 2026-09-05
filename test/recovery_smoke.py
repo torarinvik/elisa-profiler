@@ -36,7 +36,7 @@ def main() -> int:
         capture = work / "capture.txt"
         capture.write_bytes(complete + truncated)
         manifest = work / "capture.manifest.json"
-        manifest.write_text(json.dumps({
+        manifest_payload = {
             "kind": "elisa_profile_capture_manifest",
             "schema_version": 1,
             "state": "partial",
@@ -58,7 +58,8 @@ def main() -> int:
                 "valid_frames": 2,
                 "valid_bytes": len(complete),
             },
-        }), encoding="utf-8")
+        }
+        manifest.write_text(json.dumps(manifest_payload), encoding="utf-8")
         output = work / "recovered.json"
         process = subprocess.run(
             [str(native), "recover", str(manifest), "--format", "json", "--output", str(output)],
@@ -77,6 +78,20 @@ def main() -> int:
         assert payload["recovery"]["valid_bytes"] == len(complete), payload
         assert payload["recovery"]["capture_bytes"] == len(complete + truncated), payload
         subprocess.run([sys.executable, str(ROOT / "test" / "profile_schema_smoke.py"), str(SCHEMA), str(output)], check=True)
+        legacy_manifest = work / "legacy.manifest.json"
+        legacy_payload = dict(manifest_payload)
+        legacy_payload.pop("collection_mode")
+        legacy_payload.pop("capture_index")
+        legacy_manifest.write_text(json.dumps(legacy_payload), encoding="utf-8")
+        legacy_output = work / "legacy-recovered.json"
+        legacy_process = subprocess.run(
+            [str(native), "recover", str(legacy_manifest), "--format", "json", "--output", str(legacy_output)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert legacy_process.returncode == 0, (legacy_process.returncode, legacy_process.stdout, legacy_process.stderr)
+        assert json.loads(legacy_output.read_text(encoding="utf-8"))["run"]["collection_mode"] == "full"
     print("recovery smoke OK")
     return 0
 

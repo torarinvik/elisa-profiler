@@ -9,7 +9,6 @@
     "state",
     "source",
     "source_sha256",
-    "collection_mode",
     "capture_path",
     "requested_repetitions",
     "completed_repetitions",
@@ -18,8 +17,7 @@
     "events",
     "capture_started",
     "capture_complete",
-    "frame_dropped",
-    "capture_index"
+    "frame_dropped"
   ],
   "properties": {
     "kind": { "const": "elisa_profile_capture_manifest" },

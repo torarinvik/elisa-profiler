@@ -1227,7 +1227,8 @@ extend ProfilerNative:
             return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "state", NATIVE_ZERO.usize(), manifest.count, &manifest_state)
             return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "source", NATIVE_ZERO.usize(), manifest.count, &source)
             return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "source_sha256", NATIVE_ZERO.usize(), manifest.count, &source_digest)
-            return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "collection_mode", NATIVE_ZERO.usize(), manifest.count, &mode)
+            if not json_read_string_field(manifest, "collection_mode", NATIVE_ZERO.usize(), manifest.count, &mode):
+                append_text(mode, "full")
             return report_error("capture manifest is malformed or unsupported") if not json_read_string_field(manifest, "capture_path", NATIVE_ZERO.usize(), manifest.count, &capture_path)
             capture: darray[u8] = read_file(capture_path)
             return report_error("indexed capture file could not be read") if capture.count == NATIVE_ZERO.usize()
