@@ -81,6 +81,36 @@ def main() -> int:
             raise SystemExit("native comparison omitted the workload warning")
         if comparison.get("status") != "warning":
             raise SystemExit("native comparison did not report warning status")
+
+        deep = capture([])
+        nested: dict[str, object] = deep["workload"]  # type: ignore[assignment]
+        for _ in range(129):
+            child: dict[str, object] = {}
+            nested["nested"] = child
+            nested = child
+        deep_path = root / "deep.json"
+        deep_path.write_text(json.dumps(deep), encoding="utf-8")
+        rejected_depth = subprocess.run(
+            [str(profiler), "compare", deep_path, deep_path, "--format", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if rejected_depth.returncode == 0:
+            raise SystemExit("native comparison accepted over-deep JSON nesting")
+
+        overflow = capture([])
+        overflow["run"]["execution_ms_mean"] = 9223372036854776  # type: ignore[index]
+        overflow_path = root / "overflow.json"
+        overflow_path.write_text(json.dumps(overflow), encoding="utf-8")
+        rejected_overflow = subprocess.run(
+            [str(profiler), "compare", overflow_path, overflow_path, "--format", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if rejected_overflow.returncode == 0:
+            raise SystemExit("native comparison accepted overflowing millisecond JSON")
     print("native workload comparison smoke OK")
     return 0
 

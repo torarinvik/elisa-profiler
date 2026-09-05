@@ -71,6 +71,7 @@ extend ProfilerNative:
                     in_string <- true
                 elif byte == NATIVE_BYTE_LEFT_BRACE:
                     depth <- depth + NATIVE_ONE
+                    return NATIVE_NEGATIVE_ONE if depth > NATIVE_MAX_JSON_NESTING_DEPTH
                 elif byte == NATIVE_BYTE_RIGHT_BRACE:
                     depth <- depth - NATIVE_ONE
                     return (cursor + NATIVE_ONE.usize()).i64() if depth == NATIVE_ZERO
@@ -97,6 +98,7 @@ extend ProfilerNative:
                     in_string <- true
                 elif byte == NATIVE_BYTE_LEFT_BRACKET:
                     depth <- depth + NATIVE_ONE
+                    return NATIVE_NEGATIVE_ONE if depth > NATIVE_MAX_JSON_NESTING_DEPTH
                 elif byte == NATIVE_BYTE_RIGHT_BRACKET:
                     depth <- depth - NATIVE_ONE
                     return (cursor + NATIVE_ONE.usize()).i64() if depth == NATIVE_ZERO
@@ -222,7 +224,9 @@ extend ProfilerNative:
                             fraction <- fraction * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
                             fraction_digits <- fraction_digits + NATIVE_ONE
                     else:
-                        whole <- whole * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                        digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                        return NATIVE_NEGATIVE_ONE if whole > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                        whole <- whole * NATIVE_DECIMAL_BASE + digit
                 elif byte == NATIVE_BYTE_PERIOD and not in_fraction:
                     in_fraction <- true
                 else:
@@ -232,6 +236,7 @@ extend ProfilerNative:
             while fraction_digits < NATIVE_THREE |fraction, fraction_digits|:
                 fraction <- fraction * NATIVE_DECIMAL_BASE
                 fraction_digits <- fraction_digits + NATIVE_ONE
+            return NATIVE_NEGATIVE_ONE if whole > (NATIVE_I64_MAX - fraction) / NATIVE_MICROSECONDS_PER_MILLISECOND
             return whole * NATIVE_MICROSECONDS_PER_MILLISECOND + fraction
 
 
