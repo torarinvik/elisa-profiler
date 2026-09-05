@@ -27,6 +27,12 @@ request is rejected instead of being mislabeled as an instrumented capture.
 The mode is a report identity field and must be considered when comparing
 captures or interpreting missing event classes.
 
+Native JSON captures also expose `run.capabilities`. Its event-class list is
+the authoritative retained detail set; `trace`, `recent_path`, `timing`, and
+`sampling` describe the active policies; and `detail_limits` records the
+collector's configured location, edge, stack, and byte limits. A zero limit
+means unlimited, matching the collector configuration.
+
 ## Units and clocks
 
 - `events`, `locations`, `statement_events`, `value_events`, and

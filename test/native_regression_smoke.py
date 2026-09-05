@@ -165,6 +165,9 @@ def main():
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
         assert measured["run"]["collection_mode"] == "full"
+        assert measured["run"]["capabilities"]["event_classes"] == ["function", "statement", "value"]
+        assert measured["run"]["capabilities"]["sampling"] == "unsupported"
+        assert measured["run"]["capabilities"]["timing"] == "wall"
         assert len(measured["workload"]["source_sha256"]) == 64
         assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
         repetitions = measured["run"]["repetitions"]
@@ -191,6 +194,7 @@ def main():
             "--format", "json", "--output", functions_capture)
         functions_report = json.loads(functions_capture.read_text())
         assert functions_report["run"]["collection_mode"] == "functions"
+        assert functions_report["run"]["capabilities"]["event_classes"] == ["function"]
         assert functions_report["summary"]["statement_events"] == 0
         assert functions_report["summary"]["value_events"] == 0
         assert functions_report["summary"]["function_events"] > 0
@@ -199,6 +203,7 @@ def main():
             "--format", "json", "--output", output)
         statements_report = json.loads(output.read_text())
         assert statements_report["run"]["collection_mode"] == "statements"
+        assert statements_report["run"]["capabilities"]["event_classes"] == ["function", "statement"]
         assert statements_report["summary"]["statement_events"] > 0
         assert statements_report["summary"]["value_events"] == 0
 
@@ -206,6 +211,7 @@ def main():
             "--format", "json", "--output", values_capture)
         values_report = json.loads(values_capture.read_text())
         assert values_report["run"]["collection_mode"] == "values"
+        assert values_report["run"]["capabilities"]["event_classes"] == ["function", "value"]
         assert values_report["summary"]["statement_events"] == 0
         assert values_report["summary"]["value_events"] > 0
 

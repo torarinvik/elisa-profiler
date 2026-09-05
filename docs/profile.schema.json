@@ -153,6 +153,29 @@
       ],
       "properties": {
         "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "diagnostic"] },
+        "capabilities": {
+          "type": "object",
+          "required": ["event_classes", "trace", "recent_path", "timing", "sampling", "detail_limits"],
+          "properties": {
+            "event_classes": { "type": "array", "items": { "type": "string", "enum": ["function", "statement", "value"] }, "minItems": 1, "uniqueItems": true },
+            "trace": { "type": "string", "enum": ["full", "disabled"] },
+            "recent_path": { "type": "string", "enum": ["last_256", "disabled"] },
+            "timing": { "type": "string", "enum": ["wall"] },
+            "sampling": { "type": "string", "enum": ["unsupported"] },
+            "detail_limits": {
+              "type": "object",
+              "required": ["locations", "call_edges", "stacks", "capture_bytes"],
+              "properties": {
+                "locations": { "type": "integer", "minimum": 0 },
+                "call_edges": { "type": "integer", "minimum": 0 },
+                "stacks": { "type": "integer", "minimum": 0 },
+                "capture_bytes": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
         "exit_code": { "type": ["integer", "null"] },
         "signal": { "type": ["integer", "null"] },
         "location_timing": { "type": "boolean" },

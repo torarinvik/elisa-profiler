@@ -121,7 +121,9 @@ and function evidence, and `values` keeps scalar values plus function context.
 `diagnostic` enables the bounded event trace in addition to full instrumentation.
 Sampling is not claimed by this instrumented build; an explicit sampling mode
 request fails with an actionable error. The selected mode is recorded in
-`run.collection_mode` and shown by text/HTML reports.
+`run.collection_mode` and shown by text/HTML reports. JSON also records
+`run.capabilities`, including retained event classes, trace/path policy, wall
+timing, the unsupported sampling status, and the active detail limits.
 
 The text report lists hot source locations and event totals. JSON reports have
 schema version 1, compiler provenance, selected optimization level,
