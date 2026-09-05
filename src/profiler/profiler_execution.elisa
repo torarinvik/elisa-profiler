@@ -91,6 +91,7 @@ extend ProfilerNative:
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_MAX_CAPTURE_BYTES")
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_RECENT_PATH")
             _ = profiler_ffi_unsetenv("ELISA_PROFILE_FRAMED")
+            _ = profiler_ffi_unsetenv("ELISA_PROFILE_THREAD_RECORDS")
 
 
         def environment_assignment_valid(value: darray[u8]&) -> bool:
@@ -235,6 +236,11 @@ extend ProfilerNative:
                 clear_target_environment()
                 return failed_target_run_result(false)
             if profiler_ffi_setenv("ELISA_PROFILE_FRAMED", "1", NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+                _ = profiler_ffi_close(stdout_fd)
+                _ = profiler_ffi_close(stderr_fd)
+                clear_target_environment()
+                return failed_target_run_result(false)
+            if profiler_ffi_setenv("ELISA_PROFILE_THREAD_RECORDS", "1", NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()

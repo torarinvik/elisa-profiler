@@ -413,6 +413,45 @@ extend ProfilerNative:
             append_text(event_records, "}")
 
 
+        def append_thread_loss_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            thread_id: mutable darray[u8] = []
+            events: mutable darray[u8] = []
+            location_dropped: mutable darray[u8] = []
+            call_edge_dropped: mutable darray[u8] = []
+            stack_dropped: mutable darray[u8] = []
+            trace_dropped: mutable darray[u8] = []
+            bytes_dropped: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &thread_id)
+            cursor <- protocol_field_into(data, cursor, stop, &events)
+            cursor <- protocol_field_into(data, cursor, stop, &location_dropped)
+            cursor <- protocol_field_into(data, cursor, stop, &call_edge_dropped)
+            cursor <- protocol_field_into(data, cursor, stop, &stack_dropped)
+            cursor <- protocol_field_into(data, cursor, stop, &trace_dropped)
+            cursor <- protocol_field_into(data, cursor, stop, &bytes_dropped)
+            valid: bool = cursor == stop and protocol_unsigned(thread_id) and protocol_unsigned(events) and protocol_unsigned(location_dropped) and protocol_unsigned(call_edge_dropped) and protocol_unsigned(stack_dropped) and protocol_unsigned(trace_dropped) and protocol_unsigned(bytes_dropped)
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_THREAD
+                return
+            append_record_separator(records)
+            append_text(records, "{\"thread_id\":")
+            append_protocol_number(records, thread_id)
+            append_text(records, ",\"events\":")
+            append_protocol_number(records, events)
+            append_text(records, ",\"location_dropped\":")
+            append_protocol_number(records, location_dropped)
+            append_text(records, ",\"call_edge_dropped\":")
+            append_protocol_number(records, call_edge_dropped)
+            append_text(records, ",\"stack_dropped\":")
+            append_protocol_number(records, stack_dropped)
+            append_text(records, ",\"trace_dropped\":")
+            append_protocol_number(records, trace_dropped)
+            append_text(records, ",\"bytes_dropped\":")
+            append_protocol_number(records, bytes_dropped)
+            append_text(records, "}")
+            summary.thread_loss_record_count <- summary.thread_loss_record_count + NATIVE_ONE
+
+
         def parse_protocol_number(data: darray[u8]&, cursor: mutable usize&, stop: usize) -> i64:
             value: mutable i64 = NATIVE_ZERO
             valid: mutable bool = true
@@ -444,6 +483,7 @@ extend ProfilerNative:
                 function_record_count: NATIVE_ZERO,
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
+                thread_loss_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO,
@@ -473,6 +513,7 @@ extend ProfilerNative:
                 stack_records: [],
                 folded_records: [],
                 event_records: [],
+                thread_loss_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
             }
@@ -481,11 +522,13 @@ extend ProfilerNative:
             call_edge_records: mutable darray[u8] = []
             stack_records: mutable darray[u8] = []
             event_records: mutable darray[u8] = []
+            thread_loss_records: mutable darray[u8] = []
             folded_records: mutable darray[u8] = []
             begin_prefix: sview = "ELISA_PROFILE\t1\tbegin\t"
             end_prefix: sview = "ELISA_PROFILE\t1\tend\t"
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
+            thread_prefix: sview = "ELISA_PROFILE\t1\tthread\t"
             crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
             frame_prefix: sview = "ELISA_PROFILE\t1\tframe\t"
             protocol_prefix: sview = "ELISA_PROFILE\t1\t"
@@ -592,6 +635,9 @@ extend ProfilerNative:
                         if summary.trace_enabled < NATIVE_ZERO or summary.trace_captured < NATIVE_ZERO or summary.trace_omitted < NATIVE_ZERO or summary.trace_limit < NATIVE_ZERO:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    elif frame_valid and line_prefix(data, record_start, line_stop, thread_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(thread_prefix)
+                        append_thread_loss_record(&summary, &thread_loss_records, data, &cursor, line_stop)
                     elif frame_valid and line_prefix(data, record_start, line_stop, crash_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(crash_prefix)
                         summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
@@ -623,4 +669,5 @@ extend ProfilerNative:
             summary.stack_records <- stack_records
             summary.folded_records <- folded_records
             summary.event_records <- event_records
+            summary.thread_loss_records <- thread_loss_records
             return summary

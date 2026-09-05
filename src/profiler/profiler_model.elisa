@@ -166,6 +166,7 @@ module ProfilerNative:
         const NATIVE_PROTOCOL_ERROR_EVENT: i64 = 4
         const NATIVE_PROTOCOL_ERROR_META: i64 = 5
         const NATIVE_PROTOCOL_ERROR_FRAME: i64 = 6
+        const NATIVE_PROTOCOL_ERROR_THREAD: i64 = 7
         const NATIVE_FRAME_FNV_OFFSET: u64 = 14695981039346656037
         const NATIVE_FRAME_FNV_PRIME: u64 = 1099511628211
         const NATIVE_DETAIL_ARRAY_FUNCTIONS: i64 = 1
@@ -192,6 +193,7 @@ module ProfilerNative:
             function_record_count: mutable i64
             call_edge_record_count: mutable i64
             stack_record_count: mutable i64
+            thread_loss_record_count: mutable i64
             dropped: mutable i64
             max_stack_depth: mutable i64
             stack_overflow_entries: mutable i64
@@ -221,6 +223,7 @@ module ProfilerNative:
             stack_records: mutable darray[u8]
             folded_records: mutable darray[u8]
             event_records: mutable darray[u8]
+            thread_loss_records: mutable darray[u8]
             malformed: mutable bool
             malformed_code: mutable i64
 

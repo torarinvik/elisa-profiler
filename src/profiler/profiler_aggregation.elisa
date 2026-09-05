@@ -16,6 +16,7 @@ extend ProfilerNative:
                 function_record_count: NATIVE_ZERO,
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
+                thread_loss_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO,
@@ -45,6 +46,7 @@ extend ProfilerNative:
                 stack_records: [],
                 folded_records: [],
                 event_records: [],
+                thread_loss_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
             }
@@ -60,6 +62,7 @@ extend ProfilerNative:
             destination.function_record_count <- destination.function_record_count + incoming.function_record_count
             destination.call_edge_record_count <- destination.call_edge_record_count + incoming.call_edge_record_count
             destination.stack_record_count <- destination.stack_record_count + incoming.stack_record_count
+            destination.thread_loss_record_count <- destination.thread_loss_record_count + incoming.thread_loss_record_count
             destination.dropped <- destination.dropped + incoming.dropped
             destination.max_stack_depth <- incoming.max_stack_depth if incoming.max_stack_depth > destination.max_stack_depth
             destination.stack_overflow_entries <- destination.stack_overflow_entries + incoming.stack_overflow_entries
@@ -95,6 +98,9 @@ extend ProfilerNative:
             destination.folded_records.extend(incoming.folded_records)
             append_record_separator(destination.event_records)
             destination.event_records.extend(incoming.event_records)
+            if incoming.thread_loss_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.thread_loss_records)
+                destination.thread_loss_records.extend(incoming.thread_loss_records)
             if incoming.malformed:
                 destination.malformed <- true
                 destination.malformed_code <- incoming.malformed_code
@@ -168,6 +174,8 @@ extend ProfilerNative:
             append_i64(buffer, summary.call_edge_record_count)
             append_text(buffer, ",\"stacks\":")
             append_i64(buffer, summary.stack_record_count)
+            append_text(buffer, ",\"thread_loss\":")
+            append_i64(buffer, summary.thread_loss_record_count)
             append_text(buffer, "}")
             append_text(buffer, ",\"trace_dropped\":")
             append_i64(buffer, summary.dropped)

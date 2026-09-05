@@ -139,6 +139,11 @@ Each repetition also reports `detail_records` for normalized locations,
 functions, caller-to-callee edges, and stack paths. These are evidence counts
 for that run, not independent statistical samples; a lower count must be
 interpreted with the repetition's drop, overflow, and completeness fields.
+When native collection is enabled, `thread_loss` records the event count and
+loss counters for each profiler thread. `location_dropped`,
+`call_edge_dropped`, and `stack_dropped` identify bounded-detail loss;
+`trace_dropped` and `bytes_dropped` identify omitted event-trace records. A
+thread record is diagnostic evidence, not a replacement for aggregate counters.
 No individual trace event is treated as an independent statistical sample.
 The median is the middle value (the arithmetic mean of the two middle values
 for an even count), and standard deviation is the population standard

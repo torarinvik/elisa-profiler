@@ -144,6 +144,18 @@ def main():
         }]
         capture.write_text(json.dumps(invalid_function), encoding="utf-8")
         run("report", capture, "--format", "folded", ok=False)
+        invalid_thread = copy.deepcopy(report)
+        invalid_thread["thread_loss"] = [{
+            "thread_id": 0,
+            "events": 1,
+            "location_dropped": 0,
+            "call_edge_dropped": 0,
+            "stack_dropped": 0,
+            "trace_dropped": 0,
+            "bytes_dropped": -1,
+        }]
+        capture.write_text(json.dumps(invalid_thread), encoding="utf-8")
+        run("report", capture, "--format", "text", ok=False)
         for option in ("--repeat", "--warmup", "--max-event-trace-events"):
             for invalid in ("", "9223372036854775808"):
                 run("profile", ROOT / "examples/hot_loop.elisa", option, invalid, ok=False)
@@ -194,7 +206,26 @@ def main():
         assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
         repetitions = measured["run"]["repetitions"]
         assert len(repetitions) == 2
-        assert all(set(item["detail_records"]) == {"locations", "functions", "call_edges", "stacks"} for item in repetitions)
+        assert all(
+            set(item["detail_records"])
+            == {"locations", "functions", "call_edges", "stacks", "thread_loss"}
+            for item in repetitions
+        )
+        assert measured["thread_loss"]
+        assert all(
+            set(record)
+            == {
+                "thread_id",
+                "events",
+                "location_dropped",
+                "call_edge_dropped",
+                "stack_dropped",
+                "trace_dropped",
+                "bytes_dropped",
+            }
+            for record in measured["thread_loss"]
+        )
+        assert all(record["events"] > 0 for record in measured["thread_loss"])
         assert all(item["detail_records"]["locations"] >= item["detail_records"]["functions"] for item in repetitions)
         assert all(item["cpu_user_ms"] is not None for item in repetitions)
         assert all(item["cpu_system_ms"] is not None for item in repetitions)

@@ -144,6 +144,7 @@ static int profile_output_fd = STDERR_FILENO;
 static int profile_framing_enabled;
 static uint64_t profile_frame_sequence;
 static uint64_t profile_frame_dropped_count;
+static int profile_thread_records_enabled;
 static char profile_frame_buffer[PROFILE_FRAME_BUFFER_BYTES];
 static size_t profile_frame_length;
 static int profile_frame_overflowed;
@@ -335,7 +336,12 @@ typedef struct profile_thread_state profile_thread_state;
 
 struct profile_thread_state {
     profile_thread_state *next;
+    uint64_t thread_id;
     uint64_t event_count;
+    uint64_t location_dropped;
+    uint64_t call_edge_dropped;
+    uint64_t stack_dropped;
+    uint64_t trace_dropped;
     uint64_t bytes_dropped;
 #if ELISA_PROFILE_TIMING
     const char *timing_function_name;
@@ -426,6 +432,7 @@ static _Thread_local size_t profile_call_overflow_depth;
 static _Thread_local profile_overflow_frame *profile_call_overflow_stack;
 static _Thread_local size_t profile_call_overflow_untracked_depth;
 static _Thread_local profile_thread_state *profile_current_thread;
+static profile_thread_state *profile_get_thread_locked(void);
 
 static void profile_push_overflow_frame(const char *function_name, uint32_t line) {
     /* Once one allocation fails, keep later overflow entries untracked so a
@@ -588,6 +595,7 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
         return;
     }
     pthread_mutex_lock(&profile_lock);
+    profile_thread_state *thread = profile_get_thread_locked();
     profile_call_edge *existing = profile_find_call_edge_locked(caller_name, callee_name);
     if (existing != NULL) {
         ++existing->call_events;
@@ -598,6 +606,9 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
         profile_call_edge_size >= profile_call_edge_limit) {
         ++profile_call_edge_dropped_count;
         profile_budget_exceeded = 1;
+        if (thread != NULL) {
+            ++thread->call_edge_dropped;
+        }
         pthread_mutex_unlock(&profile_lock);
         return;
     }
@@ -606,6 +617,9 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
             profile_call_edge_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
         if (!profile_grow_call_edges_locked()) {
             ++profile_call_edge_dropped_count;
+            if (thread != NULL) {
+                ++thread->call_edge_dropped;
+            }
             pthread_mutex_unlock(&profile_lock);
             return;
         }
@@ -701,6 +715,7 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
         return NULL;
     }
     pthread_mutex_lock(&profile_lock);
+    profile_thread_state *thread = profile_get_thread_locked();
     size_t existing_slot = profile_call_path_capacity == 0
                                ? 0
                                : profile_call_path_hash(parent, function_name) &
@@ -722,6 +737,9 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
         profile_call_path_size >= profile_call_path_limit) {
         ++profile_call_path_dropped_count;
         profile_budget_exceeded = 1;
+        if (thread != NULL) {
+            ++thread->stack_dropped;
+        }
         pthread_mutex_unlock(&profile_lock);
         return NULL;
     }
@@ -730,6 +748,9 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
             profile_call_path_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
         if (!profile_grow_call_paths_locked()) {
             ++profile_call_path_dropped_count;
+            if (thread != NULL) {
+                ++thread->stack_dropped;
+            }
             pthread_mutex_unlock(&profile_lock);
             return NULL;
         }
@@ -745,6 +766,9 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
     if (path == NULL) {
         if (!profile_reserve_bytes_locked(sizeof(*path))) {
             ++profile_call_path_dropped_count;
+            if (thread != NULL) {
+                ++thread->stack_dropped;
+            }
             pthread_mutex_unlock(&profile_lock);
             return NULL;
         }
@@ -752,6 +776,9 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
         if (path == NULL) {
             profile_release_bytes_locked(sizeof(*path));
             ++profile_call_path_dropped_count;
+            if (thread != NULL) {
+                ++thread->stack_dropped;
+            }
             pthread_mutex_unlock(&profile_lock);
             return NULL;
         }
@@ -794,6 +821,7 @@ static profile_thread_state *profile_get_thread_locked(void) {
         return NULL;
     }
     thread->next = profile_threads;
+    thread->thread_id = profile_thread_count;
     profile_threads = thread;
     profile_current_thread = thread;
     ++profile_thread_count;
@@ -1000,6 +1028,7 @@ static void profile_record(const char *function_name, uint32_t line,
         ++profile_event_trace_omitted;
         if (thread != NULL) {
             ++thread->bytes_dropped;
+            ++thread->trace_dropped;
         }
     }
 
@@ -1009,6 +1038,9 @@ static void profile_record(const char *function_name, uint32_t line,
         profile_size >= profile_location_limit) {
         ++profile_dropped_count;
         profile_budget_exceeded = 1;
+        if (thread != NULL) {
+            ++thread->location_dropped;
+        }
 #if ELISA_PROFILE_TIMING
         if (thread != NULL) {
             thread->timing_have_last = 0;
@@ -1022,6 +1054,9 @@ static void profile_record(const char *function_name, uint32_t line,
             profile_capacity * PROFILE_TABLE_LOAD_DENOMINATOR)) {
         if (!profile_grow_locked()) {
             ++profile_dropped_count;
+            if (thread != NULL) {
+                ++thread->location_dropped;
+            }
 #if ELISA_PROFILE_TIMING
             if (thread != NULL) {
                 thread->timing_have_last = 0;
@@ -1369,6 +1404,32 @@ static void profile_dump_trace_status(void) {
     profile_record_emit();
 }
 
+static void profile_dump_thread_records(void) {
+    if (!profile_thread_records_enabled) {
+        return;
+    }
+    for (const profile_thread_state *thread = profile_threads;
+         thread != NULL;
+         thread = thread->next) {
+        profile_record_begin();
+        profile_record_append_text("thread\t");
+        profile_record_append_uint64(thread->thread_id);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->event_count);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->location_dropped);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->call_edge_dropped);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->stack_dropped);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->trace_dropped);
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->bytes_dropped);
+        profile_record_emit();
+    }
+}
+
 static void profile_dump_metadata(size_t location_count) {
     profile_record_begin();
     profile_record_append_text("meta\t");
@@ -1535,6 +1596,7 @@ static void profile_dump_body(void) {
         ++profile_dropped_count;
         profile_dump_metadata(0);
         profile_dump_trace_status();
+        profile_dump_thread_records();
         if (!profile_event_trace_enabled &&
             (profile_crash_dumped || profile_recent_path_enabled)) {
             profile_dump_recent_path();
@@ -1555,6 +1617,7 @@ static void profile_dump_body(void) {
     qsort(entries, output_count, sizeof(*entries), profile_entry_compare);
     profile_dump_metadata(output_count);
     profile_dump_trace_status();
+    profile_dump_thread_records();
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];
         profile_record_begin();
@@ -1737,6 +1800,8 @@ int main(int argc, char **argv) {
     }
     const char *event_trace = getenv("ELISA_PROFILE_EVENT_TRACE");
     profile_event_trace_enabled = event_trace != NULL && strcmp(event_trace, "1") == 0;
+    const char *thread_records = getenv("ELISA_PROFILE_THREAD_RECORDS");
+    profile_thread_records_enabled = thread_records != NULL && strcmp(thread_records, "1") == 0;
     profile_event_trace_limit = profile_read_uint64_environment(
         "ELISA_PROFILE_EVENT_TRACE_LIMIT");
     profile_location_limit = profile_read_limit_environment(

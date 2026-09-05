@@ -253,6 +253,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/location" }
     },
+    "thread_loss": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/thread_loss" }
+    },
     "recent_events": {
       "type": "array",
       "items": { "$ref": "#/$defs/recent_event" }
@@ -331,7 +335,8 @@
             "locations": { "type": "integer", "minimum": 0 },
             "functions": { "type": "integer", "minimum": 0 },
             "call_edges": { "type": "integer", "minimum": 0 },
-            "stacks": { "type": "integer", "minimum": 0 }
+            "stacks": { "type": "integer", "minimum": 0 },
+            "thread_loss": { "type": "integer", "minimum": 0 }
           },
           "additionalProperties": false
         },
@@ -476,6 +481,20 @@
         "completed_calls": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": true
+    },
+    "thread_loss": {
+      "type": "object",
+      "required": ["thread_id", "events", "location_dropped", "call_edge_dropped", "stack_dropped", "trace_dropped", "bytes_dropped"],
+      "properties": {
+        "thread_id": { "type": "integer", "minimum": 0 },
+        "events": { "type": "integer", "minimum": 0 },
+        "location_dropped": { "type": "integer", "minimum": 0 },
+        "call_edge_dropped": { "type": "integer", "minimum": 0 },
+        "stack_dropped": { "type": "integer", "minimum": 0 },
+        "trace_dropped": { "type": "integer", "minimum": 0 },
+        "bytes_dropped": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
     },
     "recent_event": {
       "type": "object",

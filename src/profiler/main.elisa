@@ -968,6 +968,9 @@ extend ProfilerNative:
             append_millis(buffer, compile_ns)
             append_text(buffer, "},")
             append_detail_arrays(buffer, summary)
+            append_text(buffer, ",\"thread_loss\":[")
+            buffer.extend(summary.thread_loss_records)
+            append_text(buffer, "]")
             if program_stderr.count > NATIVE_ZERO.usize():
                 append_text(buffer, ",\"program_stderr\":")
                 append_json_string(buffer, program_stderr)
