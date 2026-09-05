@@ -98,7 +98,10 @@ module ProfilerNative:
         const NATIVE_BYTE_CONTROL_LIMIT: u8 = 32
         const NATIVE_BYTE_COMMA: u8 = 44
         const NATIVE_BYTE_DOUBLE_QUOTE: u8 = 34
+        const NATIVE_BYTE_AMPERSAND: u8 = 38
         const NATIVE_BYTE_APOSTROPHE: u8 = 39
+        const NATIVE_BYTE_LESS_THAN: u8 = 60
+        const NATIVE_BYTE_GREATER_THAN: u8 = 62
         const NATIVE_BYTE_PERIOD: u8 = 46
         const NATIVE_BYTE_MINUS: u8 = 45
         const NATIVE_BYTE_ASCII_ZERO: u8 = 48
@@ -159,6 +162,21 @@ module ProfilerNative:
         def append_text(buffer: mutable darray[u8]&, text: sview) -> void can[Abort.Panic, Memory.Allocate]:
             for index in 0..<profiler_ffi_sview_len(text) |buffer, text|:
                 buffer.push(profiler_ffi_sview_at(text, index))
+
+
+        def append_html_escaped(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<value.count |buffer, value|:
+                byte: u8 = value[index]
+                if byte == NATIVE_BYTE_AMPERSAND:
+                    append_text(buffer, "&amp;")
+                elif byte == NATIVE_BYTE_LESS_THAN:
+                    append_text(buffer, "&lt;")
+                elif byte == NATIVE_BYTE_GREATER_THAN:
+                    append_text(buffer, "&gt;")
+                elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
+                    append_text(buffer, "&quot;")
+                else:
+                    buffer.push(byte)
         
         
         def append_i64(buffer: mutable darray[u8]&, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
@@ -1070,6 +1088,41 @@ module ProfilerNative:
             buffer.push(NATIVE_BYTE_NEWLINE) if summary.folded_records.count > NATIVE_ZERO.usize()
 
 
+        def append_html_section(buffer: mutable darray[u8]&, title: sview, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<details open><summary>")
+            append_text(buffer, title)
+            append_text(buffer, "</summary><pre>")
+            append_html_escaped(buffer, records)
+            append_text(buffer, "</pre></details>")
+
+
+        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, summary: CaptureSummary, exit_code: i64, execution_ns: i64, compile_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
+            append_html_escaped(buffer, source)
+            append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
+            append_text(buffer, "ok" if exit_code == NATIVE_ZERO else "target failed")
+            append_text(buffer, "</dd></div><div><dt>Execution</dt><dd>")
+            append_millis(buffer, execution_ns)
+            append_text(buffer, " ms</dd></div><div><dt>Compilation</dt><dd>")
+            append_millis(buffer, compile_ns)
+            append_text(buffer, " ms</dd></div><div><dt>Events</dt><dd>")
+            append_i64(buffer, summary.events)
+            append_text(buffer, "</dd></div><div><dt>Locations</dt><dd>")
+            append_i64(buffer, summary.locations)
+            append_text(buffer, "</dd></div><div><dt>Dropped events</dt><dd>")
+            append_i64(buffer, summary.dropped)
+            append_text(buffer, "</dd></div><div><dt>Detail budget</dt><dd>")
+            append_text(buffer, "exceeded" if summary.budget_exceeded != NATIVE_ZERO else "not exceeded")
+            append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
+            append_i64(buffer, summary.thread_count)
+            append_text(buffer, "</dd></div></dl>")
+            append_html_section(buffer, "Functions", summary.function_records)
+            append_html_section(buffer, "Call edges", summary.call_edge_records)
+            append_html_section(buffer, "Folded stacks", summary.stack_records)
+            append_html_section(buffer, "Locations", summary.location_records)
+            append_text(buffer, "</main></body></html>\n")
+
+
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, runtime_object: darray[u8]&, summary: CaptureSummary,
             exit_code: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
@@ -1350,21 +1403,24 @@ module ProfilerNative:
             recent_path: mutable bool = false
             format_text: mutable bool = false
             format_folded: mutable bool = false
+            format_html: mutable bool = false
             requested_repetitions: mutable i64 = NATIVE_ONE
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, format_folded, requested_repetitions, warmup_repetitions, trace_limit, source_seen|:
+            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, requested_repetitions, warmup_repetitions, trace_limit, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
-                    return report_error("--format requires json, text, or folded") if index + NATIVE_ONE >= argc
+                    return report_error("--format requires json, text, folded, or html") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
                         format_text <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
                         format_folded <- true
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
+                        format_html <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO:
-                        return report_error("--format requires json, text, or folded")
+                        return report_error("--format requires json, text, folded, or html")
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
@@ -1656,6 +1712,8 @@ module ProfilerNative:
                 append_text_report(report, source, summary, final_exit_code, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
             elif format_folded:
                 append_folded_report(report, summary)
+            elif format_html:
+                append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
                 append_report(report, source, compiler_root, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
             cleanup_temp(temporary)
