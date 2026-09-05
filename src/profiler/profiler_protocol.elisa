@@ -447,6 +447,9 @@ extend ProfilerNative:
                         summary.capture_byte_limit <- parse_protocol_number(data, &cursor, line_stop)
                         summary.capture_bytes_used <- parse_protocol_number(data, &cursor, line_stop)
                         summary.capture_bytes_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                    if cursor != line_stop:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO:
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
@@ -456,12 +459,18 @@ extend ProfilerNative:
                     summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
+                    if cursor != line_stop:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     if summary.trace_enabled < NATIVE_ZERO or summary.trace_captured < NATIVE_ZERO or summary.trace_omitted < NATIVE_ZERO or summary.trace_limit < NATIVE_ZERO:
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                 elif line_prefix(data, line_start, line_stop, crash_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(crash_prefix)
                     summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
+                    if cursor != line_stop:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     if summary.crash_signal < NATIVE_ZERO:
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
@@ -487,4 +496,3 @@ extend ProfilerNative:
             summary.folded_records <- folded_records
             summary.event_records <- event_records
             return summary
-
