@@ -127,7 +127,13 @@ extend ProfilerNative:
 
 
         def append_micros_as_millis(buffer: mutable darray[u8]&, microseconds: i64) -> void can[Abort.Panic, Memory.Allocate]:
-            append_millis(buffer, microseconds * NATIVE_NANOS_PER_MICROSECOND)
+            whole: i64 = microseconds / NATIVE_MICROSECONDS_PER_MILLISECOND
+            fraction: i64 = microseconds % NATIVE_MICROSECONDS_PER_MILLISECOND
+            append_i64(buffer, whole)
+            buffer.push(NATIVE_BYTE_PERIOD)
+            buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + fraction / NATIVE_MILLIS_HUNDREDS_DIVISOR).u8())
+            buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + ((fraction / NATIVE_DECIMAL_TENS_DIVISOR) % NATIVE_DECIMAL_BASE)).u8())
+            buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + (fraction % NATIVE_DECIMAL_BASE)).u8())
 
 
         def append_timeout_seconds(buffer: mutable darray[u8]&, timeout_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:

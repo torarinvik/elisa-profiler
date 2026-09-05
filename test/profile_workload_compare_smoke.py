@@ -128,6 +128,25 @@ def main() -> int:
         )
         if rejected_precision.returncode == 0:
             raise SystemExit("native comparison silently truncated millisecond precision")
+
+        largest_valid = capture([])
+        largest_valid["run"]["execution_ms_mean"] = "__largest_valid_timing__"  # type: ignore[index]
+        largest_valid_path = root / "largest-valid.json"
+        largest_valid_text = json.dumps(largest_valid).replace(
+            '"__largest_valid_timing__"', "9223372036854775.807"
+        )
+        largest_valid_path.write_text(largest_valid_text, encoding="utf-8")
+        rendered_large = subprocess.run(
+            [str(profiler), "compare", largest_valid_path, largest_valid_path, "--format", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if rendered_large.returncode != 0:
+            raise SystemExit(
+                "native comparison failed at the largest bounded timing value: "
+                f"{rendered_large.stderr or rendered_large.stdout}"
+            )
     print("native workload comparison smoke OK")
     return 0
 
