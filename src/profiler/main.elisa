@@ -139,6 +139,12 @@ module ProfilerNative:
             trace_captured: mutable i64
             trace_omitted: mutable i64
             trace_limit: mutable i64
+            location_limit: mutable i64
+            call_edge_limit: mutable i64
+            stack_limit: mutable i64
+            budget_exceeded: mutable i64
+            call_edge_dropped: mutable i64
+            stack_dropped: mutable i64
             location_records: mutable darray[u8]
             function_records: mutable darray[u8]
             call_edge_records: mutable darray[u8]
@@ -810,6 +816,12 @@ module ProfilerNative:
                 trace_captured: NATIVE_ZERO,
                 trace_omitted: NATIVE_ZERO,
                 trace_limit: NATIVE_ZERO,
+                location_limit: NATIVE_ZERO,
+                call_edge_limit: NATIVE_ZERO,
+                stack_limit: NATIVE_ZERO,
+                budget_exceeded: NATIVE_ZERO,
+                call_edge_dropped: NATIVE_ZERO,
+                stack_dropped: NATIVE_ZERO,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
@@ -838,6 +850,12 @@ module ProfilerNative:
                     summary.max_stack_depth <- parse_protocol_number(data, &cursor, line_stop)
                     summary.stack_overflow_entries <- parse_protocol_number(data, &cursor, line_stop)
                     summary.thread_count <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.location_limit <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.call_edge_limit <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.stack_limit <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.budget_exceeded <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.call_edge_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                    summary.stack_dropped <- parse_protocol_number(data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, trace_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(trace_prefix)
                     summary.trace_enabled <- parse_protocol_number(data, &cursor, line_stop)
@@ -882,6 +900,12 @@ module ProfilerNative:
                 trace_captured: NATIVE_ZERO,
                 trace_omitted: NATIVE_ZERO,
                 trace_limit: NATIVE_ZERO,
+                location_limit: NATIVE_ZERO,
+                call_edge_limit: NATIVE_ZERO,
+                stack_limit: NATIVE_ZERO,
+                budget_exceeded: NATIVE_ZERO,
+                call_edge_dropped: NATIVE_ZERO,
+                stack_dropped: NATIVE_ZERO,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
@@ -906,6 +930,12 @@ module ProfilerNative:
             destination.trace_captured <- destination.trace_captured + incoming.trace_captured
             destination.trace_omitted <- destination.trace_omitted + incoming.trace_omitted
             destination.trace_limit <- incoming.trace_limit
+            destination.location_limit <- incoming.location_limit
+            destination.call_edge_limit <- incoming.call_edge_limit
+            destination.stack_limit <- incoming.stack_limit
+            destination.budget_exceeded <- incoming.budget_exceeded if incoming.budget_exceeded != NATIVE_ZERO
+            destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
+            destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped
             append_record_separator(destination.location_records)
             destination.location_records.extend(incoming.location_records)
             append_record_separator(destination.function_records)
@@ -961,6 +991,18 @@ module ProfilerNative:
             append_i64(buffer, summary.max_stack_depth)
             append_text(buffer, ",\"trace_stack_overflow_entries\":")
             append_i64(buffer, summary.stack_overflow_entries)
+            append_text(buffer, ",\"location_limit\":")
+            append_i64(buffer, summary.location_limit)
+            append_text(buffer, ",\"call_edge_limit\":")
+            append_i64(buffer, summary.call_edge_limit)
+            append_text(buffer, ",\"stack_limit\":")
+            append_i64(buffer, summary.stack_limit)
+            append_text(buffer, ",\"detail_budget_exceeded\":")
+            append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
+            append_text(buffer, ",\"dropped_call_edges\":")
+            append_i64(buffer, summary.call_edge_dropped)
+            append_text(buffer, ",\"dropped_stacks\":")
+            append_i64(buffer, summary.stack_dropped)
             append_text(buffer, ",\"trace_events_captured\":")
             append_i64(buffer, summary.trace_captured)
             append_text(buffer, ",\"trace_events_omitted\":")
@@ -1033,6 +1075,18 @@ module ProfilerNative:
             append_i64(buffer, summary.max_stack_depth)
             append_text(buffer, ",\"stack_overflow_entries\":")
             append_i64(buffer, summary.stack_overflow_entries)
+            append_text(buffer, ",\"location_limit\":")
+            append_i64(buffer, summary.location_limit)
+            append_text(buffer, ",\"call_edge_limit\":")
+            append_i64(buffer, summary.call_edge_limit)
+            append_text(buffer, ",\"stack_limit\":")
+            append_i64(buffer, summary.stack_limit)
+            append_text(buffer, ",\"detail_budget_exceeded\":")
+            append_text(buffer, "true" if summary.budget_exceeded != NATIVE_ZERO else "false")
+            append_text(buffer, ",\"dropped_call_edges\":")
+            append_i64(buffer, summary.call_edge_dropped)
+            append_text(buffer, ",\"dropped_stacks\":")
+            append_i64(buffer, summary.stack_dropped)
             append_text(buffer, ",\"thread_count\":")
             append_i64(buffer, summary.thread_count)
             append_text(buffer, ",\"trace_events_captured\":")
@@ -1133,6 +1187,19 @@ module ProfilerNative:
             append_i64(buffer, summary.thread_count)
             append_text(buffer, "\ndropped: ")
             append_i64(buffer, summary.dropped)
+            append_text(buffer, "\ndetail budgets: ")
+            append_text(buffer, "exceeded" if summary.budget_exceeded != NATIVE_ZERO else "not exceeded")
+            append_text(buffer, " (locations ")
+            append_i64(buffer, summary.location_limit)
+            append_text(buffer, ", call edges ")
+            append_i64(buffer, summary.call_edge_limit)
+            append_text(buffer, ", stacks ")
+            append_i64(buffer, summary.stack_limit)
+            append_text(buffer, "; dropped call edges ")
+            append_i64(buffer, summary.call_edge_dropped)
+            append_text(buffer, ", stacks ")
+            append_i64(buffer, summary.stack_dropped)
+            append_text(buffer, ")\n")
             append_text(buffer, "\nexecution: ")
             append_millis(buffer, execution_ns)
             append_text(buffer, " ms\ncompile: ")

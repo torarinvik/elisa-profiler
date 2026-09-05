@@ -532,7 +532,7 @@ def parse_profile(
         fields = line.split("\t")
         if len(fields) < 2 or fields[1] != "1":
             raise ProfilerError(f"unsupported profiler runtime protocol version: {line}")
-        if len(fields) in (6, 8, 9) and fields[2] == "meta":
+        if len(fields) in (6, 8, 9, 15) and fields[2] == "meta":
             meta = {
                 "events": parse_protocol_uint(fields[3], line),
                 "locations": parse_protocol_uint(fields[4], line),
@@ -546,6 +546,18 @@ def parse_profile(
                 meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
                 meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
                 meta["thread_count"] = parse_protocol_uint(fields[8], line)
+            elif len(fields) == 15:
+                meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
+                meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
+                meta["thread_count"] = parse_protocol_uint(fields[8], line)
+                meta["location_limit"] = parse_protocol_uint(fields[9], line)
+                meta["call_edge_limit"] = parse_protocol_uint(fields[10], line)
+                meta["stack_limit"] = parse_protocol_uint(fields[11], line)
+                meta["budget_exceeded"] = parse_protocol_uint(fields[12], line)
+                if meta["budget_exceeded"] not in (0, 1):
+                    raise ProfilerError(f"invalid profiler detail budget flag: {line}")
+                meta["call_edge_dropped"] = parse_protocol_uint(fields[13], line)
+                meta["stack_dropped"] = parse_protocol_uint(fields[14], line)
             continue
         if len(fields) == 7 and fields[2] == "trace":
             if trace_record_seen:
@@ -651,6 +663,12 @@ def parse_profile(
                     "trace_captured": 0,
                     "trace_omitted": 0,
                     "trace_limit": 0,
+                    "location_limit": 0,
+                    "call_edge_limit": 0,
+                    "stack_limit": 0,
+                    "budget_exceeded": 0,
+                    "call_edge_dropped": 0,
+                    "stack_dropped": 0,
                 },
                 [],
                 [],
@@ -708,6 +726,12 @@ def merge_profiles(
     trace_captured = 0
     trace_omitted = 0
     trace_limit = 0
+    location_limit = 0
+    call_edge_limit = 0
+    stack_limit = 0
+    budget_exceeded = 0
+    call_edge_dropped = 0
+    stack_dropped = 0
     recent_events: list[dict[str, Any]] = []
     active_stack: dict[str, Any] | None = None
     program_stderr: list[str] = []
@@ -721,6 +745,12 @@ def merge_profiles(
         trace_captured += meta.get("trace_captured", 0)
         trace_omitted += meta.get("trace_omitted", 0)
         trace_limit = max(trace_limit, meta.get("trace_limit", 0))
+        location_limit = meta.get("location_limit", location_limit)
+        call_edge_limit = meta.get("call_edge_limit", call_edge_limit)
+        stack_limit = meta.get("stack_limit", stack_limit)
+        budget_exceeded = max(budget_exceeded, meta.get("budget_exceeded", 0))
+        call_edge_dropped += meta.get("call_edge_dropped", 0)
+        stack_dropped += meta.get("stack_dropped", 0)
         if stderr:
             program_stderr.append(f"run {repetition}:\n{stderr.rstrip()}")
         if path:
@@ -813,6 +843,12 @@ def merge_profiles(
             "trace_captured": trace_captured,
             "trace_omitted": trace_omitted,
             "trace_limit": trace_limit,
+            "location_limit": location_limit,
+            "call_edge_limit": call_edge_limit,
+            "stack_limit": stack_limit,
+            "budget_exceeded": budget_exceeded,
+            "call_edge_dropped": call_edge_dropped,
+            "stack_dropped": stack_dropped,
         },
         locations,
         call_edges,
@@ -914,10 +950,13 @@ def text_report(report: dict[str, Any], top: int) -> str:
             f"events={summary['events']} "
             f"(statement={summary['statement_events']}, value={summary['value_events']}, "
             f"function={summary['function_events']}) "
-            f"locations={summary['locations']} dropped={summary['dropped']} "
-            f"threads={summary['thread_count']} "
-            f"stack-depth={summary['max_stack_depth']} "
-            f"stack-overflow={summary['stack_overflow_entries']}"
+        f"locations={summary['locations']} dropped={summary['dropped']} "
+        f"threads={summary['thread_count']} "
+        f"stack-depth={summary['max_stack_depth']} "
+        f"stack-overflow={summary['stack_overflow_entries']} "
+        f"detail-budget={'exceeded' if summary.get('detail_budget_exceeded', False) else 'ok'} "
+        f"detail-drops=(edges={summary.get('dropped_call_edges', 0)}, "
+        f"stacks={summary.get('dropped_stacks', 0)})"
         ),
         "",
     ]
@@ -2743,6 +2782,15 @@ def build_report(
     summary["function_events"] = sum(
         location["count"] for location in locations if location["kind"] == "function"
     )
+    summary["location_limit"] = meta.get("location_limit", 0)
+    summary["call_edge_limit"] = meta.get("call_edge_limit", 0)
+    summary["stack_limit"] = meta.get("stack_limit", 0)
+    summary["detail_budget_exceeded"] = bool(meta.get("budget_exceeded", 0))
+    summary["dropped_call_edges"] = meta.get("call_edge_dropped", 0)
+    summary["dropped_stacks"] = meta.get("stack_dropped", 0)
+    summary.pop("budget_exceeded", None)
+    summary.pop("call_edge_dropped", None)
+    summary.pop("stack_dropped", None)
     summary["trace_events_captured"] = meta.get("trace_captured", 0)
     summary["trace_events_omitted"] = meta.get("trace_omitted", 0)
     summary["trace_event_limit"] = trace_event_limit
@@ -3293,6 +3341,12 @@ def profile(args: argparse.Namespace) -> int:
                 "trace_threads": meta.get("thread_count", 0),
                 "trace_max_stack_depth": meta.get("max_stack_depth", 0),
                 "trace_stack_overflow_entries": meta.get("stack_overflow_entries", 0),
+                "location_limit": meta.get("location_limit", 0),
+                "call_edge_limit": meta.get("call_edge_limit", 0),
+                "stack_limit": meta.get("stack_limit", 0),
+                "detail_budget_exceeded": bool(meta.get("budget_exceeded", 0)),
+                "dropped_call_edges": meta.get("call_edge_dropped", 0),
+                "dropped_stacks": meta.get("stack_dropped", 0),
                 "trace_events_captured": meta.get("trace_captured", 0),
                 "trace_events_omitted": meta.get("trace_omitted", 0),
                 "trace_event_limit": (

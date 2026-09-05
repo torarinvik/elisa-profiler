@@ -142,6 +142,13 @@ trace. Full traces have a one-million-event safety budget by default; use
 run reports captured and omitted trace records plus `trace_complete`, so a
 truncated trace cannot be mistaken for a complete execution. The default
 recent path remains capped at 256 events.
+Distinct locations, call edges, and folded call paths are also bounded by the
+collector. Their defaults are 32,768, 16,384, and 32,768 records respectively;
+set `ELISA_PROFILE_MAX_LOCATIONS`, `ELISA_PROFILE_MAX_CALL_EDGES`, or
+`ELISA_PROFILE_MAX_STACKS` to change them, with `0` meaning unlimited. Reports
+preserve the configured limits, a `detail_budget_exceeded` quality flag, and
+the number of dropped edge/path records so consumers can distinguish a sparse
+profile from an intentionally bounded one.
 
 Useful controls:
 
@@ -156,6 +163,9 @@ Useful controls:
     --recent-path          include the last 256 trace events in each measured run
     --event-trace          include every trace event in each measured JSON run
     --max-event-trace-events N  cap full-trace records per run (0 means unlimited)
+    ELISA_PROFILE_MAX_LOCATIONS=N  cap distinct source-location records (0 means unlimited)
+    ELISA_PROFILE_MAX_CALL_EDGES=N  cap distinct caller-to-callee records (0 means unlimited)
+    ELISA_PROFILE_MAX_STACKS=N  cap distinct folded call-path records (0 means unlimited)
     --compiler-root PATH   use another isolated compiler worktree
     --cwd PATH             run the target from PATH
     --stdin PATH           provide PATH as target standard input

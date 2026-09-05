@@ -62,7 +62,13 @@
         "function_events": { "type": "integer", "minimum": 0 },
         "max_stack_depth": { "type": "integer", "minimum": 0 },
         "stack_overflow_entries": { "type": "integer", "minimum": 0 },
-        "thread_count": { "type": "integer", "minimum": 0 }
+        "thread_count": { "type": "integer", "minimum": 0 },
+        "location_limit": { "type": "integer", "minimum": 0 },
+        "call_edge_limit": { "type": "integer", "minimum": 0 },
+        "stack_limit": { "type": "integer", "minimum": 0 },
+        "detail_budget_exceeded": { "type": "boolean" },
+        "dropped_call_edges": { "type": "integer", "minimum": 0 },
+        "dropped_stacks": { "type": "integer", "minimum": 0 }
         ,"trace_events_captured": { "type": "integer", "minimum": 0 }
         ,"trace_events_omitted": { "type": "integer", "minimum": 0 }
         ,"trace_event_limit": { "type": ["integer", "null"], "minimum": 0 }
@@ -235,6 +241,12 @@
         "trace_threads": { "type": "integer", "minimum": 0 },
         "trace_max_stack_depth": { "type": "integer", "minimum": 0 },
         "trace_stack_overflow_entries": { "type": "integer", "minimum": 0 },
+        "location_limit": { "type": "integer", "minimum": 0 },
+        "call_edge_limit": { "type": "integer", "minimum": 0 },
+        "stack_limit": { "type": "integer", "minimum": 0 },
+        "detail_budget_exceeded": { "type": "boolean" },
+        "dropped_call_edges": { "type": "integer", "minimum": 0 },
+        "dropped_stacks": { "type": "integer", "minimum": 0 },
         "trace_events_captured": { "type": "integer", "minimum": 0 },
         "trace_events_omitted": { "type": "integer", "minimum": 0 },
         "trace_event_limit": { "type": ["integer", "null"], "minimum": 0 },

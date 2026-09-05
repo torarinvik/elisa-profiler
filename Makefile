@@ -10,7 +10,7 @@ NATIVE_COMPILER_SCRIPT := $(COMPILER_WORKTREE)/scripts/elisac_stage1.sh
 NATIVE_STAGE1_BIN := $(COMPILER_WORKTREE)/bin/elisac-stage1
 NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 
-.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke profiler-native profiler-native-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke profiler-native profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -54,6 +54,9 @@ profiler-native-smoke: profiler-native
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/stderr-probe.json"; \
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"
 
+profile-budget-smoke: profiler-native
+	@"$(PROFILER_ROOT)/test/profile_budget_smoke.sh"
+
 compiler-smoke:
 	@"$(PROFILER_ROOT)/test/compiler_smoke.sh"
 
@@ -96,4 +99,4 @@ source-mapping-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-audit compiler-smoke profiler-native-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
+test: compiler-audit compiler-smoke profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
