@@ -48,7 +48,7 @@
         "source": { "type": "string" },
         "compiler_commit": { "type": "string" },
         "opt_level": { "type": "string" },
-        "exit_code": { "type": "integer", "minimum": 0 }
+        "exit_code": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": false
     },

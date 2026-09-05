@@ -79,6 +79,7 @@ module ProfilerNative:
         const NATIVE_BYTE_JSON_FORMFEED: u8 = 12
         const NATIVE_JSON_TRUE_LENGTH: usize = 4
         const NATIVE_JSON_FALSE_LENGTH: usize = 5
+        const NATIVE_JSON_NULL_LENGTH: usize = 4
         const NATIVE_JSON_UNICODE_DIGITS: usize = 4
         const NATIVE_UNICODE_HIGH_SURROGATE_MIN: i64 = 55296
         const NATIVE_UNICODE_HIGH_SURROGATE_MAX: i64 = 56319
@@ -119,6 +120,9 @@ module ProfilerNative:
         const NATIVE_BYTE_ASCII_TRUE_R: u8 = 114
         const NATIVE_BYTE_ASCII_TRUE_U: u8 = 117
         const NATIVE_BYTE_ASCII_TRUE_E: u8 = 101
+        const NATIVE_BYTE_ASCII_NULL_N: u8 = 110
+        const NATIVE_BYTE_ASCII_NULL_U: u8 = 117
+        const NATIVE_BYTE_ASCII_NULL_L: u8 = 108
         const NATIVE_BYTE_BACKSLASH: u8 = 92
         const NATIVE_HEX_LETTER_OFFSET: u8 = 87
         const NATIVE_O_RDONLY: i64 = 0

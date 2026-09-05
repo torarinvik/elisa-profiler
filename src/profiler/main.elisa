@@ -477,6 +477,12 @@ extend ProfilerNative:
             append_i64(buffer, signal) if signal >= NATIVE_ZERO
 
 
+        def append_observed_exit_code(buffer: mutable darray[u8]&, status: i64, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            signal: i64 = observed_signal(status, summary)
+            append_text(buffer, "null") if status < NATIVE_ZERO or signal >= NATIVE_ZERO
+            append_i64(buffer, system_exit_code(status)) if status >= NATIVE_ZERO and signal < NATIVE_ZERO
+
+
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
@@ -620,7 +626,7 @@ extend ProfilerNative:
 
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
-            exit_code: i64, status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
+            status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
             working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
@@ -703,7 +709,7 @@ extend ProfilerNative:
             append_text(buffer, ",\"unmapped_locations\":")
             append_i64(buffer, summary.locations)
             append_text(buffer, "},\"run\":{\"exit_code\":")
-            append_i64(buffer, exit_code)
+            append_observed_exit_code(buffer, status, summary)
             append_text(buffer, ",\"signal\":")
             append_observed_signal(buffer, status, summary)
             append_text(buffer, ",\"location_timing\":true,\"timing_clock\":\"wall\",\"event_trace_enabled\":")
@@ -1377,7 +1383,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

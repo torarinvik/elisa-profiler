@@ -99,7 +99,10 @@ extend ProfilerNative:
             append_text(buffer, ",\"opt_level\":")
             append_json_string(buffer, baseline.opt_level)
             append_text(buffer, ",\"exit_code\":")
-            append_i64(buffer, baseline.exit_code)
+            if baseline.exit_code < NATIVE_ZERO:
+                append_text(buffer, "null")
+            else:
+                append_i64(buffer, baseline.exit_code)
             append_text(buffer, "},\"candidate\":{\"path\":")
             append_json_string(buffer, candidate_path)
             append_text(buffer, ",\"source\":")
@@ -109,7 +112,10 @@ extend ProfilerNative:
             append_text(buffer, ",\"opt_level\":")
             append_json_string(buffer, candidate.opt_level)
             append_text(buffer, ",\"exit_code\":")
-            append_i64(buffer, candidate.exit_code)
+            if candidate.exit_code < NATIVE_ZERO:
+                append_text(buffer, "null")
+            else:
+                append_i64(buffer, candidate.exit_code)
             append_text(buffer, "},\"workload_metadata_match\":")
             append_text(buffer, "false" if workload_mismatch else "true")
             append_text(buffer, ",\"metrics\":{\"execution_ms_mean\":{\"baseline\":")

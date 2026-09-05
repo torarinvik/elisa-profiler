@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 
-def capture(arguments: list[str]) -> dict[str, object]:
+def capture(arguments: list[str], exit_code: int | None = 0) -> dict[str, object]:
     return {
         "schema_version": 1,
         "source": "fixture.elisa",
@@ -29,7 +29,7 @@ def capture(arguments: list[str]) -> dict[str, object]:
             "opt_level": "-O0",
             "execution_ms_mean": 1.0,
             "compile_ms": 1.0,
-            "exit_code": 0,
+            "exit_code": exit_code,
         },
         "workload": {
             "source_size_bytes": 1,
@@ -51,7 +51,7 @@ def main() -> int:
         candidate = root / "candidate.json"
         output = root / "comparison.json"
         baseline.write_text(json.dumps(capture(["--alpha"])), encoding="utf-8")
-        candidate.write_text(json.dumps(capture(["--beta"])), encoding="utf-8")
+        candidate.write_text(json.dumps(capture(["--beta"], exit_code=None)), encoding="utf-8")
         result = subprocess.run(
             [str(profiler), "compare", str(baseline), str(candidate), "--format", "json", "--output", str(output)],
             capture_output=True,
@@ -81,6 +81,10 @@ def main() -> int:
             raise SystemExit("native comparison omitted the workload warning")
         if comparison.get("status") != "warning":
             raise SystemExit("native comparison did not report warning status")
+        if comparison["candidate"]["exit_code"] is not None:
+            raise SystemExit("native comparison did not preserve a signaled null exit code")
+        if "baseline or candidate target execution failed" not in comparison.get("warnings", []):
+            raise SystemExit("native comparison omitted the target-failure warning")
 
         deep = capture([])
         nested: dict[str, object] = deep["workload"]  # type: ignore[assignment]

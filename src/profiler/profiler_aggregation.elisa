@@ -107,7 +107,7 @@ extend ProfilerNative:
             append_text(buffer, ",\"requested_repetitions\":")
             append_i64(buffer, requested)
             append_text(buffer, ",\"exit_code\":")
-            append_i64(buffer, system_exit_code(result.status))
+            append_observed_exit_code(buffer, result.status, summary)
             append_text(buffer, ",\"signal\":")
             append_observed_signal(buffer, result.status, summary)
             append_text(buffer, ",\"execution_ms\":")

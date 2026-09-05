@@ -276,6 +276,23 @@ extend ProfilerNative:
             return true
 
 
+        def json_read_exit_code_field(data: darray[u8]&, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, "exit_code", start, stop)
+            return false if value_start < NATIVE_ZERO
+            value_index: usize = value_start.usize()
+            if data[value_index] == NATIVE_BYTE_ASCII_NULL_N:
+                return false if value_index + NATIVE_JSON_NULL_LENGTH > stop
+                return false if data[value_index + NATIVE_ONE.usize()] != NATIVE_BYTE_ASCII_NULL_U
+                return false if data[value_index + NATIVE_TWO.usize()] != NATIVE_BYTE_ASCII_NULL_L
+                return false if data[value_index + NATIVE_THREE.usize()] != NATIVE_BYTE_ASCII_NULL_L
+                result <- NATIVE_NEGATIVE_ONE
+                return true
+            value: i64 = json_number_at(data, value_index, stop)
+            return false if value < NATIVE_ZERO
+            result <- value
+            return true
+
+
         def json_read_optional_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             return true if value_start < NATIVE_ZERO
@@ -355,7 +372,7 @@ extend ProfilerNative:
             return false if not json_read_bool_field(data, "detail_budget_exceeded", summary_start.usize(), summary_stop.usize(), &capture.detail_budget_exceeded)
             return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &capture.execution_mean_micros)
             return false if not json_read_millis_field(data, "compile_ms", run_start.usize(), run_stop.usize(), &capture.compile_micros)
-            return false if not json_read_number_field(data, "exit_code", run_start.usize(), run_stop.usize(), &capture.exit_code)
+            return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &capture.exit_code)
             return true
 
 
