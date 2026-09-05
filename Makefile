@@ -9,8 +9,10 @@ NATIVE_PROFILER_SOURCE := $(PROFILER_ROOT)/src/profiler/main.elisa
 NATIVE_COMPILER_SCRIPT := $(COMPILER_WORKTREE)/scripts/elisac_stage1.sh
 NATIVE_STAGE1_BIN := $(COMPILER_WORKTREE)/bin/elisac-stage1
 NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
+COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.json
+STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 
-.PHONY: compiler-status compiler-audit compiler-seed compiler-smoke profiler-native profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke profiler-native profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -21,10 +23,27 @@ compiler-status:
 compiler-audit:
 	@ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" "$(PROFILER_ROOT)/scripts/audit-compiler-branches.sh"
 
+compiler-ledger-smoke: compiler-audit
+	@python3 "$(PROFILER_ROOT)/test/compiler_ledger_smoke.py" "$(PROFILER_ROOT)/build/compiler-integration-ledger.json"
+
+compiler-manifest-smoke: compiler-ledger-smoke
+	@python3 "$(PROFILER_ROOT)/test/compiler_manifest_smoke.py" "$(COMPILER_BUILD_MANIFEST)" "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py"
+
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
+	ELISACORE_BIN="$${ELISACORE_BIN:-$(STAGE0_BIN)}" \
 	ELISA_STAGE1_SEED_OPT_LEVEL="$(SEED_OPT_LEVEL)" ELISA_STAGE1_SEED_MAX_RSS_KB="$(SEED_MAX_RSS_KB)" \
 	"$(COMPILER_WRAPPER)" --seed
+	@stage0="$${ELISACORE_BIN:-$(STAGE0_BIN)}"; \
+		if test -n "$$stage0"; then \
+			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
+			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
+			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --stage0 "$$stage0"; \
+		else \
+			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
+			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
+			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)"; \
+		fi
 
 profiler-native:
 	@test -x "$(NATIVE_COMPILER_SCRIPT)" || { echo "stage1 compiler wrapper missing: $(NATIVE_COMPILER_SCRIPT)" >&2; exit 2; }
@@ -33,6 +52,16 @@ profiler-native:
 	@mkdir -p "$(PROFILER_ROOT)/bin"
 	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
 		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -O0 -o "$(NATIVE_PROFILER_BIN)" "$(NATIVE_PROFILER_SOURCE)"
+	@stage0="$${ELISACORE_BIN:-$(STAGE0_BIN)}"; \
+		if test -n "$$stage0"; then \
+			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
+			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
+			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level=-O0 --stage0 "$$stage0"; \
+		else \
+			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
+			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
+			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level=-O0; \
+		fi
 	@echo "native profiler: $(NATIVE_PROFILER_BIN)"
 
 profiler-native-smoke: profiler-native
@@ -119,4 +148,4 @@ source-mapping-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-audit compiler-smoke profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke

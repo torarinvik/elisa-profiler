@@ -21,6 +21,7 @@ override it with `ELISA_COMPILER_ROOT` when needed.
 ```sh
 make compiler-status
 make compiler-audit
+make compiler-ledger-smoke
 make compiler-seed
 make compiler-smoke
 make runtime-abi-smoke
@@ -30,16 +31,23 @@ make test
 scripts/elisa-compiler -o build/hello.o examples/hello.elisa
 ```
 
-`compiler-seed` uses the local stage0 compiler at
-`../../Go projects/structpy-tree` by default. Set `STAGE0_CORE` or
-`ELISA_STAGE0_CORE` when using a different local stage0 checkout. The seeded
-stage1 binary and compiler build outputs remain ignored artifacts inside the
-compiler worktree.
+`compiler-seed` uses `ELISACORE_BIN` when it is set, then the local
+`elisac-stage0` on `PATH`, and finally the documented sibling stage0 checkout at
+`../../Go projects/structpy-tree`. Set `STAGE0_CORE` or `ELISA_STAGE0_CORE` when
+using a different local stage0 checkout. The seeded stage1 binary and compiler
+build outputs remain ignored artifacts inside the compiler worktree.
 
 `compiler-audit` verifies that every local branch tip in the compiler repository is
-already included in the profiler compiler worktree. It also warns about uncommitted
-changes in any compiler worktree; those changes are intentionally not imported until
-they have been reviewed and committed.
+already included in the profiler compiler worktree and atomically writes the ignored
+`build/compiler-integration-ledger.json` inventory. The ledger records remote refresh
+status, worktree HEADs, dirty files, relevant untracked files, and dirty-patch
+digests. It also warns about uncommitted changes in any compiler worktree; those
+changes are intentionally not imported until they have been reviewed and committed.
+`compiler-ledger-smoke` validates that inventory before the broader test gate runs.
+After a successful seed, `compiler-manifest-smoke` validates the ignored compiler
+build manifest, including content-based input identity, artifact hashes, toolchain,
+architecture, and trace ABI capabilities. A failed seed cannot replace the last
+usable stage1 binary because seed outputs are published atomically.
 
 The profiler Makefile seeds at -O0 with an 8 GiB RSS cap by default for a
 predictable local bootstrap. Override SEED_OPT_LEVEL and SEED_MAX_RSS_KB when
