@@ -178,6 +178,11 @@ def main():
         assert all(item["detail_records"]["locations"] >= item["detail_records"]["functions"] for item in repetitions)
         assert all(item["cpu_user_ms"] is not None for item in repetitions)
         assert all(item["cpu_system_ms"] is not None for item in repetitions)
+        embedded_output = work / "embedded-source.json"
+        run("profile", ROOT / "examples/hot_loop.elisa", "--embed-source", "--format", "json", "--output", embedded_output)
+        embedded = json.loads(embedded_output.read_text(encoding="utf-8"))
+        assert embedded["source_snapshot"]["content"] == (ROOT / "examples/hot_loop.elisa").read_text(encoding="utf-8")
+        assert len(embedded["source_snapshot"]["sha256"]) == 64
         assert all(abs(item["cpu_ms"] - item["cpu_user_ms"] - item["cpu_system_ms"]) <= 0.002 for item in repetitions)
         assert all(item["peak_rss_bytes"] is not None and item["peak_rss_bytes"] >= 0 for item in repetitions)
         assert abs(measured["run"]["cpu_user_ms"] - sum(item["cpu_user_ms"] for item in repetitions)) <= 0.002

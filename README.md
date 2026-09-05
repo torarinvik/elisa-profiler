@@ -138,6 +138,9 @@ The summary includes the number of distinct threads that emitted trace events,
 which makes worker activity visible in threaded targets.
 The machine-readable contract is published at
 [`docs/profile.schema.json`](docs/profile.schema.json).
+Pass `--embed-source` when a portable JSON report should carry the exact source
+bytes used for the capture; the snapshot includes its SHA-256 digest and is
+opt-in because it can make reports substantially larger.
 Compiler provenance includes the stage1 and runtime object hashes, source
 status digest and dirty-file list, host/toolchain information, profiling build
 options, and the content fingerprint used to validate the cached runtime

@@ -20,6 +20,15 @@
   "properties": {
     "schema_version": { "const": 1 },
     "source": { "type": "string" },
+    "source_snapshot": {
+      "type": "object",
+      "required": ["sha256", "content"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "content": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "compiler": {
       "type": "object",
       "required": ["root", "branch", "commit", "dirty", "runtime_object"],

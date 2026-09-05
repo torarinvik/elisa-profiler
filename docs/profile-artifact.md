@@ -38,7 +38,10 @@ This is a compatibility container, not yet the final durable artifact format.
 The native collector transport is already record-framed: each streamed record
 carries a strict sequence number, byte length, and FNV-1a-64 checksum, and the
 Elisa decoder validates those fields before normalization. The JSON artifact
-still has no progressive manifest, compression, source snapshots, or durable
-partial-capture index; those remain planned M2/M3 work.
+still has no compression or durable partial-capture index; those remain planned
+M2/M3 work. Raw JSON reports can opt in to an exact source snapshot with
+`--embed-source`; the top-level `source_snapshot` contains the UTF-8 source
+bytes and their SHA-256 digest. Snapshots are intentionally optional because
+they increase report size.
 The quality object inside the embedded capture is authoritative about target
 termination and bounded-detail loss.
