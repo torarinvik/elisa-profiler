@@ -141,3 +141,13 @@ make profiler-native-smoke
 The native profiler itself remains Elisa code. The C collector is only the explicit
 low-level ABI/runtime component used by the generated target and is not an alternate
 profiler CLI or report implementation.
+
+The compiler bootstrap fixed-point check is exposed separately as
+`make compiler-self-host-smoke`. It runs the dedicated compiler's gen2/gen3 gate,
+including the fixed-blocker probes, compiler self-compilation, byte-level gen3/gen4
+fixed-point comparison, and repeated gen3 determinism probes. The compiler gate now
+bounds every probe class, not only the large compiler-source requests: a host loader
+stall is reported as a timeout with retained diagnostics instead of hanging the
+profiler integration suite. This target is intentionally separate from the ordinary
+native-profiler smoke because it is a high-memory compiler validation and may be
+skipped or retried when the macOS loader is unhealthy.

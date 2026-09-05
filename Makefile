@@ -12,7 +12,7 @@ NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.json
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-self-host-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -28,6 +28,11 @@ compiler-ledger-smoke: compiler-audit
 
 compiler-manifest-smoke: compiler-ledger-smoke
 	@python3 "$(PROFILER_ROOT)/test/compiler_manifest_smoke.py" "$(COMPILER_BUILD_MANIFEST)" "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py"
+
+compiler-self-host-smoke: compiler-manifest-smoke
+	@test -x "$(COMPILER_WORKTREE)/test/parity/self_host_gen3_smoke.sh" || { echo "compiler self-host smoke missing: $(COMPILER_WORKTREE)/test/parity/self_host_gen3_smoke.sh" >&2; exit 2; }
+	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(COMPILER_WORKTREE)/test/parity/self_host_gen3_smoke.sh"
 
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \

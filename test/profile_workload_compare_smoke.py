@@ -4,10 +4,34 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+
+DEFAULT_NATIVE_COMMAND_TIMEOUT_SECONDS = 10.0
+NATIVE_COMMAND_TIMEOUT_SECONDS = float(
+    os.environ.get("ELISA_NATIVE_SMOKE_TIMEOUT_SECONDS", DEFAULT_NATIVE_COMMAND_TIMEOUT_SECONDS)
+)
+
+
+def run_command(command: list[str], label: str) -> subprocess.CompletedProcess[str]:
+    """Keep a stalled native executable from hanging the entire smoke suite."""
+    try:
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=NATIVE_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise SystemExit(
+            f"{label} timed out after {NATIVE_COMMAND_TIMEOUT_SECONDS:g}s; "
+            "inspect the native process before retrying"
+        ) from error
 
 
 def capture(arguments: list[str], exit_code: int | None = 0) -> dict[str, object]:
@@ -52,25 +76,21 @@ def main() -> int:
         output = root / "comparison.json"
         baseline.write_text(json.dumps(capture(["--alpha"])), encoding="utf-8")
         candidate.write_text(json.dumps(capture(["--beta"], exit_code=None)), encoding="utf-8")
-        result = subprocess.run(
+        result = run_command(
             [str(profiler), "compare", str(baseline), str(candidate), "--format", "json", "--output", str(output)],
-            capture_output=True,
-            text=True,
-            check=False,
+            "native comparison",
         )
         if result.returncode != 0:
             raise SystemExit(f"native comparison failed: {result.stderr or result.stdout}")
         comparison = json.loads(output.read_text(encoding="utf-8"))
-        schema_check = subprocess.run(
+        schema_check = run_command(
             [
                 sys.executable,
                 str(Path(__file__).with_name("profile_schema_smoke.py")),
                 str(Path(__file__).parents[1] / "docs/comparison.schema.json"),
                 str(output),
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            "comparison schema check",
         )
         if schema_check.returncode != 0:
             raise SystemExit(f"native comparison schema failed: {schema_check.stderr or schema_check.stdout}")
@@ -94,11 +114,9 @@ def main() -> int:
             nested = child
         deep_path = root / "deep.json"
         deep_path.write_text(json.dumps(deep), encoding="utf-8")
-        rejected_depth = subprocess.run(
+        rejected_depth = run_command(
             [str(profiler), "compare", deep_path, deep_path, "--format", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
+            "over-deep JSON rejection",
         )
         if rejected_depth.returncode == 0:
             raise SystemExit("native comparison accepted over-deep JSON nesting")
@@ -107,11 +125,9 @@ def main() -> int:
         overflow["run"]["execution_ms_mean"] = 9223372036854776  # type: ignore[index]
         overflow_path = root / "overflow.json"
         overflow_path.write_text(json.dumps(overflow), encoding="utf-8")
-        rejected_overflow = subprocess.run(
+        rejected_overflow = run_command(
             [str(profiler), "compare", overflow_path, overflow_path, "--format", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
+            "overflowing timing rejection",
         )
         if rejected_overflow.returncode == 0:
             raise SystemExit("native comparison accepted overflowing millisecond JSON")
@@ -120,11 +136,9 @@ def main() -> int:
         precision["run"]["execution_ms_mean"] = 1.1234  # type: ignore[index]
         precision_path = root / "precision.json"
         precision_path.write_text(json.dumps(precision), encoding="utf-8")
-        rejected_precision = subprocess.run(
+        rejected_precision = run_command(
             [str(profiler), "compare", precision_path, precision_path, "--format", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
+            "excess timing precision rejection",
         )
         if rejected_precision.returncode == 0:
             raise SystemExit("native comparison silently truncated millisecond precision")
@@ -136,11 +150,9 @@ def main() -> int:
             '"__largest_valid_timing__"', "9223372036854775.807"
         )
         largest_valid_path.write_text(largest_valid_text, encoding="utf-8")
-        rendered_large = subprocess.run(
+        rendered_large = run_command(
             [str(profiler), "compare", largest_valid_path, largest_valid_path, "--format", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
+            "largest timing render",
         )
         if rendered_large.returncode != 0:
             raise SystemExit(
@@ -155,11 +167,9 @@ def main() -> int:
         # The literal newline is intentionally invalid JSON; it exercises the
         # native parser rather than Python's JSON writer.
         control_path.write_bytes(control_bytes)
-        rejected_control = subprocess.run(
+        rejected_control = run_command(
             [str(profiler), "compare", control_path, control_path, "--format", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
+            "control-character JSON rejection",
         )
         if rejected_control.returncode == 0:
             raise SystemExit("native comparison accepted a raw control character in JSON")
@@ -169,11 +179,9 @@ def main() -> int:
             json.dumps(capture([])).replace('"exit_code": 0', '"exit_code": nullsuffix'),
             encoding="utf-8",
         )
-        rejected_token = subprocess.run(
+        rejected_token = run_command(
             [str(profiler), "compare", invalid_token_path, invalid_token_path, "--format", "json"],
-            capture_output=True,
-            text=True,
-            check=False,
+            "invalid JSON token rejection",
         )
         if rejected_token.returncode == 0:
             raise SystemExit("native comparison accepted a suffixed JSON null token")
