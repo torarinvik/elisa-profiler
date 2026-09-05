@@ -27,6 +27,8 @@ extern profiler_ffi_getenv(name: cstr) -> u8&?
 extern profiler_ffi_mkdir(path: cstr, mode: u16) -> i64
 @link_name("unlink")
 extern profiler_ffi_unlink(path: cstr) -> i64
+@link_name("rename")
+extern profiler_ffi_rename(old_path: cstr, new_path: cstr) -> i64
 @link_name("rmdir")
 extern profiler_ffi_rmdir(path: cstr) -> i64
 @link_name("strcmp")
@@ -504,20 +506,30 @@ module ProfilerNative:
 
 
         def write_file(path: darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
-            path_copy: mutable darray[u8] = []
-            path_copy.extend(path)
-            path_copy.push(NATIVE_BYTE_NUL)
-            path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
-            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
+            temporary_path: mutable darray[u8] = []
+            temporary_path.extend(path)
+            append_text(temporary_path, ".elisa-profiler.tmp.")
+            append_i64(temporary_path, profiler_ffi_getpid())
+            temporary_path.push(NATIVE_BYTE_NUL)
+            temporary_cstr: cstr = (&temporary_path[0]).cast[cstr] can Unsafe.PointerCast
+            fd: i64 = profiler_ffi_open(temporary_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
             false return if fd < NATIVE_ZERO
             written: mutable usize = NATIVE_ZERO.usize()
             while written < data.count |written, data, fd|:
                 amount: i64 = profiler_ffi_write(fd, &data[written], data.count - written) can Console
                 if amount <= NATIVE_ZERO:
                     _ = profiler_ffi_close(fd)
+                    _ = profiler_ffi_unlink(temporary_cstr)
                     return false
                 written <- written + amount.usize()
             _ = profiler_ffi_close(fd)
+            path_copy: mutable darray[u8] = []
+            path_copy.extend(path)
+            path_copy.push(NATIVE_BYTE_NUL)
+            path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
+            if profiler_ffi_rename(temporary_cstr, path_cstr) != NATIVE_ZERO:
+                _ = profiler_ffi_unlink(temporary_cstr)
+                return false
             return true
 
 
