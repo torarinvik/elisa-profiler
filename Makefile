@@ -39,6 +39,10 @@ profiler-native-smoke: profiler-native
 	@native_work="$$(mktemp -d)"; trap 'rm -rf "$$native_work"' EXIT; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --event-trace --max-event-trace-events 10 --format json --output "$$native_work/report.json"; \
 		test -s "$$native_work/report.json"; \
+		grep -Fq '\"locations\":[{' "$$native_work/report.json"; \
+		grep -Fq '\"call_edges\":[{' "$$native_work/report.json"; \
+		grep -Fq '\"stacks\":[{' "$$native_work/report.json"; \
+		grep -Fq '\"event_trace\":[{' "$$native_work/report.json"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/report.json"
 
 compiler-smoke:

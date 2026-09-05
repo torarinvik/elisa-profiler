@@ -50,6 +50,9 @@ module ProfilerNative:
         struct CaptureSummary:
             events: mutable i64
             locations: mutable i64
+            statement_events: mutable i64
+            value_events: mutable i64
+            function_events: mutable i64
             dropped: mutable i64
             max_stack_depth: mutable i64
             stack_overflow_entries: mutable i64
@@ -58,6 +61,13 @@ module ProfilerNative:
             trace_captured: mutable i64
             trace_omitted: mutable i64
             trace_limit: mutable i64
+            location_records: mutable darray[u8]
+            function_records: mutable darray[u8]
+            call_edge_records: mutable darray[u8]
+            stack_records: mutable darray[u8]
+            event_records: mutable darray[u8]
+            malformed: mutable bool
+            malformed_code: mutable i64
         
         
         def append_text(buffer: mutable darray[u8]&, text: sview) -> void can[Abort.Panic, Memory.Allocate]:
@@ -201,8 +211,17 @@ module ProfilerNative:
             buffer.push(10)
             write_stderr(buffer)
             return 2
-        
-        
+
+
+        def report_protocol_error(summary: CaptureSummary) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            buffer: mutable darray[u8] = []
+            append_text(buffer, "elisa-profiler: malformed native protocol code=")
+            append_i64(buffer, summary.malformed_code)
+            buffer.push(10)
+            write_stderr(buffer)
+            return 2
+
+
         def write_file(path: darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
@@ -245,8 +264,303 @@ module ProfilerNative:
             for index in 0..<prefix_length |data, prefix|:
                 false return if data[start + index] != profiler_ffi_sview_at(prefix, index)
             return true
-        
-        
+
+
+        def protocol_field_into(data: darray[u8]&, start: usize, stop: usize, destination: mutable darray[u8]&) -> usize can[Abort.Panic, Memory.Allocate]:
+            field_end: mutable usize = start
+            while field_end < stop |field_end, data|:
+                break if data[field_end] == 9
+                field_end <- field_end + 1.usize()
+            for index in start..<field_end |destination, data|:
+                destination.push(data[index])
+            return field_end + 1.usize() if field_end < stop and data[field_end] == 9 else field_end
+
+
+        def protocol_field_is(value: darray[u8]&, expected: sview) -> bool can[Abort.Panic]:
+            false return if value.count != profiler_ffi_sview_len(expected)
+            for index in 0..<value.count |value, expected|:
+                false return if value[index] != profiler_ffi_sview_at(expected, index)
+            return true
+
+
+        def protocol_unsigned(value: darray[u8]&) -> bool can[Abort.Panic]:
+            false return if value.count == 0
+            for index in 0..<value.count |value|:
+                false return if value[index] < 48 or value[index] > 57
+            return true
+
+
+        def protocol_signed(value: darray[u8]&, allow_overflow: bool) -> bool can[Abort.Panic]:
+            return true if allow_overflow and protocol_field_is(value, "overflow")
+            false return if value.count == 0
+            start: mutable usize = 0.usize()
+            if value[0] == 45:
+                start <- 1.usize()
+            false return if start == value.count
+            for index in start..<value.count |value|:
+                false return if value[index] < 48 or value[index] > 57
+            return true
+
+
+        def append_record_separator(records: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            records.push(44) if records.count > 0
+
+
+        def append_protocol_number(records: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            records.extend(value)
+
+
+        def protocol_number_field(value: darray[u8]&) -> i64:
+            result: mutable i64 = 0
+            for index in 0..<value.count |result, value|:
+                result <- result * 10 + (value[index] - 48).i64()
+            return result
+
+
+        def append_location_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            kind_field: mutable darray[u8] = []
+            function_field: mutable darray[u8] = []
+            line_field: mutable darray[u8] = []
+            count_field: mutable darray[u8] = []
+            variable_field: mutable darray[u8] = []
+            signed_field: mutable darray[u8] = []
+            field_min: mutable darray[u8] = []
+            field_max: mutable darray[u8] = []
+            field_sum: mutable darray[u8] = []
+            field_last: mutable darray[u8] = []
+            field_interval: mutable darray[u8] = []
+            field_max_interval: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &kind_field)
+            cursor <- protocol_field_into(data, cursor, stop, &function_field)
+            cursor <- protocol_field_into(data, cursor, stop, &line_field)
+            cursor <- protocol_field_into(data, cursor, stop, &count_field)
+            cursor <- protocol_field_into(data, cursor, stop, &variable_field)
+            cursor <- protocol_field_into(data, cursor, stop, &signed_field)
+            cursor <- protocol_field_into(data, cursor, stop, &field_min)
+            cursor <- protocol_field_into(data, cursor, stop, &field_max)
+            cursor <- protocol_field_into(data, cursor, stop, &field_sum)
+            cursor <- protocol_field_into(data, cursor, stop, &field_last)
+            cursor <- protocol_field_into(data, cursor, stop, &field_interval)
+            cursor <- protocol_field_into(data, cursor, stop, &field_max_interval)
+            kind_name: mutable sview = ""
+            if protocol_field_is(kind_field, "1"):
+                kind_name <- "statement"
+            elif protocol_field_is(kind_field, "2"):
+                kind_name <- "value"
+            elif protocol_field_is(kind_field, "3"):
+                kind_name <- "function"
+            else:
+                summary.malformed <- true
+                summary.malformed_code <- 1
+                return
+            valid: mutable bool = function_field.count > 0 and protocol_unsigned(line_field) and protocol_unsigned(count_field)
+            valid <- valid and (protocol_field_is(signed_field, "0") or protocol_field_is(signed_field, "1"))
+            valid <- valid and protocol_unsigned(field_interval) and protocol_unsigned(field_max_interval)
+            if kind_name == "function":
+                valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
+            elif kind_name == "value":
+                signed_value: bool = protocol_field_is(signed_field, "1")
+                valid <- valid and protocol_signed(field_min, false) and protocol_signed(field_max, false)
+                valid <- valid and protocol_signed(field_sum, true) and protocol_signed(field_last, false)
+                valid <- valid and (protocol_field_is(variable_field, "-") or variable_field.count > 0)
+                if not signed_value:
+                    valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_last)
+            else:
+                valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- 1
+                return
+
+            append_record_separator(summary.location_records)
+            append_text(summary.location_records, "{\"kind\":\"")
+            append_text(summary.location_records, kind_name)
+            append_text(summary.location_records, "\",\"function\":")
+            append_json_string(summary.location_records, function_field)
+            append_text(summary.location_records, ",\"line\":")
+            append_protocol_number(summary.location_records, line_field)
+            append_text(summary.location_records, ",\"count\":")
+            append_protocol_number(summary.location_records, count_field)
+            count_number: i64 = protocol_number_field(count_field)
+            if kind_name == "statement":
+                summary.statement_events <- summary.statement_events + count_number
+            elif kind_name == "value":
+                summary.value_events <- summary.value_events + count_number
+            else:
+                summary.function_events <- summary.function_events + count_number
+            if kind_name == "value":
+                append_text(summary.location_records, ",\"variable\":")
+                if protocol_field_is(variable_field, "-"):
+                    append_text(summary.location_records, "null")
+                else:
+                    append_json_string(summary.location_records, variable_field)
+                append_text(summary.location_records, ",\"signed\":")
+                append_text(summary.location_records, "true" if protocol_field_is(signed_field, "1") else "false")
+                append_text(summary.location_records, ",\"minimum\":")
+                append_protocol_number(summary.location_records, field_min)
+                append_text(summary.location_records, ",\"maximum\":")
+                append_protocol_number(summary.location_records, field_max)
+                append_text(summary.location_records, ",\"sum\":")
+                if protocol_field_is(field_sum, "overflow"):
+                    append_text(summary.location_records, "null,\"sum_overflow\":true")
+                else:
+                    append_protocol_number(summary.location_records, field_sum)
+                append_text(summary.location_records, ",\"last\":")
+                append_protocol_number(summary.location_records, field_last)
+            elif kind_name == "function":
+                append_text(summary.location_records, ",\"inclusive_ns\":")
+                append_protocol_number(summary.location_records, field_min)
+                append_text(summary.location_records, ",\"self_ns\":")
+                append_protocol_number(summary.location_records, field_max)
+                append_text(summary.location_records, ",\"completed_calls\":")
+                append_protocol_number(summary.location_records, field_sum)
+            append_text(summary.location_records, ",\"interval_ns\":")
+            append_protocol_number(summary.location_records, field_interval)
+            append_text(summary.location_records, ",\"max_interval_ns\":")
+            append_protocol_number(summary.location_records, field_max_interval)
+            append_text(summary.location_records, ",\"compiler_line\":")
+            append_protocol_number(summary.location_records, line_field)
+            append_text(summary.location_records, ",\"source\":")
+            append_json_string(summary.location_records, source)
+            append_text(summary.location_records, ",\"source_text\":null")
+            append_text(summary.location_records, "}")
+            if kind_name == "function":
+                append_record_separator(summary.function_records)
+                append_text(summary.function_records, "{\"function\":")
+                append_json_string(summary.function_records, function_field)
+                append_text(summary.function_records, ",\"events\":")
+                append_protocol_number(summary.function_records, count_field)
+                append_text(summary.function_records, ",\"statement_events\":0,\"value_events\":0,\"call_events\":")
+                append_protocol_number(summary.function_records, count_field)
+                append_text(summary.function_records, ",\"locations\":1,\"interval_ns\":")
+                append_protocol_number(summary.function_records, field_interval)
+                append_text(summary.function_records, ",\"max_interval_ns\":")
+                append_protocol_number(summary.function_records, field_max_interval)
+                append_text(summary.function_records, ",\"inclusive_ns\":")
+                append_protocol_number(summary.function_records, field_min)
+                append_text(summary.function_records, ",\"self_ns\":")
+                append_protocol_number(summary.function_records, field_max)
+                append_text(summary.function_records, ",\"completed_calls\":")
+                append_protocol_number(summary.function_records, field_sum)
+                append_text(summary.function_records, ",\"definitions\":[],\"mean_inclusive_ns\":0,\"mean_self_ns\":0,\"inclusive_percent\":0.0,\"self_percent\":0.0}")
+
+
+        def append_call_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            caller_field: mutable darray[u8] = []
+            callee_field: mutable darray[u8] = []
+            calls_field: mutable darray[u8] = []
+            completed_field: mutable darray[u8] = []
+            inclusive_field: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &caller_field)
+            cursor <- protocol_field_into(data, cursor, stop, &callee_field)
+            cursor <- protocol_field_into(data, cursor, stop, &calls_field)
+            cursor <- protocol_field_into(data, cursor, stop, &completed_field)
+            cursor <- protocol_field_into(data, cursor, stop, &inclusive_field)
+            if caller_field.count == 0 or callee_field.count == 0 or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(inclusive_field):
+                summary.malformed <- true
+                summary.malformed_code <- 2
+                return
+            append_record_separator(summary.call_edge_records)
+            append_text(summary.call_edge_records, "{\"caller\":")
+            append_json_string(summary.call_edge_records, caller_field)
+            append_text(summary.call_edge_records, ",\"callee\":")
+            append_json_string(summary.call_edge_records, callee_field)
+            append_text(summary.call_edge_records, ",\"call_events\":")
+            append_protocol_number(summary.call_edge_records, calls_field)
+            append_text(summary.call_edge_records, ",\"completed_calls\":")
+            append_protocol_number(summary.call_edge_records, completed_field)
+            append_text(summary.call_edge_records, ",\"inclusive_ns\":")
+            append_protocol_number(summary.call_edge_records, inclusive_field)
+            append_text(summary.call_edge_records, "}")
+
+
+        def append_stack_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            stack_field: mutable darray[u8] = []
+            calls_field: mutable darray[u8] = []
+            completed_field: mutable darray[u8] = []
+            self_field: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &stack_field)
+            cursor <- protocol_field_into(data, cursor, stop, &calls_field)
+            cursor <- protocol_field_into(data, cursor, stop, &completed_field)
+            cursor <- protocol_field_into(data, cursor, stop, &self_field)
+            if stack_field.count == 0 or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(self_field):
+                summary.malformed <- true
+                summary.malformed_code <- 3
+                return
+            append_record_separator(summary.stack_records)
+            append_text(summary.stack_records, "{\"stack\":")
+            append_json_string(summary.stack_records, stack_field)
+            append_text(summary.stack_records, ",\"call_events\":")
+            append_protocol_number(summary.stack_records, calls_field)
+            append_text(summary.stack_records, ",\"completed_calls\":")
+            append_protocol_number(summary.stack_records, completed_field)
+            append_text(summary.stack_records, ",\"self_ns\":")
+            append_protocol_number(summary.stack_records, self_field)
+            append_text(summary.stack_records, "}")
+
+
+        def append_event_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            sequence_field: mutable darray[u8] = []
+            kind_field: mutable darray[u8] = []
+            function_field: mutable darray[u8] = []
+            line_field: mutable darray[u8] = []
+            variable_field: mutable darray[u8] = []
+            signed_field: mutable darray[u8] = []
+            value_field: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
+            cursor <- protocol_field_into(data, cursor, stop, &kind_field)
+            cursor <- protocol_field_into(data, cursor, stop, &function_field)
+            cursor <- protocol_field_into(data, cursor, stop, &line_field)
+            cursor <- protocol_field_into(data, cursor, stop, &variable_field)
+            cursor <- protocol_field_into(data, cursor, stop, &signed_field)
+            cursor <- protocol_field_into(data, cursor, stop, &value_field)
+            kind_name: mutable sview = ""
+            if protocol_field_is(kind_field, "1"):
+                kind_name <- "statement"
+            elif protocol_field_is(kind_field, "2"):
+                kind_name <- "value"
+            elif protocol_field_is(kind_field, "3"):
+                kind_name <- "function"
+            else:
+                summary.malformed <- true
+                summary.malformed_code <- 4
+                return
+            signed_value: bool = protocol_field_is(signed_field, "1")
+            valid: mutable bool = protocol_unsigned(sequence_field) and function_field.count > 0 and protocol_unsigned(line_field)
+            valid <- valid and (protocol_field_is(signed_field, "0") or signed_value)
+            valid <- valid and protocol_signed(value_field, false)
+            if not signed_value:
+                valid <- valid and protocol_unsigned(value_field)
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- 4
+                return
+            append_record_separator(summary.event_records)
+            append_text(summary.event_records, "{\"sequence\":")
+            append_protocol_number(summary.event_records, sequence_field)
+            append_text(summary.event_records, ",\"kind\":\"")
+            append_text(summary.event_records, kind_name)
+            append_text(summary.event_records, "\",\"function\":")
+            append_json_string(summary.event_records, function_field)
+            append_text(summary.event_records, ",\"line\":")
+            append_protocol_number(summary.event_records, line_field)
+            append_text(summary.event_records, ",\"variable\":")
+            if protocol_field_is(variable_field, "-"):
+                append_text(summary.event_records, "null")
+            else:
+                append_json_string(summary.event_records, variable_field)
+            append_text(summary.event_records, ",\"signed\":")
+            append_text(summary.event_records, "true" if signed_value else "false")
+            append_text(summary.event_records, ",\"value\":")
+            append_protocol_number(summary.event_records, value_field)
+            append_text(summary.event_records, ",\"compiler_line\":")
+            append_protocol_number(summary.event_records, line_field)
+            append_text(summary.event_records, ",\"source\":")
+            append_json_string(summary.event_records, source)
+            append_text(summary.event_records, ",\"source_text\":null")
+            append_text(summary.event_records, "}")
+
+
         def parse_protocol_number(data: darray[u8]&, cursor: mutable usize&, stop: usize) -> i64:
             value: mutable i64 = 0
             while cursor < stop and data[cursor] >= 48 and data[cursor] <= 57 |cursor, value, data|:
@@ -256,10 +570,13 @@ module ProfilerNative:
             return value
         
         
-        def parse_capture(data: darray[u8]&) -> CaptureSummary:
+        def parse_capture(data: darray[u8]&, source: darray[u8]&) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
                 events: 0,
                 locations: 0,
+                statement_events: 0,
+                value_events: 0,
+                function_events: 0,
                 dropped: 0,
                 max_stack_depth: 0,
                 stack_overflow_entries: 0,
@@ -268,6 +585,13 @@ module ProfilerNative:
                 trace_captured: 0,
                 trace_omitted: 0,
                 trace_limit: 0,
+                location_records: [],
+                function_records: [],
+                call_edge_records: [],
+                stack_records: [],
+                event_records: [],
+                malformed: false,
+                malformed_code: 0,
             }
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
@@ -290,6 +614,20 @@ module ProfilerNative:
                     summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
+                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
+                    append_location_record(&summary, data, &cursor, line_stop, source)
+                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tcall\t"):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tcall\t")
+                    append_call_record(&summary, data, &cursor, line_stop)
+                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
+                    append_stack_record(&summary, data, &cursor, line_stop)
+                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
+                    append_event_record(&summary, data, &cursor, line_stop, source)
+                elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\t"):
+                    summary.malformed <- true
                 line_start <- line_stop + 1.usize()
             return summary
         
@@ -299,10 +637,18 @@ module ProfilerNative:
             return status / 256 if status % 256 == 0 else 128 + (status % 256)
         
         
-        def append_empty_function_arrays(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
-            append_text(buffer, "\"functions\":[],\"call_edges\":[],\"stacks\":[],\"locations\":[]")
-        
-        
+        def append_detail_arrays(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "\"functions\":[")
+            buffer.extend(summary.function_records)
+            append_text(buffer, "],\"call_edges\":[")
+            buffer.extend(summary.call_edge_records)
+            append_text(buffer, "],\"stacks\":[")
+            buffer.extend(summary.stack_records)
+            append_text(buffer, "],\"locations\":[")
+            buffer.extend(summary.location_records)
+            append_text(buffer, "]")
+
+
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, runtime_object: darray[u8]&, summary: CaptureSummary,
             exit_code: i64, opt_level: i64, event_trace: bool
@@ -319,7 +665,13 @@ module ProfilerNative:
             append_i64(buffer, summary.locations)
             append_text(buffer, ",\"dropped\":")
             append_i64(buffer, summary.dropped)
-            append_text(buffer, ",\"statement_events\":0,\"value_events\":0,\"function_events\":0,\"max_stack_depth\":")
+            append_text(buffer, ",\"statement_events\":")
+            append_i64(buffer, summary.statement_events)
+            append_text(buffer, ",\"value_events\":")
+            append_i64(buffer, summary.value_events)
+            append_text(buffer, ",\"function_events\":")
+            append_i64(buffer, summary.function_events)
+            append_text(buffer, ",\"max_stack_depth\":")
             append_i64(buffer, summary.max_stack_depth)
             append_text(buffer, ",\"stack_overflow_entries\":")
             append_i64(buffer, summary.stack_overflow_entries)
@@ -339,7 +691,9 @@ module ProfilerNative:
                 append_text(buffer, "null")
             else:
                 append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
-            append_text(buffer, "},\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":0,\"unmapped_locations\":0},\"run\":{\"exit_code\":")
+            append_text(buffer, "},\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":0,\"unmapped_locations\":")
+            append_i64(buffer, summary.locations)
+            append_text(buffer, "},\"run\":{\"exit_code\":")
             append_i64(buffer, exit_code)
             append_text(buffer, ",\"signal\":null,\"location_timing\":true,\"timing_clock\":\"wall\",\"event_trace_enabled\":")
             append_text(buffer, "true" if event_trace else "false")
@@ -393,8 +747,12 @@ module ProfilerNative:
                 append_text(buffer, "null")
             else:
                 append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+            if event_trace:
+                append_text(buffer, ",\"event_trace\":[")
+                buffer.extend(summary.event_records)
+                append_text(buffer, "]")
             append_text(buffer, "}],\"compile_ms\":0.0},")
-            append_empty_function_arrays(buffer)
+            append_detail_arrays(buffer, summary)
             append_text(buffer, "}\n")
         
         
@@ -614,7 +972,10 @@ module ProfilerNative:
             command.push(0)
             run_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
             capture: darray[u8] = read_file(capture_path)
-            summary: CaptureSummary = parse_capture(capture)
+            summary: CaptureSummary = parse_capture(capture, source)
+            if summary.malformed:
+                cleanup_temp(temporary)
+                return report_protocol_error(summary)
             report: mutable darray[u8] = []
             append_report(report, source, compiler_root, runtime_object, summary, system_exit_code(run_status), opt_level, event_trace)
             cleanup_temp(temporary)
