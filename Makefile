@@ -12,7 +12,7 @@ NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.json
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke profiler-native profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke profiler-native profiler-native-smoke profile-budget-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -134,7 +134,7 @@ test: native-regression-smoke
 
 .PHONY: collector-regression-smoke
 collector-regression-smoke:
-	@set -eu; regression_work="$$(mktemp -d)"; trap 'rm -rf "$$regression_work"' EXIT; \
+	@set -eu; regression_work="$$(mktemp -d "$${ELISA_TEST_TMPDIR:-/tmp}/elisa-profiler-regression.XXXXXX")"; trap 'rm -rf "$$regression_work"' EXIT; \
 		"$${ELISA_CLANG:-clang}" -std=c11 -O2 -fno-builtin -pthread \
 		-o "$$regression_work/collector" "$(PROFILER_ROOT)/test/collector_regression_smoke.c"; \
 		"$$regression_work/collector"
@@ -146,6 +146,12 @@ compiler-smoke:
 
 collector-content-smoke:
 	@"$(PROFILER_ROOT)/test/collector_content_smoke.sh"
+
+collector-strict-smoke:
+	@set -eu; \
+		"$${ELISA_CLANG:-clang}" -std=c11 -Wall -Wextra -Wpedantic -Werror -fno-builtin -pthread \
+			-fsyntax-only "$(PROFILER_ROOT)/scripts/profiler_runtime.c"; \
+		echo "collector strict compile OK"
 
 runtime-abi-smoke:
 	@"$(PROFILER_ROOT)/test/runtime_abi_smoke.sh"
@@ -183,4 +189,4 @@ source-mapping-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-manifest-smoke compiler-smoke profiler-native-smoke profile-budget-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke profile-budget-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke

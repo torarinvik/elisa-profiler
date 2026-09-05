@@ -1,11 +1,24 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 static int fail_allocations;
 
 static void *regression_calloc(size_t count, size_t size) {
-    return fail_allocations ? NULL : calloc(count, size);
+    if (fail_allocations) {
+        return NULL;
+    }
+    if (size != 0 && count > SIZE_MAX / size) {
+        return NULL;
+    }
+    size_t bytes = count * size;
+    void *allocation = malloc(bytes == 0 ? 1 : bytes);
+    if (allocation != NULL) {
+        memset(allocation, 0, bytes == 0 ? 1 : bytes);
+    }
+    return allocation;
 }
 
 #define calloc regression_calloc

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d "${ELISA_TEST_TMPDIR:-/tmp}/elisa-profiler-collector.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 CC="${ELISA_CLANG:-clang}"

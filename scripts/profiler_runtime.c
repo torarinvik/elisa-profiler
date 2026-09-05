@@ -1091,7 +1091,6 @@ static void profile_print_call_path(const profile_call_path *path) {
 }
 
 static void profile_dump(void);
-static void profile_dump_from_signal(void);
 
 static void profile_dump_trace_status(void) {
     fprintf(stderr, "ELISA_PROFILE\t1\ttrace\t%u\t%" PRIu64 "\t%" PRIu64
@@ -1337,24 +1336,6 @@ static void profile_dump(void) {
     pthread_mutex_lock(&profile_lock);
     profile_dump_body();
     pthread_mutex_unlock(&profile_lock);
-}
-
-static void profile_dump_from_signal(void) {
-    if (profile_dumped) {
-        return;
-    }
-    /*
-     * A timeout or fault may interrupt the collector while it owns the mutex.
-     * Never wait for that mutex from a signal handler. The unlocked fallback
-     * can observe one in-flight update, but preserves a usable partial report
-     * and then restores the original signal disposition.
-     */
-    if (pthread_mutex_trylock(&profile_lock) == 0) {
-        profile_dump_body();
-        pthread_mutex_unlock(&profile_lock);
-    } else {
-        profile_dump_body();
-    }
 }
 
 #ifndef ELISA_PROFILE_NO_MAIN
