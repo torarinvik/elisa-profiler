@@ -473,10 +473,25 @@ extend ProfilerNative:
             return true
 
 
+        def json_validate_source_snapshot(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            snapshot_start: i64 = json_key_value_start(data, "source_snapshot", NATIVE_ZERO.usize(), data.count)
+            return true if snapshot_start < NATIVE_ZERO
+            return false if data[snapshot_start.usize()] != NATIVE_BYTE_LEFT_BRACE
+            snapshot_stop: i64 = json_object_end(data, snapshot_start.usize(), data.count)
+            return false if snapshot_stop < NATIVE_ZERO
+            digest: mutable darray[u8] = []
+            content: mutable darray[u8] = []
+            return false if not json_read_string_field(data, "sha256", snapshot_start.usize(), snapshot_stop.usize(), &digest)
+            return false if not json_read_string_field(data, "content", snapshot_start.usize(), snapshot_stop.usize(), &content)
+            expected: darray[u8] = sha256_hex(content)
+            return byte_arrays_equal(digest, expected)
+
+
         def read_comparison_capture(data: darray[u8]&, capture: mutable ComparisonCapture&) -> bool can[Abort.Panic, Memory.Allocate]:
             schema_version: mutable i64 = NATIVE_ZERO
             return false if not json_read_number_field(data, "schema_version", NATIVE_ZERO.usize(), data.count, &schema_version)
             return false if schema_version != NATIVE_REPORT_SCHEMA_VERSION
+            return false if not json_validate_source_snapshot(data)
             compiler_start: i64 = json_key_value_start(data, "compiler", NATIVE_ZERO.usize(), data.count)
             summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
             run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)

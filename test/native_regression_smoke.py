@@ -83,6 +83,17 @@ def main():
         assert comparison["status"] == "warning"
         report["summary"]["dropped_call_edges"] = 0
         capture.write_text(json.dumps(report))
+        report["source_snapshot"] = {
+            "sha256": hashlib.sha256(b"embedded source").hexdigest(),
+            "content": "embedded source",
+        }
+        capture.write_text(json.dumps(report), encoding="utf-8")
+        assert run("report", capture, "--format", "text").startswith(b"Elisa profiler")
+        report["source_snapshot"]["sha256"] = "0" * 64
+        capture.write_text(json.dumps(report), encoding="utf-8")
+        run("report", capture, "--format", "text", ok=False)
+        del report["source_snapshot"]
+        capture.write_text(json.dumps(report), encoding="utf-8")
         folded = run("report", capture, "--format", "folded")
         assert folded == b"root;work 123\n", folded
         speedscope = json.loads(run("report", capture, "--format", "speedscope"))
