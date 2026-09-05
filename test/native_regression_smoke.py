@@ -154,6 +154,8 @@ def main():
         measured = json.loads(output.read_text())
         repetitions = measured["run"]["repetitions"]
         assert len(repetitions) == 2
+        assert all(set(item["detail_records"]) == {"locations", "functions", "call_edges", "stacks"} for item in repetitions)
+        assert all(item["detail_records"]["locations"] >= item["detail_records"]["functions"] for item in repetitions)
         assert all(item["trace_events_captured"] == 10 for item in repetitions)
         mean_of_middle = sum(item["execution_ms"] for item in repetitions) / 2
         assert abs(measured["run"]["execution_ms_median"] - mean_of_middle) <= 0.002
