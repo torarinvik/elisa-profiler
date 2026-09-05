@@ -787,6 +787,117 @@ module ProfilerNative:
                     summary.malformed <- true
                 line_start <- line_stop + 1.usize()
             return summary
+
+
+        def empty_capture_summary() -> CaptureSummary:
+            return CaptureSummary{
+                events: 0,
+                locations: 0,
+                statement_events: 0,
+                value_events: 0,
+                function_events: 0,
+                dropped: 0,
+                max_stack_depth: 0,
+                stack_overflow_entries: 0,
+                thread_count: 0,
+                trace_enabled: 0,
+                trace_captured: 0,
+                trace_omitted: 0,
+                trace_limit: 0,
+                location_records: [],
+                function_records: [],
+                call_edge_records: [],
+                stack_records: [],
+                event_records: [],
+                malformed: false,
+                malformed_code: 0,
+            }
+
+
+        def merge_capture_summary(destination: mutable CaptureSummary&, incoming: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            destination.events <- destination.events + incoming.events
+            destination.locations <- destination.locations + incoming.locations
+            destination.statement_events <- destination.statement_events + incoming.statement_events
+            destination.value_events <- destination.value_events + incoming.value_events
+            destination.function_events <- destination.function_events + incoming.function_events
+            destination.dropped <- destination.dropped + incoming.dropped
+            destination.max_stack_depth <- incoming.max_stack_depth if incoming.max_stack_depth > destination.max_stack_depth
+            destination.stack_overflow_entries <- destination.stack_overflow_entries + incoming.stack_overflow_entries
+            destination.thread_count <- incoming.thread_count if incoming.thread_count > destination.thread_count
+            destination.trace_enabled <- incoming.trace_enabled
+            destination.trace_captured <- destination.trace_captured + incoming.trace_captured
+            destination.trace_omitted <- destination.trace_omitted + incoming.trace_omitted
+            destination.trace_limit <- incoming.trace_limit
+            append_record_separator(destination.location_records)
+            destination.location_records.extend(incoming.location_records)
+            append_record_separator(destination.function_records)
+            destination.function_records.extend(incoming.function_records)
+            append_record_separator(destination.call_edge_records)
+            destination.call_edge_records.extend(incoming.call_edge_records)
+            append_record_separator(destination.stack_records)
+            destination.stack_records.extend(incoming.stack_records)
+            append_record_separator(destination.event_records)
+            destination.event_records.extend(incoming.event_records)
+            if incoming.malformed:
+                destination.malformed <- true
+                destination.malformed_code <- incoming.malformed_code
+
+
+        def integer_sqrt(value: i64) -> i64:
+            return 0 if value <= 0
+            guess: mutable i64 = value
+            while guess > value / guess |guess, value|:
+                guess <- (guess + value / guess) / 2
+            return guess
+
+
+        def sort_i64(values: mutable darray[i64]&) -> void:
+            for outer in 0..<values.count |outer, values|:
+                smallest: mutable usize = outer
+                for inner in outer + 1.usize()..<values.count |inner, smallest, values|:
+                    smallest <- inner if values[inner] < values[smallest]
+                temporary: i64 = values[outer]
+                values[outer] <- values[smallest]
+                values[smallest] <- temporary
+
+
+        def append_repetition_record(buffer: mutable darray[u8]&, repetition: i64, requested: i64, result: TargetRunResult, summary: CaptureSummary, event_trace: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            append_record_separator(buffer)
+            append_text(buffer, "{\"repetition\":")
+            append_i64(buffer, repetition)
+            append_text(buffer, ",\"requested_repetitions\":")
+            append_i64(buffer, requested)
+            append_text(buffer, ",\"exit_code\":")
+            append_i64(buffer, system_exit_code(result.status))
+            append_text(buffer, ",\"signal\":null,\"execution_ms\":")
+            append_millis(buffer, result.elapsed_ns)
+            append_text(buffer, ",\"timed_out\":false,\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"trace_events\":")
+            append_i64(buffer, summary.events)
+            append_text(buffer, ",\"trace_locations\":")
+            append_i64(buffer, summary.locations)
+            append_text(buffer, ",\"trace_dropped\":")
+            append_i64(buffer, summary.dropped)
+            append_text(buffer, ",\"trace_threads\":")
+            append_i64(buffer, summary.thread_count)
+            append_text(buffer, ",\"trace_max_stack_depth\":")
+            append_i64(buffer, summary.max_stack_depth)
+            append_text(buffer, ",\"trace_stack_overflow_entries\":")
+            append_i64(buffer, summary.stack_overflow_entries)
+            append_text(buffer, ",\"trace_events_captured\":")
+            append_i64(buffer, summary.trace_captured)
+            append_text(buffer, ",\"trace_events_omitted\":")
+            append_i64(buffer, summary.trace_omitted)
+            append_text(buffer, ",\"trace_event_limit\":")
+            if event_trace:
+                append_i64(buffer, summary.trace_limit)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"trace_complete\":")
+            if event_trace:
+                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, "}")
         
         
         def system_exit_code(status: i64) -> i64:
@@ -808,7 +919,9 @@ module ProfilerNative:
 
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, runtime_object: darray[u8]&, summary: CaptureSummary,
-            exit_code: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64
+            exit_code: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
+            repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
+            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ms: i64
         ) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"schema_version\":1,\"source\":")
             append_json_string(buffer, source)
@@ -873,58 +986,34 @@ module ProfilerNative:
             append_text(buffer, "\",\"execution_ms\":")
             append_millis(buffer, execution_ns)
             append_text(buffer, ",\"timeout_s\":null,\"execution_ms_min\":")
-            append_millis(buffer, execution_ns)
+            append_millis(buffer, execution_min_ns)
             append_text(buffer, ",\"execution_ms_mean\":")
-            append_millis(buffer, execution_ns)
+            append_millis(buffer, execution_mean_ns)
             append_text(buffer, ",\"execution_ms_max\":")
-            append_millis(buffer, execution_ns)
+            append_millis(buffer, execution_max_ns)
             append_text(buffer, ",\"execution_ms_median\":")
-            append_millis(buffer, execution_ns)
-            append_text(buffer, ",\"execution_ms_stdev\":0.0,\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"warmup_ms\":0.0,\"warmup_repetitions\":0,\"requested_repetitions\":1,\"completed_repetitions\":1,\"successful_repetitions\":")
-            append_text(buffer, "1" if exit_code == 0 else "0")
+            append_millis(buffer, execution_median_ns)
+            append_text(buffer, ",\"execution_ms_stdev\":")
+            append_i64(buffer, execution_stdev_ms)
+            append_text(buffer, ",\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"warmup_ms\":")
+            append_millis(buffer, warmup_ns)
+            append_text(buffer, ",\"warmup_repetitions\":")
+            append_i64(buffer, warmup_repetitions)
+            append_text(buffer, ",\"requested_repetitions\":")
+            append_i64(buffer, requested_repetitions)
+            append_text(buffer, ",\"completed_repetitions\":")
+            append_i64(buffer, completed_repetitions)
+            append_text(buffer, ",\"successful_repetitions\":")
+            append_i64(buffer, successful_repetitions)
             append_text(buffer, ",\"failed_repetitions\":")
-            append_text(buffer, "0" if exit_code == 0 else "1")
-            append_text(buffer, ",\"measurement_repetitions\":1,\"measurement_basis\":\"")
-            append_text(buffer, "successful" if exit_code == 0 else "all_completed")
-            append_text(buffer, "\",\"repetitions\":[{\"repetition\":1,\"requested_repetitions\":1,\"exit_code\":")
-            append_i64(buffer, exit_code)
-            append_text(buffer, ",\"signal\":null,\"execution_ms\":")
-            append_millis(buffer, execution_ns)
-            append_text(buffer, ",\"timed_out\":false,\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"trace_events\":")
-            append_i64(buffer, summary.events)
-            append_text(buffer, ",\"trace_locations\":")
-            append_i64(buffer, summary.locations)
-            append_text(buffer, ",\"trace_dropped\":")
-            append_i64(buffer, summary.dropped)
-            append_text(buffer, ",\"trace_threads\":")
-            append_i64(buffer, summary.thread_count)
-            append_text(buffer, ",\"trace_max_stack_depth\":")
-            append_i64(buffer, summary.max_stack_depth)
-            append_text(buffer, ",\"trace_stack_overflow_entries\":")
-            append_i64(buffer, summary.stack_overflow_entries)
-            append_text(buffer, ",\"trace_events_captured\":")
-            append_i64(buffer, summary.trace_captured)
-            append_text(buffer, ",\"trace_events_omitted\":")
-            append_i64(buffer, summary.trace_omitted)
-            append_text(buffer, ",\"trace_event_limit\":")
-            if not event_trace:
-                append_text(buffer, "null")
-            else:
-                append_i64(buffer, summary.trace_limit)
-            append_text(buffer, ",\"trace_complete\":")
-            if not event_trace:
-                append_text(buffer, "null")
-            else:
-                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
-            if event_trace:
-                append_text(buffer, ",\"event_trace\":[")
-                buffer.extend(summary.event_records)
-                append_text(buffer, "]")
-            elif recent_path:
-                append_text(buffer, ",\"recent_events\":[")
-                buffer.extend(summary.event_records)
-                append_text(buffer, "]")
-            append_text(buffer, "}],\"compile_ms\":")
+            append_i64(buffer, failed_repetitions)
+            append_text(buffer, ",\"measurement_repetitions\":")
+            append_i64(buffer, successful_repetitions if successful_repetitions > 0 else completed_repetitions)
+            append_text(buffer, ",\"measurement_basis\":\"")
+            append_text(buffer, "successful" if successful_repetitions > 0 else "all_completed")
+            append_text(buffer, "\",\"repetitions\":[")
+            buffer.extend(repetition_records)
+            append_text(buffer, "],\"compile_ms\":")
             append_millis(buffer, compile_ns)
             append_text(buffer, "},")
             append_detail_arrays(buffer, summary)
@@ -1078,10 +1167,12 @@ module ProfilerNative:
             event_trace: mutable bool = false
             recent_path: mutable bool = false
             format_text: mutable bool = false
+            requested_repetitions: mutable i64 = 1
+            warmup_repetitions: mutable i64 = 0
             trace_limit: mutable i64 = 1000000
             source_seen: mutable bool = false
             index: mutable i64 = 2
-            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, trace_limit, source_seen|:
+            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, requested_repetitions, warmup_repetitions, trace_limit, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == 0:
                     return report_error("--format requires json or text") if index + 1 >= argc
@@ -1103,6 +1194,26 @@ module ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--recent-path") == 0:
                     recent_path <- true
                     index <- index + 1
+                    continue
+                if profiler_ffi_strcmp(argument, "--repeat") == 0 or profiler_ffi_strcmp(argument, "--warmup") == 0:
+                    return report_error("--repeat/--warmup requires a positive integer") if index + 1 >= argc
+                    count_text: cstr = slots[index + 1].cast[cstr]
+                    count_bytes: u8& = count_text.cast[u8&] can Unsafe.PointerCast
+                    count: mutable i64 = 0
+                    count_cursor: mutable i64 = 0
+                    while true |count_bytes, count_cursor, count|:
+                        byte_ref: u8& = count_bytes + count_cursor
+                        byte: u8 = byte_ref
+                        break if byte == 0
+                        return report_error("--repeat/--warmup requires a non-negative integer") if byte < 48 or byte > 57
+                        count <- count * 10 + (byte - 48).i64()
+                        count_cursor <- count_cursor + 1
+                    if profiler_ffi_strcmp(argument, "--repeat") == 0:
+                        return report_error("--repeat must be at least 1") if count < 1
+                        requested_repetitions <- count
+                    else:
+                        warmup_repetitions <- count
+                    index <- index + 2
                     continue
                 if profiler_ffi_strcmp(argument, "--max-event-trace-events") == 0:
                     return report_error("--max-event-trace-events requires a non-negative integer") if index + 1 >= argc
@@ -1280,30 +1391,92 @@ module ProfilerNative:
                 return report_error("could not link instrumented target")
             compile_elapsed_ns: i64 = elapsed_nanoseconds(build_start, read_monotonic())
         
-            command <- []
-            capture_fd: i64 = open_output_file(capture_path)
-            if capture_fd < 0:
-                cleanup_temp(temporary)
-                return report_error("could not open native collector transport")
-            run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, capture_fd, event_trace, recent_path, trace_limit)
-            _ = profiler_ffi_close(capture_fd)
-            capture: darray[u8] = read_file(capture_path)
-            program_stderr: darray[u8] = read_file(run_error_path)
-            summary: CaptureSummary = parse_capture(capture, source)
-            if summary.malformed:
-                cleanup_temp(temporary)
-                return report_protocol_error(summary)
+            summary: mutable CaptureSummary = empty_capture_summary()
+            repetition_records: mutable darray[u8] = []
+            all_execution_times: mutable darray[i64] = []
+            measurement_execution_times: mutable darray[i64] = []
+            warmup_ns: mutable i64 = 0
+            warmup_index: mutable i64 = 1
+            while warmup_index <= warmup_repetitions |warmup_index, warmup_ns|:
+                capture_fd: i64 = open_output_file(capture_path)
+                if capture_fd < 0:
+                    cleanup_temp(temporary)
+                    return report_error("could not open native collector transport for warmup")
+                warmup_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, capture_fd, false, false, 0)
+                _ = profiler_ffi_close(capture_fd)
+                warmup_ns <- warmup_ns + warmup_result.elapsed_ns
+                if warmup_result.status != 0:
+                    cleanup_temp(temporary)
+                    return report_error("native profiler warmup failed")
+                warmup_index <- warmup_index + 1
+
+            program_stderr: mutable darray[u8] = []
+            overall_status: mutable i64 = 0
+            completed_repetitions: mutable i64 = 0
+            successful_repetitions: mutable i64 = 0
+            failed_repetitions: mutable i64 = 0
+            repetition: mutable i64 = 1
+            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions|:
+                capture_fd: i64 = open_output_file(capture_path)
+                if capture_fd < 0:
+                    cleanup_temp(temporary)
+                    return report_error("could not open native collector transport")
+                run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, capture_fd, event_trace, recent_path, trace_limit)
+                _ = profiler_ffi_close(capture_fd)
+                capture: darray[u8] = read_file(capture_path)
+                current_summary: CaptureSummary = parse_capture(capture, source)
+                if current_summary.malformed:
+                    cleanup_temp(temporary)
+                    return report_protocol_error(current_summary)
+                current_stderr: darray[u8] = read_file(run_error_path)
+                if current_stderr.count > 0:
+                    if program_stderr.count > 0:
+                        program_stderr.push(10)
+                    program_stderr.extend(current_stderr)
+                merge_capture_summary(&summary, current_summary)
+                append_repetition_record(&repetition_records, repetition, requested_repetitions, run_result, current_summary, event_trace)
+                all_execution_times.push(run_result.elapsed_ns)
+                completed_repetitions <- completed_repetitions + 1
+                if run_result.status == 0:
+                    successful_repetitions <- successful_repetitions + 1
+                    measurement_execution_times.push(run_result.elapsed_ns)
+                else:
+                    failed_repetitions <- failed_repetitions + 1
+                    overall_status <- run_result.status if overall_status == 0
+                repetition <- repetition + 1
+
+            metric_times: mutable darray[i64] = []
+            if measurement_execution_times.count > 0:
+                metric_times.extend(measurement_execution_times)
+            else:
+                metric_times.extend(all_execution_times)
+            sort_i64(metric_times)
+            total_execution_ns: mutable i64 = 0
+            for index in 0..<metric_times.count |index, metric_times, total_execution_ns|:
+                total_execution_ns <- total_execution_ns + metric_times[index]
+            execution_min_ns: i64 = metric_times[0]
+            execution_max_ns: i64 = metric_times[metric_times.count - 1.usize()]
+            execution_median_ns: i64 = metric_times[metric_times.count / 2.usize()]
+            execution_mean_ns: i64 = total_execution_ns / metric_times.count.i64()
+            mean_millis: i64 = execution_mean_ns / 1000000
+            variance: mutable i64 = 0
+            for index in 0..<metric_times.count |index, metric_times, variance, mean_millis|:
+                difference: i64 = metric_times[index] / 1000000 - mean_millis
+                variance <- variance + difference * difference
+            variance <- variance / metric_times.count.i64()
+            execution_stdev_ms: i64 = integer_sqrt(variance)
+            final_exit_code: i64 = system_exit_code(overall_status)
             report: mutable darray[u8] = []
             if format_text:
-                append_text_report(report, source, summary, system_exit_code(run_result.status), event_trace, recent_path, run_result.elapsed_ns, compile_elapsed_ns)
+                append_text_report(report, source, summary, final_exit_code, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, runtime_object, summary, system_exit_code(run_result.status), opt_level, event_trace, recent_path, program_stderr, run_result.elapsed_ns, compile_elapsed_ns)
+                append_report(report, source, compiler_root, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
             cleanup_temp(temporary)
             if output.count > 0:
                 return 0 if write_file(output, report)
                 return report_error("could not write native profile report")
             _ = profiler_ffi_write(1, &report[0], report.count) can Console
-            return system_exit_code(run_result.status)
+            return final_exit_code
 
 
 def main(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
