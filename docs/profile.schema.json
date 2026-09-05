@@ -255,6 +255,7 @@
         "peak_rss_bytes",
         "trace_events",
         "trace_locations",
+        "detail_records",
         "trace_dropped",
         "trace_threads",
         "trace_max_stack_depth",

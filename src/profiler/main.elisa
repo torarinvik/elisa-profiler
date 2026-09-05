@@ -995,6 +995,7 @@ extend ProfilerNative:
             return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
             capture: mutable darray[u8] = []
             return report_error("capture artifact is malformed or unsupported") if not unwrap_profile_artifact(report, &capture)
+            return report_error("capture detail arrays contain invalid accounting") if not json_validate_detail_arrays(capture)
             rendered: mutable darray[u8] = []
             if format_text:
                 return report_error("offline capture is not a native JSON profile") if not append_offline_text_report(&rendered, capture)

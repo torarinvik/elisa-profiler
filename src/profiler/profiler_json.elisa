@@ -362,6 +362,95 @@ extend ProfilerNative:
             return true
 
 
+        def json_read_detail_array(data: darray[u8]&, key: sview, start: usize, stop: usize, kind: i64) -> bool can[Abort.Panic, Memory.Allocate]:
+            array_start: i64 = json_key_value_start(data, key, start, stop)
+            return true if array_start < NATIVE_ZERO
+            return false if data[array_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            array_stop: i64 = json_array_end(data, array_start.usize(), stop)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
+            array_content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            while cursor < array_content_stop |cursor, array_content_stop, data, kind|:
+                cursor <- json_skip_whitespace(data, cursor, array_content_stop)
+                break if cursor >= array_content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, array_content_stop)
+                return false if object_stop < NATIVE_ZERO
+                if kind == NATIVE_DETAIL_ARRAY_FUNCTIONS:
+                    function_name: mutable darray[u8] = []
+                    call_events: mutable i64 = NATIVE_ZERO
+                    completed_calls: mutable i64 = NATIVE_ZERO
+                    inclusive_ns: mutable i64 = NATIVE_ZERO
+                    self_ns: mutable i64 = NATIVE_ZERO
+                    return false if not json_read_string_field(data, "function", cursor, object_stop.usize(), &function_name) or function_name.count == NATIVE_ZERO.usize()
+                    return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &call_events)
+                    return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &completed_calls)
+                    return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &inclusive_ns)
+                    return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &self_ns)
+                    return false if completed_calls > call_events or self_ns > inclusive_ns
+                elif kind == NATIVE_DETAIL_ARRAY_CALL_EDGES:
+                    caller: mutable darray[u8] = []
+                    callee: mutable darray[u8] = []
+                    call_events: mutable i64 = NATIVE_ZERO
+                    completed_calls: mutable i64 = NATIVE_ZERO
+                    return false if not json_read_string_field(data, "caller", cursor, object_stop.usize(), &caller) or caller.count == NATIVE_ZERO.usize()
+                    return false if not json_read_string_field(data, "callee", cursor, object_stop.usize(), &callee) or callee.count == NATIVE_ZERO.usize()
+                    return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &call_events)
+                    return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &completed_calls)
+                    inclusive_ns: mutable i64 = NATIVE_ZERO
+                    return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &inclusive_ns)
+                    return false if completed_calls > call_events
+                elif kind == NATIVE_DETAIL_ARRAY_STACKS:
+                    stack_value: mutable darray[u8] = []
+                    call_events: mutable i64 = NATIVE_ZERO
+                    completed_calls: mutable i64 = NATIVE_ZERO
+                    self_ns: mutable i64 = NATIVE_ZERO
+                    return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &stack_value) or stack_value.count == NATIVE_ZERO.usize()
+                    return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &call_events)
+                    return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &completed_calls)
+                    return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &self_ns)
+                    return false if completed_calls > call_events
+                elif kind == NATIVE_DETAIL_ARRAY_LOCATIONS:
+                    location_kind: mutable darray[u8] = []
+                    function_name: mutable darray[u8] = []
+                    line: mutable i64 = NATIVE_ZERO
+                    count: mutable i64 = NATIVE_ZERO
+                    interval_ns: mutable i64 = NATIVE_ZERO
+                    max_interval_ns: mutable i64 = NATIVE_ZERO
+                    return false if not json_read_string_field(data, "kind", cursor, object_stop.usize(), &location_kind)
+                    return false if not protocol_field_is(location_kind, "statement") and not protocol_field_is(location_kind, "value") and not protocol_field_is(location_kind, "function")
+                    return false if not json_read_string_field(data, "function", cursor, object_stop.usize(), &function_name) or function_name.count == NATIVE_ZERO.usize()
+                    return false if not json_read_number_field(data, "line", cursor, object_stop.usize(), &line)
+                    return false if not json_read_number_field(data, "count", cursor, object_stop.usize(), &count)
+                    return false if not json_read_number_field(data, "interval_ns", cursor, object_stop.usize(), &interval_ns)
+                    return false if not json_read_number_field(data, "max_interval_ns", cursor, object_stop.usize(), &max_interval_ns)
+                    return false if max_interval_ns > interval_ns
+                    if protocol_field_is(location_kind, "function"):
+                        inclusive_ns: mutable i64 = NATIVE_ZERO
+                        self_ns: mutable i64 = NATIVE_ZERO
+                        completed_calls: mutable i64 = NATIVE_ZERO
+                        return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &inclusive_ns)
+                        return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &self_ns)
+                        return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &completed_calls)
+                        return false if self_ns > inclusive_ns
+                else:
+                    return false
+                cursor <- object_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, array_content_stop)
+                if cursor < array_content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
+            return true
+
+
+        def json_validate_detail_arrays(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_read_detail_array(data, "functions", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_FUNCTIONS)
+            return false if not json_read_detail_array(data, "call_edges", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_CALL_EDGES)
+            return false if not json_read_detail_array(data, "stacks", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_STACKS)
+            return false if not json_read_detail_array(data, "locations", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_LOCATIONS)
+            return true
+
+
         def json_read_millis_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             return false if value_start < NATIVE_ZERO

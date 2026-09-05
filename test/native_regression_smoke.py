@@ -117,6 +117,16 @@ def main():
         invalid_stack_json = json.dumps(invalid_stack).replace(r"raw\ncontrol", "raw\ncontrol")
         capture.write_bytes(invalid_stack_json.encode("utf-8"))
         run("report", capture, "--format", "folded", ok=False)
+        invalid_function = copy.deepcopy(report)
+        invalid_function["functions"] = [{
+            "function": "broken",
+            "call_events": 1,
+            "completed_calls": 2,
+            "inclusive_ns": 10,
+            "self_ns": 10,
+        }]
+        capture.write_text(json.dumps(invalid_function), encoding="utf-8")
+        run("report", capture, "--format", "folded", ok=False)
         for option in ("--repeat", "--warmup", "--max-event-trace-events"):
             for invalid in ("", "9223372036854775808"):
                 run("profile", ROOT / "examples/hot_loop.elisa", option, invalid, ok=False)

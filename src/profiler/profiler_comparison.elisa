@@ -215,6 +215,8 @@ extend ProfilerNative:
             candidate_capture: mutable darray[u8] = []
             return report_error("baseline artifact is malformed or unsupported") if not unwrap_profile_artifact(baseline_data, &baseline_capture)
             return report_error("candidate artifact is malformed or unsupported") if not unwrap_profile_artifact(candidate_data, &candidate_capture)
+            return report_error("baseline detail arrays contain invalid accounting") if not json_validate_detail_arrays(baseline_capture)
+            return report_error("candidate detail arrays contain invalid accounting") if not json_validate_detail_arrays(candidate_capture)
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,

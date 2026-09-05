@@ -50,6 +50,11 @@ capture is moved; a missing content digest is represented as `null`.
 - Tail-call elimination and inlining are compiler transformations. The
   instrumentation report only claims what the emitted callbacks observe; it
   does not infer removed frames.
+- Native offline readers reject normalized detail records whose accounting is
+  impossible: completed calls cannot exceed observed calls, self time cannot
+  exceed inclusive time, and a maximum interval cannot exceed its aggregate
+  interval. These checks protect every renderer and comparison from accepting
+  a syntactically valid but semantically corrupt capture.
 
 ## Completeness and failure states
 
