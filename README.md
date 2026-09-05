@@ -85,7 +85,9 @@ The native launcher also accepts `--cwd PATH`, `--stdin PATH`, repeatable
 arguments. These are applied only to the profiled child and are exercised by
 the native launch probes. The collector wrapper passes `argc`/`argv` to
 argv-aware Elisa targets while remaining compatible with the legacy
-`main() -> i64` entry form.
+`main() -> i64` entry form. Native JSON captures also preserve the source size,
+launch directory, stdin path, environment-key names, and exact target argument
+vector as workload metadata.
 
 ## Profile a program
 

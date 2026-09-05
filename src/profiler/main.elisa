@@ -513,11 +513,54 @@ extend ProfilerNative:
             append_text(buffer, "</main></body></html>\n")
 
 
+        def append_json_workload(buffer: mutable darray[u8]&, source: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, ",\"workload\":{\"source_sha256\":null,\"source_size_bytes\":")
+            append_i64(buffer, source.count.i64())
+            append_text(buffer, ",\"working_directory\":")
+            if working_directory.count == NATIVE_ZERO.usize():
+                append_text(buffer, "\".\"")
+            else:
+                append_json_string(buffer, working_directory)
+            append_text(buffer, ",\"stdin\":")
+            if stdin_path.count == NATIVE_ZERO.usize():
+                append_text(buffer, "null")
+            else:
+                append_text(buffer, "{\"path\":")
+                append_json_string(buffer, stdin_path)
+                append_text(buffer, ",\"sha256\":null}")
+            append_text(buffer, ",\"environment_override_keys\":[")
+            environment_index: mutable usize = NATIVE_ZERO.usize()
+            environment_first: mutable bool = true
+            while environment_index < environment.count |environment_index, environment, environment_first|:
+                environment_stop: mutable usize = environment_index
+                while environment_stop < environment.count and environment[environment_stop] != NATIVE_BYTE_NUL |environment_stop, environment|:
+                    environment_stop <- environment_stop + NATIVE_ONE.usize()
+                environment_name: mutable darray[u8] = []
+                environment_equals: mutable usize = environment_stop
+                for assignment_index in environment_index..<environment_stop |environment_name, environment, environment_equals|:
+                    if environment[assignment_index] == NATIVE_BYTE_EQUALS:
+                        environment_equals <- assignment_index
+                        break
+                for assignment_index in environment_index..<environment_equals |environment_name, environment|:
+                    environment_name.push(environment[assignment_index])
+                if environment_name.count > NATIVE_ZERO.usize():
+                    append_text(buffer, "," if not environment_first else "")
+                    append_json_string(buffer, environment_name)
+                    environment_first <- false
+                environment_index <- environment_stop + NATIVE_ONE.usize()
+            append_text(buffer, "],\"arguments\":[")
+            for argument_index in 0..<target_arguments.count |buffer, target_arguments|:
+                append_text(buffer, "," if argument_index > NATIVE_ZERO.usize() else "")
+                append_json_string(buffer, target_arguments[argument_index])
+            append_text(buffer, "]}")
+
+
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
             exit_code: i64, status: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
-            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64
+            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
+            working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
         ) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"schema_version\":")
             append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
@@ -533,7 +576,9 @@ extend ProfilerNative:
             append_text(buffer, "true" if compiler_dirty else "false")
             append_text(buffer, ",\"runtime_object\":")
             append_json_string(buffer, runtime_object)
-            append_text(buffer, "},\"summary\":{\"events\":")
+            append_text(buffer, "}")
+            append_json_workload(buffer, source, working_directory, stdin_path, environment, target_arguments)
+            append_text(buffer, ",\"summary\":{\"events\":")
             append_i64(buffer, summary.events)
             append_text(buffer, ",\"locations\":")
             append_i64(buffer, summary.locations)
@@ -1254,7 +1299,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)
