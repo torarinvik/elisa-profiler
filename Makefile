@@ -77,6 +77,9 @@ profiler-native-smoke: profiler-native
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/report.json"; \
 		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format json --output "$$native_work/offline.json"; \
 		cmp -s "$$native_work/report.json" "$$native_work/offline.json"; \
+		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format text --output "$$native_work/offline.txt"; \
+		grep -Fq 'Elisa profiler' "$$native_work/offline.txt"; \
+		grep -Fq 'statement events:' "$$native_work/offline.txt"; \
 		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format folded --output "$$native_work/offline.folded"; \
 		grep -Fq 'main' "$$native_work/offline.folded"; \
 		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format speedscope --output "$$native_work/offline.speedscope.json"; \

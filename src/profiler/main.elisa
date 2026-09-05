@@ -1718,6 +1718,54 @@ module ProfilerNative:
             return true
 
 
+        def append_offline_text_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            source: mutable darray[u8] = []
+            return false if not json_read_source(data, &source)
+            summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
+            run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
+            return false if summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
+            summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
+            run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
+            return false if summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
+            events: mutable i64 = NATIVE_ZERO
+            locations: mutable i64 = NATIVE_ZERO
+            statement_events: mutable i64 = NATIVE_ZERO
+            value_events: mutable i64 = NATIVE_ZERO
+            function_events: mutable i64 = NATIVE_ZERO
+            dropped: mutable i64 = NATIVE_ZERO
+            thread_count: mutable i64 = NATIVE_ZERO
+            exit_code: mutable i64 = NATIVE_ZERO
+            return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
+            return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
+            return false if not json_read_number_field(data, "statement_events", summary_start.usize(), summary_stop.usize(), &statement_events)
+            return false if not json_read_number_field(data, "value_events", summary_start.usize(), summary_stop.usize(), &value_events)
+            return false if not json_read_number_field(data, "function_events", summary_start.usize(), summary_stop.usize(), &function_events)
+            return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
+            return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
+            return false if not json_read_number_field(data, "exit_code", run_start.usize(), run_stop.usize(), &exit_code)
+            append_text(buffer, "Elisa profiler\nsource: ")
+            for index in 0..<source.count |buffer, source|:
+                buffer.push(source[index])
+            append_text(buffer, "\nstatus: ")
+            append_text(buffer, "ok\n" if exit_code == NATIVE_ZERO else "target failed\n")
+            append_text(buffer, "events: ")
+            append_i64(buffer, events)
+            append_text(buffer, "\nlocations: ")
+            append_i64(buffer, locations)
+            append_text(buffer, "\nstatement events: ")
+            append_i64(buffer, statement_events)
+            append_text(buffer, "\nvalue events: ")
+            append_i64(buffer, value_events)
+            append_text(buffer, "\nfunction events: ")
+            append_i64(buffer, function_events)
+            append_text(buffer, "\nthreads: ")
+            append_i64(buffer, thread_count)
+            append_text(buffer, "\ndropped: ")
+            append_i64(buffer, dropped)
+            append_text(buffer, "\n")
+            return true
+
+
         def append_html_section(buffer: mutable darray[u8]&, title: sview, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<details open><summary>")
             append_text(buffer, title)
@@ -1987,21 +2035,24 @@ module ProfilerNative:
 
 
         def report_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler report CAPTURE [--format json|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_PATH_ARGUMENTS
             capture_path: mutable darray[u8] = []
             output_path: mutable darray[u8] = []
             format_json: mutable bool = false
+            format_text: mutable bool = false
             format_folded: mutable bool = false
             format_speedscope: mutable bool = false
             format_html: mutable bool = false
             capture_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, capture_path, output_path, format_json, format_folded, format_speedscope, format_html, capture_seen|:
+            while index < argc |index, slots, capture_path, output_path, format_json, format_text, format_folded, format_speedscope, format_html, capture_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
-                    return report_error("--format requires json, folded, speedscope, or html") if index + NATIVE_ONE >= argc
+                    return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
                         format_json <- true
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
+                        format_text <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
                         format_folded <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "speedscope") == NATIVE_ZERO:
@@ -2009,7 +2060,7 @@ module ProfilerNative:
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
                         format_html <- true
                     else:
-                        return report_error("--format requires json, folded, speedscope, or html")
+                        return report_error("--format requires json, text, folded, speedscope, or html")
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
@@ -2024,11 +2075,13 @@ module ProfilerNative:
                 capture_seen <- true
                 index <- index + NATIVE_ONE
             return report_error("report requires a capture path") if not capture_seen
-            return report_error("report requires --format json, folded, speedscope, or html") if not format_json and not format_folded and not format_speedscope and not format_html
+            return report_error("report requires --format json, text, folded, speedscope, or html") if not format_json and not format_text and not format_folded and not format_speedscope and not format_html
             report: darray[u8] = read_file(capture_path)
             return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
             rendered: mutable darray[u8] = []
-            if format_folded:
+            if format_text:
+                return report_error("offline capture is not a native JSON profile") if not append_offline_text_report(&rendered, report)
+            elif format_folded:
                 return report_error("offline capture is not a native JSON profile") if not append_offline_folded_report(&rendered, report)
             elif format_speedscope:
                 return report_error("offline capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, report)
@@ -2045,7 +2098,7 @@ module ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile SOURCE [--format json|text|folded|speedscope|html] [--output PATH] or report CAPTURE [--format json|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile SOURCE [--format json|text|folded|speedscope|html] [--output PATH] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
