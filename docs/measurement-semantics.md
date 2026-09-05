@@ -27,6 +27,11 @@ request is rejected instead of being mislabeled as an instrumented capture.
 The mode is a report identity field and must be considered when comparing
 captures or interpreting missing event classes.
 
+Native collector streams begin with a capture marker and finish with a
+completion marker. Successful target runs require both markers; timeout and
+signal captures may intentionally be partial and expose
+`summary.capture_complete: false`.
+
 Native JSON captures also expose `run.capabilities`. Its event-class list is
 the authoritative retained detail set; `trace`, `recent_path`, `timing`, and
 `sampling` describe the active policies; and `detail_limits` records the

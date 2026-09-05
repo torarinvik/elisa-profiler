@@ -34,6 +34,8 @@ extend ProfilerNative:
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO,
+                capture_started: false,
+                capture_complete: true,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
@@ -73,6 +75,8 @@ extend ProfilerNative:
             destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
             destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped
             destination.crash_signal <- incoming.crash_signal if incoming.crash_signal > NATIVE_ZERO
+            destination.capture_started <- true if incoming.capture_started
+            destination.capture_complete <- false if incoming.capture_started and not incoming.capture_complete
             append_record_separator(destination.location_records)
             destination.location_records.extend(incoming.location_records)
             append_record_separator(destination.function_records)
@@ -122,6 +126,10 @@ extend ProfilerNative:
             append_millis(buffer, result.elapsed_ns)
             append_text(buffer, ",\"timed_out\":")
             append_text(buffer, "true" if result.timed_out else "false")
+            append_text(buffer, ",\"capture_started\":")
+            append_text(buffer, "true" if summary.capture_started else "false")
+            append_text(buffer, ",\"capture_complete\":")
+            append_text(buffer, "true" if summary.capture_started and summary.capture_complete else "false")
             append_text(buffer, ",\"cpu_user_ms\":")
             if result.resource_available:
                 append_millis(buffer, result.cpu_user_ns)

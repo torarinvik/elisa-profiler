@@ -73,7 +73,9 @@
         "detail_budget_exceeded": { "type": "boolean" },
         "dropped_call_edges": { "type": "integer", "minimum": 0 },
         "dropped_stacks": { "type": "integer", "minimum": 0 },
-        "crash_signal": { "type": ["integer", "null"], "minimum": 1 }
+        "crash_signal": { "type": ["integer", "null"], "minimum": 1 },
+        "capture_started": { "type": "boolean" },
+        "capture_complete": { "type": "boolean" }
         ,"trace_events_captured": { "type": "integer", "minimum": 0 }
         ,"trace_events_omitted": { "type": "integer", "minimum": 0 }
         ,"trace_event_limit": { "type": ["integer", "null"], "minimum": 0 }
@@ -293,6 +295,8 @@
         "signal": { "type": ["integer", "null"] },
         "execution_ms": { "type": "number", "minimum": 0 },
         "timed_out": { "type": "boolean" },
+        "capture_started": { "type": "boolean" },
+        "capture_complete": { "type": "boolean" },
         "cpu_user_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_system_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_ms": { "type": ["number", "null"], "minimum": 0 },

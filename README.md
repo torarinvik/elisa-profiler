@@ -242,7 +242,9 @@ Wall timing includes sleeps and waits.
 Collector records are sent over a dedicated inherited file descriptor during
 normal profiler runs, so target stderr—including lines that resemble the
 `ELISA_PROFILE` protocol prefix—remains available as program diagnostics and
-cannot corrupt the profile.
+cannot corrupt the profile. Native collector streams carry begin/end markers;
+successful runs require a complete marker pair, while timeout and signal
+captures retain explicit partial-capture state.
 The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.

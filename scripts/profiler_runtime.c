@@ -68,6 +68,7 @@ enum {
     PROFILE_KIND_STATEMENT = 1,
     PROFILE_KIND_VALUE = 2,
     PROFILE_KIND_FUNCTION = 3,
+    PROFILE_PROTOCOL_VERSION = 1,
     PROFILE_MODE_FULL = 0,
     PROFILE_MODE_FUNCTIONS = 1,
     PROFILE_MODE_STATEMENTS = 2,
@@ -1198,6 +1199,16 @@ static void profile_print_call_path(const profile_call_path *path) {
 
 static void profile_dump(void);
 
+static void profile_dump_begin(void) {
+    fprintf(stderr, "ELISA_PROFILE\t%u\tbegin\t%u\n",
+            PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
+}
+
+static void profile_dump_end(void) {
+    fprintf(stderr, "ELISA_PROFILE\t%u\tend\t%u\n",
+            PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
+}
+
 static void profile_dump_trace_status(void) {
     fprintf(stderr, "ELISA_PROFILE\t1\ttrace\t%u\t%" PRIu64 "\t%" PRIu64
                     "\t%" PRIu64 "\n",
@@ -1330,6 +1341,7 @@ static void profile_dump_body(void) {
     }
 #endif
     profile_dumped = 1;
+    profile_dump_begin();
     size_t count = profile_size;
     profile_entry **entries = calloc(count == 0 ? 1 : count, sizeof(*entries));
     if (entries == NULL) {
@@ -1343,6 +1355,7 @@ static void profile_dump_body(void) {
         if (profile_crash_dumped) {
             profile_dump_active_stack();
         }
+        profile_dump_end();
         return;
     }
 
@@ -1438,6 +1451,7 @@ static void profile_dump_body(void) {
     if (profile_crash_dumped) {
         profile_dump_active_stack();
     }
+    profile_dump_end();
 }
 
 static void profile_dump(void) {

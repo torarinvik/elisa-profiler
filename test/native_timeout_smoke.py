@@ -51,6 +51,7 @@ def main() -> int:
             )
         assert process.returncode == 143, (process.returncode, stdout, stderr)
         payload = json.loads(report.read_text(encoding="utf-8"))
+        assert payload["summary"]["capture_complete"] is False, payload["summary"]
         assert payload["run"]["timeout_s"] == 0.05, payload["run"]
         assert payload["run"]["exit_code"] is None, payload["run"]
         assert payload["run"]["signal"] == 15, payload["run"]

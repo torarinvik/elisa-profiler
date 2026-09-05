@@ -33,6 +33,7 @@ def check_report(path: str) -> None:
         for line in open(path, encoding="utf-8")
         if line.startswith("ELISA_PROFILE\t")
     ]
+    assert [line[2] for line in lines if line[2] in ("begin", "end")] == ["begin", "end"]
     locations = [line for line in lines if line[2] == "location"]
     function_locations = [line for line in locations if line[3] == "3"]
     statement_locations = [line for line in locations if line[3] == "1"]

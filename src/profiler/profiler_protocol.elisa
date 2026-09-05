@@ -436,6 +436,8 @@ extend ProfilerNative:
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO,
+                capture_started: false,
+                capture_complete: false,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
@@ -451,6 +453,8 @@ extend ProfilerNative:
             stack_records: mutable darray[u8] = []
             event_records: mutable darray[u8] = []
             folded_records: mutable darray[u8] = []
+            begin_prefix: sview = "ELISA_PROFILE\t1\tbegin\t"
+            end_prefix: sview = "ELISA_PROFILE\t1\tend\t"
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
             crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
@@ -468,6 +472,22 @@ extend ProfilerNative:
                 if line_stop - line_start > NATIVE_MAX_PROTOCOL_LINE_BYTES:
                     summary.malformed <- true
                     summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                elif line_prefix(data, line_start, line_stop, begin_prefix):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len(begin_prefix)
+                    marker: i64 = parse_protocol_number(data, &cursor, line_stop)
+                    if cursor != line_stop or marker != NATIVE_ONE or summary.capture_started or summary.capture_complete:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    else:
+                        summary.capture_started <- true
+                elif line_prefix(data, line_start, line_stop, end_prefix):
+                    cursor: mutable usize = line_start + profiler_ffi_sview_len(end_prefix)
+                    marker: i64 = parse_protocol_number(data, &cursor, line_stop)
+                    if cursor != line_stop or marker != NATIVE_ONE or not summary.capture_started or summary.capture_complete:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    else:
+                        summary.capture_complete <- true
                 elif line_prefix(data, line_start, line_stop, meta_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(meta_prefix)
                     summary.events <- parse_protocol_number(data, &cursor, line_stop)

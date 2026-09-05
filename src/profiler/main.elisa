@@ -788,6 +788,10 @@ extend ProfilerNative:
                 append_i64(buffer, summary.crash_signal)
             else:
                 append_text(buffer, "null")
+            append_text(buffer, ",\"capture_started\":")
+            append_text(buffer, "true" if summary.capture_started else "false")
+            append_text(buffer, ",\"capture_complete\":")
+            append_text(buffer, "true" if summary.capture_started and summary.capture_complete else "false")
             append_text(buffer, ",\"thread_count\":")
             append_i64(buffer, summary.thread_count)
             append_text(buffer, ",\"trace_events_captured\":")
@@ -1518,6 +1522,9 @@ extend ProfilerNative:
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)
+                    if run_result.status == NATIVE_ZERO and (not current_summary.capture_started or not current_summary.capture_complete):
+                        cleanup_temp(temporary)
+                        return report_error("native collector capture missing a complete frame")
                 current_stderr: darray[u8] = read_file(run_error_path)
                 if current_stderr.count > 0:
                     if program_stderr.count > NATIVE_ZERO.usize():

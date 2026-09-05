@@ -168,6 +168,8 @@ def main():
         assert measured["run"]["capabilities"]["event_classes"] == ["function", "statement", "value"]
         assert measured["run"]["capabilities"]["sampling"] == "unsupported"
         assert measured["run"]["capabilities"]["timing"] == "wall"
+        assert measured["summary"]["capture_started"] is True
+        assert measured["summary"]["capture_complete"] is True
         assert len(measured["workload"]["source_sha256"]) == 64
         assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
         repetitions = measured["run"]["repetitions"]
