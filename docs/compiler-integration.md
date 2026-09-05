@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-d8cadbb1 fix: report packed header storage accurately
+5028591f fix: resolve sibling stage0 from compiler worktree
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -18,9 +18,12 @@ storage fix from the main compiler checkout. The `codex/wasm-sdk` tip
 `4f368a66` is included through merge `330633ea`; `d8cadbb1` then corrects
 generated C-header accounting for inline dynamic-AoS common fields versus
 side-table common fields and records the packed side-table offsets accurately.
-The dedicated compiler branch also contains the previously committed
-profiler-facing CLI fix and the complete committed ancestry of the local
-compiler branches. `make
+`5028591f` fixes the parity harness defaults so a compiler worktree nested
+under `elisa-compiler-worktrees/` resolves the sibling stage0 checkout at
+`../../../Go projects/structpy-tree` instead of the nonexistent path under
+`Elisa Projects/`. The dedicated compiler branch also contains the previously
+committed profiler-facing CLI fix and the complete committed ancestry of the
+local compiler branches. `make
 compiler-audit` is the repeatable check that every local branch tip remains an
 ancestor of the dedicated compiler branch. It also writes the ignored
 `build/compiler-integration-ledger.json` file atomically. The ledger is the
@@ -79,11 +82,16 @@ mutating their original worktrees:
   over the sibling worktree.
 
 The other audited worktrees were inspected as well. Worktrees whose only delta was
-`.DS_Store` were not imported; the Neural Workshop worktree had no compiler source
-delta to import. The current ledger reports the Neural Workshop scope-binding
-test and the structpy parser-machine files as new uncommitted candidate patches,
-so they are explicitly pending review rather than assumed absent. Origin worktrees
-remain untouched, including their uncommitted `.DS_Store` files.
+`.DS_Store` were not imported; the Neural Workshop worktree had no missing compiler
+source delta to import. The current ledger still reports dirty owner worktrees as
+pending because the audit intentionally does not infer equivalence from a dirty
+checkout. Independent content review found that the Neural Workshop
+scope-binding test is already present in the dedicated checkout; the structpy
+parser-machine changes are represented by the newer machine-parser implementation
+and its diagnostic fixture; and the transpiler-stage1 source deltas are already
+represented by newer or equivalent dedicated implementations. No additional
+source patch was missing, so none of those owner worktrees was rewritten. Origin
+worktrees remain untouched, including their uncommitted `.DS_Store` files.
 
 ## Current candidate dispositions
 
@@ -100,13 +108,14 @@ The generated ledger is the detailed record; its current classifications are:
   region annotation and region-scope fixtures; it has not been rewritten or
   committed from this audit.
 - The transpiler stage1 worktree has a distinct backend/parser candidate plus a
-  breadth fixture. Its changed source files are already represented by newer
-  or equivalent implementations in the dedicated checkout, but the dirty
-  patch has not been proven equivalent as a patch and remains
-  `candidate-fix-needs-review`.
-- The Neural Workshop scope-binding test and structpy parser-machine changes are
-  distinct `candidate-fix-needs-review` entries. Their owners' worktrees remain
-  byte-for-byte untouched.
+  breadth fixture. Content review found the behavior already represented by
+  newer or equivalent implementations in the dedicated checkout; the dirty
+  owner patch remains an audit `candidate-fix-needs-review` entry because the
+  owner worktree itself is still dirty.
+- The Neural Workshop scope-binding test and structpy parser-machine changes
+  are likewise already represented in the dedicated checkout. Their dirty
+  owner entries remain `candidate-fix-needs-review` for provenance purposes;
+  the owners' worktrees remain byte-for-byte untouched.
 - The effect, recovered-interop, dedicated-profiler, and Elisa UI worktrees have
   metadata-only changes and are classified `obsolete-noise-only`.
 
