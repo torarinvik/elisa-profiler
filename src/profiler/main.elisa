@@ -506,7 +506,20 @@ extend ProfilerNative:
             append_text(buffer, "degraded" if detail_degraded else "complete")
             append_text(buffer, "\",\"event_counts\":\"")
             append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO else "exact")
-            append_text(buffer, "\",\"reasons\":[")
+            capture_incomplete: bool = status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
+            append_text(buffer, "\",\"completeness\":{\"events\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"locations\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"functions\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"call_edges\":\"")
+            append_text(buffer, "partial" if summary.call_edge_dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"stacks\":\"")
+            append_text(buffer, "partial" if summary.stack_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"timings\":\"")
+            append_text(buffer, "partial" if capture_incomplete else "exact")
+            append_text(buffer, "\"},\"reasons\":[")
             first_reason: mutable bool = true
             if status < NATIVE_ZERO:
                 append_text(buffer, "\"wait_failure\"")

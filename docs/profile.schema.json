@@ -83,7 +83,7 @@
     },
     "quality": {
       "type": "object",
-      "required": ["capture", "detail", "event_counts", "reasons"],
+      "required": ["capture", "detail", "event_counts", "completeness", "reasons"],
       "properties": {
         "capture": {
           "type": "string",
@@ -91,6 +91,19 @@
         },
         "detail": { "type": "string", "enum": ["complete", "degraded"] },
         "event_counts": { "type": "string", "enum": ["exact", "partial"] },
+        "completeness": {
+          "type": "object",
+          "required": ["events", "locations", "functions", "call_edges", "stacks", "timings"],
+          "properties": {
+            "events": { "type": "string", "enum": ["exact", "partial"] },
+            "locations": { "type": "string", "enum": ["exact", "partial"] },
+            "functions": { "type": "string", "enum": ["exact", "partial"] },
+            "call_edges": { "type": "string", "enum": ["exact", "partial"] },
+            "stacks": { "type": "string", "enum": ["exact", "partial"] },
+            "timings": { "type": "string", "enum": ["exact", "partial"] }
+          },
+          "additionalProperties": true
+        },
         "reasons": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": true
