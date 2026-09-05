@@ -475,7 +475,7 @@ extend ProfilerNative:
                 elif line_prefix(data, line_start, line_stop, begin_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(begin_prefix)
                     marker: i64 = parse_protocol_number(data, &cursor, line_stop)
-                    if cursor != line_stop or marker != NATIVE_ONE or summary.capture_started or summary.capture_complete:
+                    if cursor != line_stop or marker != NATIVE_ONE or line_count != NATIVE_ONE.usize() or summary.capture_started or summary.capture_complete:
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     else:
@@ -488,6 +488,9 @@ extend ProfilerNative:
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     else:
                         summary.capture_complete <- true
+                elif summary.capture_complete and line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\t"):
+                    summary.malformed <- true
+                    summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                 elif line_prefix(data, line_start, line_stop, meta_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(meta_prefix)
                     summary.events <- parse_protocol_number(data, &cursor, line_stop)

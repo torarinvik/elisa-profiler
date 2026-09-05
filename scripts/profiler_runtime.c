@@ -137,30 +137,40 @@ static uint64_t profile_event_trace_captured;
 static uint64_t profile_event_trace_omitted;
 static int profile_output_fd = STDERR_FILENO;
 
+static void profile_write_capture_begin(FILE *stream) {
+    fprintf(stream, "ELISA_PROFILE\t%u\tbegin\t%u\n",
+            PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
+}
+
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
     profile_output_fd = STDERR_FILENO;
     const char *fd_text = getenv("ELISA_PROFILE_FD");
     if (fd_text == NULL || *fd_text == '\0') {
+        profile_write_capture_begin(profile_output_stream);
         return;
     }
     char *end = NULL;
     long requested_fd = strtol(fd_text, &end, 10);
     if (end == fd_text || *end != '\0' || requested_fd < 0 || requested_fd > INT_MAX) {
+        profile_write_capture_begin(profile_output_stream);
         return;
     }
     int duplicate_fd = dup((int)requested_fd);
     if (duplicate_fd < 0) {
+        profile_write_capture_begin(profile_output_stream);
         return;
     }
     FILE *stream = fdopen(duplicate_fd, "w");
     if (stream == NULL) {
         close(duplicate_fd);
+        profile_write_capture_begin(profile_output_stream);
         return;
     }
     (void)setvbuf(stream, NULL, _IONBF, 0);
     profile_output_fd = duplicate_fd;
     profile_output_stream = stream;
+    profile_write_capture_begin(profile_output_stream);
 }
 
 static FILE *profile_output(void) {
@@ -1199,11 +1209,6 @@ static void profile_print_call_path(const profile_call_path *path) {
 
 static void profile_dump(void);
 
-static void profile_dump_begin(void) {
-    fprintf(stderr, "ELISA_PROFILE\t%u\tbegin\t%u\n",
-            PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
-}
-
 static void profile_dump_end(void) {
     fprintf(stderr, "ELISA_PROFILE\t%u\tend\t%u\n",
             PROFILE_PROTOCOL_VERSION, PROFILE_PROTOCOL_VERSION);
@@ -1341,7 +1346,6 @@ static void profile_dump_body(void) {
     }
 #endif
     profile_dumped = 1;
-    profile_dump_begin();
     size_t count = profile_size;
     profile_entry **entries = calloc(count == 0 ? 1 : count, sizeof(*entries));
     if (entries == NULL) {
