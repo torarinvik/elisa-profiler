@@ -68,7 +68,9 @@ implementation helpers private. `scripts/elisa-profiler` is now a native-only
 compatibility launcher that fails clearly when `bin/elisa-profiler` has not been
 built. The former Python implementation remains only at
 `scripts/elisa-profiler-legacy.py` as a migration oracle for legacy fixture
-tests; no user-facing command dispatches to it.
+tests; no user-facing command dispatches to it. The launcher exports absolute
+defaults for the dedicated compiler worktree, runtime object, and collector
+source, so it is safe to invoke from outside the repository directory.
 
 The native build pipeline passes compiler, object-copy, collector, linker, and
 Git metadata operations through direct argument vectors. It does not construct
