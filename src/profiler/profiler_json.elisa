@@ -220,9 +220,9 @@ extend ProfilerNative:
                 if byte >= NATIVE_BYTE_ASCII_ZERO and byte <= NATIVE_BYTE_ASCII_NINE:
                     seen_digit <- true
                     if in_fraction:
-                        if fraction_digits < NATIVE_THREE:
-                            fraction <- fraction * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
-                            fraction_digits <- fraction_digits + NATIVE_ONE
+                        return NATIVE_NEGATIVE_ONE if fraction_digits >= NATIVE_THREE
+                        fraction <- fraction * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                        fraction_digits <- fraction_digits + NATIVE_ONE
                     else:
                         digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
                         return NATIVE_NEGATIVE_ONE if whole > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
@@ -233,6 +233,8 @@ extend ProfilerNative:
                     break
                 cursor <- cursor + NATIVE_ONE.usize()
             return NATIVE_NEGATIVE_ONE if not seen_digit
+            return NATIVE_NEGATIVE_ONE if in_fraction and fraction_digits == NATIVE_ZERO
+            return NATIVE_NEGATIVE_ONE if cursor < stop and data[cursor] != NATIVE_BYTE_SPACE and data[cursor] != NATIVE_BYTE_TAB and data[cursor] != NATIVE_BYTE_NEWLINE and data[cursor] != NATIVE_BYTE_CARRIAGE_RETURN and data[cursor] != NATIVE_BYTE_COMMA and data[cursor] != NATIVE_BYTE_RIGHT_BRACE and data[cursor] != NATIVE_BYTE_RIGHT_BRACKET
             while fraction_digits < NATIVE_THREE |fraction, fraction_digits|:
                 fraction <- fraction * NATIVE_DECIMAL_BASE
                 fraction_digits <- fraction_digits + NATIVE_ONE

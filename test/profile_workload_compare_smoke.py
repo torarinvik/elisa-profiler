@@ -115,6 +115,19 @@ def main() -> int:
         )
         if rejected_overflow.returncode == 0:
             raise SystemExit("native comparison accepted overflowing millisecond JSON")
+
+        precision = capture([])
+        precision["run"]["execution_ms_mean"] = 1.1234  # type: ignore[index]
+        precision_path = root / "precision.json"
+        precision_path.write_text(json.dumps(precision), encoding="utf-8")
+        rejected_precision = subprocess.run(
+            [str(profiler), "compare", precision_path, precision_path, "--format", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if rejected_precision.returncode == 0:
+            raise SystemExit("native comparison silently truncated millisecond precision")
     print("native workload comparison smoke OK")
     return 0
 
