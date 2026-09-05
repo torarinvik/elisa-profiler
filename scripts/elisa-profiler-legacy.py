@@ -533,6 +533,8 @@ def parse_profile(
     trace_omitted = 0
     trace_limit = 0
     trace_record_seen = False
+    capture_started = False
+    capture_complete = False
     program_stderr: list[str] = []
     for line in stderr.splitlines():
         if not line.startswith("ELISA_PROFILE\t"):
@@ -541,6 +543,19 @@ def parse_profile(
         fields = line.split("\t")
         if len(fields) < 2 or fields[1] != "1":
             raise ProfilerError(f"unsupported profiler runtime protocol version: {line}")
+        if len(fields) == 4 and fields[2] in ("begin", "end"):
+            marker = parse_protocol_uint(fields[3], line)
+            if marker != 1:
+                raise ProfilerError(f"invalid profiler capture marker: {line}")
+            if fields[2] == "begin":
+                if capture_started or capture_complete:
+                    raise ProfilerError(f"duplicate profiler capture begin marker: {line}")
+                capture_started = True
+            else:
+                if not capture_started or capture_complete:
+                    raise ProfilerError(f"invalid profiler capture end marker: {line}")
+                capture_complete = True
+            continue
         if len(fields) == 4 and fields[2] == "crash":
             crash_signal = parse_protocol_uint(fields[3], line)
             if crash_signal < 1 or crash_signal > 128:
@@ -554,6 +569,8 @@ def parse_profile(
             }
             if crash_signal is not None:
                 meta["crash_signal"] = crash_signal
+            meta["capture_started"] = capture_started
+            meta["capture_complete"] = capture_started and capture_complete
             if len(fields) == 8:
                 meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
                 meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
@@ -2986,10 +3003,33 @@ def build_report(
             "trace_omitted",
         )
     )
+    capture_incomplete = quality_capture != "complete"
+    event_counts = "partial" if capture_incomplete or summary.get("dropped", 0) > 0 else "exact"
+    location_completeness = "partial" if capture_incomplete or summary.get("dropped", 0) > 0 else "exact"
+    call_edge_completeness = (
+        "partial"
+        if capture_incomplete or summary.get("dropped_call_edges", 0) > 0
+        else "exact"
+    )
+    stack_completeness = (
+        "partial"
+        if capture_incomplete
+        or summary.get("dropped_stacks", 0) > 0
+        or summary.get("stack_overflow_entries", 0) > 0
+        else "exact"
+    )
     report["quality"] = {
         "capture": quality_capture,
         "detail": "degraded" if detail_loss else "complete",
-        "event_counts": "exact",
+        "event_counts": event_counts,
+        "completeness": {
+            "events": event_counts,
+            "locations": location_completeness,
+            "functions": location_completeness,
+            "call_edges": call_edge_completeness,
+            "stacks": stack_completeness,
+            "timings": "partial" if capture_incomplete else "exact",
+        },
         "reasons": quality_reasons,
     }
     if program_stderr:
@@ -3434,6 +3474,12 @@ def profile(args: argparse.Namespace) -> int:
                 "trace_threads": meta.get("thread_count", 0),
                 "trace_max_stack_depth": meta.get("max_stack_depth", 0),
                 "trace_stack_overflow_entries": meta.get("stack_overflow_entries", 0),
+                "detail_records": {
+                    "locations": len(locations),
+                    "functions": sum(1 for location in locations if location["kind"] == "function"),
+                    "call_edges": len(call_edges),
+                    "stacks": len(stacks),
+                },
                 "location_limit": meta.get("location_limit", 0),
                 "call_edge_limit": meta.get("call_edge_limit", 0),
                 "stack_limit": meta.get("stack_limit", 0),
@@ -3444,6 +3490,8 @@ def profile(args: argparse.Namespace) -> int:
                 "dropped_call_edges": meta.get("call_edge_dropped", 0),
                 "dropped_stacks": meta.get("stack_dropped", 0),
                 "crash_signal": meta.get("crash_signal"),
+                "capture_started": bool(meta.get("capture_started", False)),
+                "capture_complete": bool(meta.get("capture_started", False) and meta.get("capture_complete", False)),
                 "trace_events_captured": meta.get("trace_captured", 0),
                 "trace_events_omitted": meta.get("trace_omitted", 0),
                 "trace_event_limit": (

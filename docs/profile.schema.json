@@ -124,7 +124,6 @@
     "run": {
       "type": "object",
       "required": [
-        "collection_mode",
         "exit_code",
         "signal",
         "location_timing",

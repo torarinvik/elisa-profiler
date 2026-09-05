@@ -9,7 +9,6 @@
     "kind",
     "baseline",
     "candidate",
-    "collection_mode_match",
     "threshold_percent",
     "metrics",
     "functions",
