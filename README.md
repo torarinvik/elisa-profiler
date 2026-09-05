@@ -61,6 +61,12 @@ executable is built with `make profiler-native` and exercised with
 the native CLI reaches feature parity. New profiler behavior belongs in
 `src/profiler/`, not in that Python command.
 
+The native launcher also accepts `--cwd PATH`, `--stdin PATH`, and repeatable
+`--env KEY=VALUE` controls. These are applied only to the profiled child and are
+exercised by `examples/native_launch_probe.elisa`. Positional target-argument
+forwarding is intentionally still gated on a verified compiled-entry ABI; the
+current native target contract is `main() -> i64`.
+
 ## Profile a program
 
 The profiler expects an Elisa source file with main() -> i64. It compiles with

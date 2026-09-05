@@ -1,0 +1,52 @@
+# Native profiler launch-control fixture.
+# It verifies that the Elisa-owned launcher forwards stdin, environment, and cwd
+# through the direct child process boundary.
+
+const LAUNCH_PROBE_ZERO: i64 = 0
+const LAUNCH_PROBE_ONE: i64 = 1
+const LAUNCH_PROBE_STDIN_FD: i64 = LAUNCH_PROBE_ZERO
+const LAUNCH_PROBE_WRITE_ONLY: i64 = 1
+const LAUNCH_PROBE_CREATE: i64 = 64
+const LAUNCH_PROBE_TRUNCATE: i64 = 512
+const LAUNCH_PROBE_FILE_MODE: i64 = 420
+const LAUNCH_PROBE_SUCCESS: i64 = 0
+const LAUNCH_PROBE_ENV_ERROR: i64 = 2
+const LAUNCH_PROBE_STDIN_ERROR: i64 = 3
+const LAUNCH_PROBE_CWD_ERROR: i64 = 4
+const LAUNCH_PROBE_MARKER_BYTE: u8 = 35
+const LAUNCH_PROBE_MARKER_LENGTH: i64 = 4
+
+@link_name("getenv")
+extern launch_probe_getenv(name: cstr) -> u8&?
+@link_name("strcmp")
+extern launch_probe_strcmp(left: cstr, right: cstr) -> i64
+@link_name("read")
+extern launch_probe_read(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
+@link_name("open")
+extern launch_probe_open(path: cstr, flags: i64, ...) -> i64
+@link_name("write")
+extern launch_probe_write(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
+@link_name("close")
+extern launch_probe_close(fd: i64) -> i64
+
+def main() -> i64 can[Console, Memory.Allocate, Unsafe.PointerCast]:
+    if launch_probe_getenv("ELISA_PROFILER_LAUNCH") is value:
+        value_cstr: cstr = value.cast[cstr] can Unsafe.PointerCast
+        return LAUNCH_PROBE_ENV_ERROR if launch_probe_strcmp(value_cstr, "enabled") != LAUNCH_PROBE_SUCCESS
+    else:
+        return LAUNCH_PROBE_ENV_ERROR
+
+    first_byte: mutable u8 = 0
+    return LAUNCH_PROBE_STDIN_ERROR if launch_probe_read(LAUNCH_PROBE_STDIN_FD, &first_byte, LAUNCH_PROBE_ONE.usize()) != LAUNCH_PROBE_ONE
+    return LAUNCH_PROBE_STDIN_ERROR if first_byte != LAUNCH_PROBE_MARKER_BYTE
+
+    marker_path: cstr = "native-launch-cwd-marker.txt"
+    marker_fd: i64 = launch_probe_open(marker_path, LAUNCH_PROBE_WRITE_ONLY + LAUNCH_PROBE_CREATE + LAUNCH_PROBE_TRUNCATE, LAUNCH_PROBE_FILE_MODE)
+    return LAUNCH_PROBE_CWD_ERROR if marker_fd < LAUNCH_PROBE_ZERO
+    marker: cstr = "cwd\n"
+    marker_bytes: u8& = marker.cast[u8&] can Unsafe.PointerCast
+    if launch_probe_write(marker_fd, marker_bytes, LAUNCH_PROBE_MARKER_LENGTH.usize()) != LAUNCH_PROBE_MARKER_LENGTH:
+        _ = launch_probe_close(marker_fd)
+        return LAUNCH_PROBE_CWD_ERROR
+    _ = launch_probe_close(marker_fd)
+    return LAUNCH_PROBE_SUCCESS
