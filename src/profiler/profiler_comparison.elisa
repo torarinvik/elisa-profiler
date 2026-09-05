@@ -234,5 +234,5 @@ extend ProfilerNative:
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, rendered)
                 return report_error("could not write native comparison report")
-            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &rendered[0], rendered.count) can Console
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, rendered) can Console
             return NATIVE_ZERO

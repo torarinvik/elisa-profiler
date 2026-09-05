@@ -345,6 +345,15 @@ extend ProfilerNative:
                 value.count <- value.count - NATIVE_ONE.usize()
 
 
+        def write_all_fd(fd: i64, data: darray[u8]&) -> bool can[Abort.Panic, Console]:
+            written: mutable usize = NATIVE_ZERO.usize()
+            while written < data.count |written, data, fd|:
+                amount: i64 = profiler_ffi_write(fd, &data[written], data.count - written) can Console
+                return false if amount <= NATIVE_ZERO
+                written <- written + amount.usize()
+            return true
+
+
         def read_git_metadata(compiler_root: darray[u8]&, operation: sview, output_path: darray[u8]&, error_path: darray[u8]&, git_tool: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             command_arguments: mutable darray[darray[u8]] = []
             append_command_argument(command_arguments, "-C")
@@ -405,7 +414,7 @@ extend ProfilerNative:
 
         def write_stderr(buffer: darray[u8]&) -> void can[Abort.Panic, Console]:
             return if buffer.count == NATIVE_ZERO.usize()
-            _ = profiler_ffi_write(NATIVE_STANDARD_ERROR, &buffer[0], buffer.count) can Console
+            _ = write_all_fd(NATIVE_STANDARD_ERROR, buffer) can Console
         
         
         def report_error(message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
@@ -435,14 +444,10 @@ extend ProfilerNative:
             temporary_cstr: cstr = (&temporary_path[0]).cast[cstr] can Unsafe.PointerCast
             fd: i64 = profiler_ffi_open(temporary_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
             false return if fd < NATIVE_ZERO
-            written: mutable usize = NATIVE_ZERO.usize()
-            while written < data.count |written, data, fd|:
-                amount: i64 = profiler_ffi_write(fd, &data[written], data.count - written) can Console
-                if amount <= NATIVE_ZERO:
-                    _ = profiler_ffi_close(fd)
-                    _ = profiler_ffi_unlink(temporary_cstr)
-                    return false
-                written <- written + amount.usize()
+            if not write_all_fd(fd, data) can Console:
+                _ = profiler_ffi_close(fd)
+                _ = profiler_ffi_unlink(temporary_cstr)
+                return false
             _ = profiler_ffi_close(fd)
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
@@ -987,7 +992,7 @@ extend ProfilerNative:
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, report)
                 return report_error("could not write doctor report")
-            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &report[0], report.count) can Console
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, report) can Console
             return NATIVE_ZERO if all_ok else NATIVE_TWO
 
 
@@ -1072,7 +1077,7 @@ extend ProfilerNative:
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, rendered)
                 return report_error("could not write offline report")
-            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &rendered[0], rendered.count) can Console
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, rendered) can Console
             return NATIVE_ZERO
         
         
@@ -1554,7 +1559,7 @@ extend ProfilerNative:
             if output.count > NATIVE_ZERO.usize():
                 return report_error("could not write native profile report") if not write_file(output, report)
                 return final_exit_code
-            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &report[0], report.count) can Console
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, report) can Console
             return final_exit_code
 
 
