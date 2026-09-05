@@ -1376,11 +1376,16 @@ extend ProfilerNative:
                 run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
-                return report_error("native target produced no collector capture") if capture.count == NATIVE_ZERO.usize()
-                current_summary: CaptureSummary = parse_capture(capture, source)
-                if current_summary.malformed:
-                    cleanup_temp(temporary)
-                    return report_protocol_error(current_summary)
+                current_summary: mutable CaptureSummary = empty_capture_summary()
+                if capture.count == NATIVE_ZERO.usize():
+                    if not run_result.timed_out:
+                        cleanup_temp(temporary)
+                        return report_error("native target produced no collector capture")
+                else:
+                    current_summary <- parse_capture(capture, source)
+                    if current_summary.malformed:
+                        cleanup_temp(temporary)
+                        return report_protocol_error(current_summary)
                 current_stderr: darray[u8] = read_file(run_error_path)
                 if current_stderr.count > 0:
                     if program_stderr.count > NATIVE_ZERO.usize():

@@ -33,10 +33,13 @@ extend ProfilerNative:
         def json_key_value_start(data: darray[u8]&, key: sview, start: usize, stop: usize) -> i64 can[Abort.Panic]:
             key_length: usize = profiler_ffi_sview_len(key)
             cursor: mutable usize = start
-            while cursor < stop |cursor, key_length, key, data|:
-                if data[cursor] == NATIVE_BYTE_DOUBLE_QUOTE:
+            object_depth: mutable i64 = NATIVE_ZERO
+            array_depth: mutable i64 = NATIVE_ZERO
+            while cursor < stop |cursor, key_length, key, data, object_depth, array_depth|:
+                byte: u8 = data[cursor]
+                if byte == NATIVE_BYTE_DOUBLE_QUOTE:
                     key_cursor: usize = cursor + NATIVE_ONE.usize()
-                    matches: mutable bool = key_cursor + key_length < stop
+                    matches: mutable bool = object_depth == NATIVE_ONE and array_depth == NATIVE_ZERO and key_cursor + key_length < stop
                     if matches:
                         for index in 0..<key_length |index, key_cursor, key, data, matches|:
                             matches <- false if data[key_cursor + index] != profiler_ffi_sview_at(key, index)
@@ -48,6 +51,16 @@ extend ProfilerNative:
                     string_end: i64 = json_string_end(data, cursor, stop)
                     cursor <- string_end.usize() if string_end >= NATIVE_ZERO else cursor + NATIVE_ONE.usize()
                     continue
+                if byte == NATIVE_BYTE_LEFT_BRACE:
+                    object_depth <- object_depth + NATIVE_ONE
+                elif byte == NATIVE_BYTE_RIGHT_BRACE:
+                    object_depth <- object_depth - NATIVE_ONE
+                    return NATIVE_NEGATIVE_ONE if object_depth < NATIVE_ZERO
+                elif byte == NATIVE_BYTE_LEFT_BRACKET:
+                    array_depth <- array_depth + NATIVE_ONE
+                elif byte == NATIVE_BYTE_RIGHT_BRACKET:
+                    array_depth <- array_depth - NATIVE_ONE
+                    return NATIVE_NEGATIVE_ONE if array_depth < NATIVE_ZERO
                 cursor <- cursor + NATIVE_ONE.usize()
             return NATIVE_NEGATIVE_ONE
 
@@ -263,6 +276,17 @@ extend ProfilerNative:
             return false
 
 
+        def json_bool_value_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
+            return NATIVE_NEGATIVE_ONE if start >= stop
+            if start + NATIVE_JSON_TRUE_LENGTH <= stop and data[start] == NATIVE_BYTE_ASCII_TRUE_T and data[start + NATIVE_ONE.usize()] == NATIVE_BYTE_ASCII_TRUE_R and data[start + NATIVE_TWO.usize()] == NATIVE_BYTE_ASCII_TRUE_U and data[start + NATIVE_THREE.usize()] == NATIVE_BYTE_ASCII_TRUE_E:
+                return NATIVE_NEGATIVE_ONE if not json_token_terminated(data, start + NATIVE_JSON_TRUE_LENGTH, stop)
+                return NATIVE_ONE
+            if start + NATIVE_JSON_FALSE_LENGTH <= stop and data[start] == NATIVE_BYTE_ASCII_FALSE_F and data[start + NATIVE_ONE.usize()] == NATIVE_BYTE_ASCII_FALSE_A and data[start + NATIVE_TWO.usize()] == NATIVE_BYTE_ASCII_FALSE_L and data[start + NATIVE_THREE.usize()] == NATIVE_BYTE_ASCII_FALSE_S and data[start + NATIVE_JSON_TRUE_LENGTH] == NATIVE_BYTE_ASCII_FALSE_E:
+                return NATIVE_NEGATIVE_ONE if not json_token_terminated(data, start + NATIVE_JSON_FALSE_LENGTH, stop)
+                return NATIVE_ZERO
+            return NATIVE_NEGATIVE_ONE
+
+
         def json_source_value_start(data: darray[u8]&) -> i64 can[Abort.Panic]:
             return json_key_value_start(data, "source", NATIVE_ZERO.usize(), data.count)
 
@@ -274,7 +298,10 @@ extend ProfilerNative:
             return false if run_stop < NATIVE_ZERO
             value_start: i64 = json_key_value_start(data, "location_timing", run_start.usize(), run_stop.usize())
             return false if value_start < NATIVE_ZERO
-            return json_bool_into(data, value_start.usize(), run_stop.usize(), &timing)
+            value: i64 = json_bool_value_at(data, value_start.usize(), run_stop.usize())
+            return false if value < NATIVE_ZERO
+            timing <- value == NATIVE_ONE
+            return true
 
 
         def json_read_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:

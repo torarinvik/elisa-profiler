@@ -73,9 +73,12 @@ failed and that its detail budget was exceeded without pretending either fact
 explains the other. An empty array is the only complete-quality case.
 
 An empty or malformed collector capture is a profiler failure, even when the
-target's own exit code would otherwise be zero. A target that calls `_exit`
-without allowing the collector to flush is intentionally reported as missing
-evidence rather than as a successful profile.
+target's own exit code would otherwise be zero. The one bounded exception is a
+launcher timeout: if termination wins before the collector can flush, the
+native launcher emits an empty but valid partial report with per-metric
+completeness marked accordingly. A target that calls `_exit` without allowing
+the collector to flush is still reported as missing evidence rather than as a
+successful profile.
 
 ## Repetitions
 

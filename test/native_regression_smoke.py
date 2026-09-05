@@ -104,6 +104,14 @@ def main():
             "capture": "target_exit",
             "detail": "complete",
             "event_counts": "exact",
+            "completeness": {
+                "events": "exact",
+                "locations": "exact",
+                "functions": "exact",
+                "call_edges": "exact",
+                "stacks": "exact",
+                "timings": "exact",
+            },
             "reasons": ["target_exit"],
         }
         target.write_text('@link_name("_exit")\nextern terminate(code: i32) -> void\n\ndef main() -> i64:\n    terminate(0)\n    return 0\n')

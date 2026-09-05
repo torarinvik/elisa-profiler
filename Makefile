@@ -11,6 +11,7 @@ NATIVE_STAGE1_BIN := $(COMPILER_WORKTREE)/bin/elisac-stage1
 NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.json
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
+NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 
 .PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-self-host-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke legacy-profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
@@ -74,61 +75,62 @@ profiler-native:
 
 profiler-native-smoke: profiler-native
 	@set -eu; native_work="$$(mktemp -d)"; trap 'rm -rf "$$native_work"' EXIT; \
-		"$(NATIVE_PROFILER_BIN)" doctor --format json --output "$$native_work/doctor.json"; \
+		native_run() { ELISA_NATIVE_COMMAND_TIMEOUT_SECONDS="$(NATIVE_SMOKE_TIMEOUT_SECONDS)" python3 "$(PROFILER_ROOT)/test/run_bounded_command.py" "$$@"; }; \
+		native_run "$(NATIVE_PROFILER_BIN)" doctor --format json --output "$$native_work/doctor.json"; \
 		grep -Fq '"ok":true' "$$native_work/doctor.json"; \
 		grep -Fq '"compiler_manifest":true' "$$native_work/doctor.json"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --event-trace --max-event-trace-events 10 --format json --output "$$native_work/report.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --event-trace --max-event-trace-events 10 --format json --output "$$native_work/report.json"; \
 		test -s "$$native_work/report.json"; \
-		"$(NATIVE_PROFILER_BIN)" record "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format json --output "$$native_work/record.json" --artifact-output "$$native_work/profile.elisaprof"; \
+		native_run "$(NATIVE_PROFILER_BIN)" record "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format json --output "$$native_work/record.json" --artifact-output "$$native_work/profile.elisaprof"; \
 		python3 "$(PROFILER_ROOT)/test/profile_artifact_smoke.py" "$$native_work/profile.elisaprof"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-report.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-report.json"; \
 		cmp -s "$$native_work/record.json" "$$native_work/artifact-report.json"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format folded --output "$$native_work/artifact.folded"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format folded --output "$$native_work/artifact.folded"; \
 		grep -Fq 'main' "$$native_work/artifact.folded"; \
-		"$(NATIVE_PROFILER_BIN)" compare "$$native_work/profile.elisaprof" "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-comparison.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" compare "$$native_work/profile.elisaprof" "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-comparison.json"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/comparison.schema.json" "$$native_work/artifact-comparison.json"; \
 		grep -Fq '"locations":[{' "$$native_work/report.json"; \
 		grep -Fq '"call_edges":[{' "$$native_work/report.json"; \
 		grep -Fq '"stacks":[{' "$$native_work/report.json"; \
 		grep -Fq '"event_trace":[{' "$$native_work/report.json"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/report.json"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format json --output "$$native_work/offline.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format json --output "$$native_work/offline.json"; \
 		cmp -s "$$native_work/report.json" "$$native_work/offline.json"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format text --output "$$native_work/offline.txt"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format text --output "$$native_work/offline.txt"; \
 		grep -Fq 'Elisa profiler' "$$native_work/offline.txt"; \
 		grep -Fq 'statement events:' "$$native_work/offline.txt"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format folded --output "$$native_work/offline.folded"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format folded --output "$$native_work/offline.folded"; \
 		grep -Fq 'main' "$$native_work/offline.folded"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format speedscope --output "$$native_work/offline.speedscope.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format speedscope --output "$$native_work/offline.speedscope.json"; \
 		python3 "$(PROFILER_ROOT)/test/speedscope_smoke.py" "$$native_work/offline.speedscope.json"; \
-		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format html --output "$$native_work/offline.html"; \
+		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format html --output "$$native_work/offline.html"; \
 		grep -Fq '<!doctype html>' "$$native_work/offline.html"; \
 		grep -Fq 'Native Elisa offline renderer' "$$native_work/offline.html"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --recent-path --format json --output "$$native_work/recent.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --recent-path --format json --output "$$native_work/recent.json"; \
 		grep -Fq '"recent_events":[{' "$$native_work/recent.json"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format folded --output "$$native_work/hot-loop.folded"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format folded --output "$$native_work/hot-loop.folded"; \
 		grep -Fq 'main' "$$native_work/hot-loop.folded"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format html --output "$$native_work/hot-loop.html"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format html --output "$$native_work/hot-loop.html"; \
 		grep -Fq '<!doctype html>' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Hotspots' "$$native_work/hot-loop.html"; \
 		grep -Fq 'function-filter' "$$native_work/hot-loop.html"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format speedscope --output "$$native_work/hot-loop.speedscope.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format speedscope --output "$$native_work/hot-loop.speedscope.json"; \
 		python3 "$(PROFILER_ROOT)/test/speedscope_smoke.py" "$$native_work/hot-loop.speedscope.json"; \
 		! grep -Fq 'native-transition' "$$native_work/report.json"; \
 		grep -Fq '"branch":"' "$$native_work/report.json"; \
 		grep -Fq '"commit":"' "$$native_work/report.json"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format json --output "$$native_work/stderr-probe.json" 2>"$$native_work/stderr-probe.log"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format json --output "$$native_work/stderr-probe.json" 2>"$$native_work/stderr-probe.log"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/stderr-probe.json"; \
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_launch_probe.elisa" --cwd "$$native_work" --stdin "$(PROFILER_ROOT)/README.md" --env ELISA_PROFILER_LAUNCH=enabled --format json --output "$$native_work/launch-probe.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_launch_probe.elisa" --cwd "$$native_work" --stdin "$(PROFILER_ROOT)/README.md" --env ELISA_PROFILER_LAUNCH=enabled --format json --output "$$native_work/launch-probe.json"; \
 		test -s "$$native_work/native-launch-cwd-marker.txt"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/launch-probe.json"; \
-		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_argv_probe.elisa" --format json --output "$$native_work/argv-probe.json" -- --alpha "two words"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_argv_probe.elisa" --format json --output "$$native_work/argv-probe.json" -- --alpha "two words"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/argv-probe.json"; \
-		"$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format json --output "$$native_work/comparison.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format json --output "$$native_work/comparison.json"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/comparison.schema.json" "$$native_work/comparison.json"; \
 		python3 "$(PROFILER_ROOT)/test/native_compare_smoke.py" "$$native_work/comparison.json"; \
-		"$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format text --output "$$native_work/comparison.txt"; \
+		native_run "$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format text --output "$$native_work/comparison.txt"; \
 		grep -Fq 'Elisa profile comparison' "$$native_work/comparison.txt"; \
 		grep -Fq 'wall mean:' "$$native_work/comparison.txt"
 

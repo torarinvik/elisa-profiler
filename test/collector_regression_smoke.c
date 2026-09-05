@@ -27,7 +27,11 @@ static void *regression_calloc(size_t count, size_t size) {
 #undef main
 #undef calloc
 
-int64_t elisa_profile_target_main(void) { return 0; }
+int64_t elisa_profile_target_main(int64_t argc, void *argv) {
+    (void)argc;
+    (void)argv;
+    return 0;
+}
 
 int main(void) {
     const uint32_t repeat_line = 1;

@@ -1,0 +1,11 @@
+# Native process-group cleanup fixture.
+# The launcher must terminate the uniquely named descendant together with this
+# target when the profiler timeout fires.
+
+const PROCESS_GROUP_PROBE_COMMAND: cstr = "exec -a elisa-profiler-process-group-child /bin/sleep 30"
+
+@link_name("system")
+extern process_group_probe_system(command: cstr) -> i64
+
+def main() -> i64:
+    return process_group_probe_system(PROCESS_GROUP_PROBE_COMMAND)

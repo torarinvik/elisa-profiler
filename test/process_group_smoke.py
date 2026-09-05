@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Verify timeout cleanup terminates forked target descendants."""
+"""Verify the Elisa-native timeout cleanup terminates target descendants."""
 
 from __future__ import annotations
 
-import importlib.util
-from importlib.machinery import SourceFileLoader
 import os
 from pathlib import Path
 import subprocess
@@ -14,16 +12,20 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CHILD_MARKER = "elisa-profiler-process-group-child"
+NATIVE_TIMEOUT_SECONDS = "0.05"
+PROBE_WAIT_SECONDS = 0.5
+EXPECTED_SIGNAL_EXIT_STATUS = 143
 
 
-def load_profiler_module():
-    loader = SourceFileLoader("elisa_profiler", str(ROOT / "scripts" / "elisa-profiler"))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("could not load profiler module")
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
+def marked_processes() -> list[str]:
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,command="],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in result.stdout.splitlines() if CHILD_MARKER in line]
 
 
 def main() -> int:
@@ -31,35 +33,34 @@ def main() -> int:
         print("process-group smoke SKIP: POSIX process groups unavailable")
         return 0
 
-    profiler = load_profiler_module()
     with tempfile.TemporaryDirectory(prefix="elisa-profiler-process-group-") as directory:
         root = Path(directory)
-        child_pid_file = root / "child.pid"
-        target = root / "forking-target.sh"
-        target.write_text(
-            "#!/bin/sh\n"
-            "sleep 30 & child=$!\n"
-            f'echo "$child" > "{child_pid_file}"\n'
-            "while :; do :; done\n",
-            encoding="utf-8",
+        report = root / "process-group.json"
+        native = ROOT / "bin" / "elisa-profiler"
+        command = [
+            str(native),
+            "profile",
+            str(ROOT / "examples" / "native_process_group_probe.elisa"),
+            "--timeout",
+            NATIVE_TIMEOUT_SECONDS,
+            "--format",
+            "json",
+            "--output",
+            str(report),
+        ]
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
-        target.chmod(0o755)
-
-        # Leave a little scheduling room for the shell to fork and publish its
-        # child PID on a busy host; the descendant still runs far beyond this
-        # timeout, so the process-group cleanup assertion remains meaningful.
-        status, stdout, stderr, timed_out, _ = profiler.execute_program(target, 2.0)
-        assert timed_out is True, (status, stdout, stderr)
-        assert child_pid_file.is_file(), "target did not launch its child before timeout"
-        child_pid = int(child_pid_file.read_text(encoding="utf-8"))
-        time.sleep(0.1)
-        child_status = subprocess.run(
-            ["ps", "-o", "stat=", "-p", str(child_pid)],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip()
-        assert not child_status or child_status.startswith("Z"), child_status
+        stdout, stderr = process.communicate(timeout=10)
+        assert process.returncode == EXPECTED_SIGNAL_EXIT_STATUS, (process.returncode, stdout, stderr)
+        payload = report.read_text(encoding="utf-8")
+        assert '"timed_out":true' in payload, payload
+        time.sleep(PROBE_WAIT_SECONDS)
+        assert not marked_processes(), marked_processes()
 
     print("process-group cleanup OK")
     return 0

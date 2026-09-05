@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-8636a9d3 test: guard gen2 self-host construction
+9c5ca036 Merge branch 'work' into codex/profiler
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -21,9 +21,14 @@ side-table common fields and records the packed side-table offsets accurately.
 `5028591f` fixes the parity harness defaults so a compiler worktree nested
 under `elisa-compiler-worktrees/` resolves the sibling stage0 checkout at
 `../../../Go projects/structpy-tree` instead of the nonexistent path under
-`Elisa Projects/`. The dedicated compiler branch also contains the previously
-committed profiler-facing CLI fix and the complete committed ancestry of the
-local compiler branches. `make
+`Elisa Projects/`. The dedicated branch then merged the current `work` tip as
+`9c5ca036`, bringing the packed-store, effect-identity, and semantic-gate
+commits into the audited ancestry. The source trees for the packed/effect
+changes were already represented by equivalent or newer dedicated changes, so
+the semantic merge result changed only the remaining documentation files while
+retaining every source commit in history. The dedicated compiler branch also
+contains the previously committed profiler-facing CLI fix and the complete
+committed ancestry of the local compiler branches. `make
 compiler-audit` is the repeatable check that every local branch tip remains an
 ancestor of the dedicated compiler branch. It also writes the ignored
 `build/compiler-integration-ledger.json` file atomically. The ledger is the
