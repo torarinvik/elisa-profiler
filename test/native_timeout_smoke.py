@@ -51,13 +51,13 @@ def main() -> int:
             )
         assert process.returncode == 143, (process.returncode, stdout, stderr)
         payload = json.loads(report.read_text(encoding="utf-8"))
+        assert payload["quality"]["capture"] == "timeout", payload["quality"]
         assert payload["summary"]["capture_complete"] is False, payload["summary"]
         assert payload["run"]["timeout_s"] == 0.05, payload["run"]
         assert payload["run"]["exit_code"] is None, payload["run"]
         assert payload["run"]["signal"] == 15, payload["run"]
         assert payload["run"]["repetitions"][0]["timed_out"] is True, payload["run"]
         assert "timeout" in payload["quality"]["reasons"], payload["quality"]
-        assert payload["quality"]["capture"] == "target_signal", payload["quality"]
     print("native timeout smoke OK")
     return 0
 

@@ -531,6 +531,8 @@ extend ProfilerNative:
             append_text(buffer, "\"quality\":{\"capture\":\"")
             if status < NATIVE_ZERO:
                 append_text(buffer, "profiler_failure")
+            elif timed_out:
+                append_text(buffer, "timeout")
             elif signal >= NATIVE_ZERO:
                 append_text(buffer, "target_signal")
             elif target_exit != NATIVE_ZERO:

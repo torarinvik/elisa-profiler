@@ -2970,7 +2970,10 @@ def build_report(
         "locations": locations,
     }
     quality_reasons: list[str] = []
-    if signal is not None:
+    if any(record.get("timed_out", False) for record in run_records):
+        quality_capture = "timeout"
+        quality_reasons.append("timeout")
+    elif signal is not None:
         quality_capture = "target_signal"
         quality_reasons.append("signal_termination")
     elif exit_code not in (None, 0):

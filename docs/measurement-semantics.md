@@ -98,6 +98,9 @@ The top-level `quality` object is orthogonal to the target's exit code:
 - `quality.capture = complete` means the launcher waited successfully and the
   target exited normally with code zero.
 - `target_exit` means a normal non-zero target exit was observed.
+- `timeout` means the launcher reached the requested deadline and terminated
+  the target. `run.signal` still records the termination signal, and the
+  timeout reason remains additive.
 - `target_signal` means `waitpid` reported signal termination. `run.signal` is
   the signal number, including when the wait status also contains a core-dump
   flag.
@@ -115,8 +118,9 @@ explains the other. An empty array is the only complete-quality case.
 An empty or malformed collector capture is a profiler failure, even when the
 target's own exit code would otherwise be zero. The one bounded exception is a
 launcher timeout: if termination wins before the collector can flush, the
-native launcher emits an empty but valid partial report with per-metric
-completeness marked accordingly. A target that calls `_exit` without allowing
+native launcher emits an empty but valid partial report with
+`quality.capture = timeout` and per-metric completeness marked accordingly. A
+target that calls `_exit` without allowing
 the collector to flush is still reported as missing evidence rather than as a
 successful profile.
 
