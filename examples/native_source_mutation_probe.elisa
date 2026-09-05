@@ -1,0 +1,33 @@
+# Native source-integrity fixture. The target changes its own source after it
+# has been compiled so the profiler must refuse to publish a stale annotation.
+
+const SOURCE_MUTATION_ZERO: i64 = 0
+const SOURCE_MUTATION_ONE: i64 = 1
+const SOURCE_MUTATION_WRITE_ONLY: i64 = 1
+const SOURCE_MUTATION_TRUNCATE: i64 = 512
+const SOURCE_MUTATION_FILE_MODE: i64 = 420
+const SOURCE_MUTATION_SUCCESS: i64 = 0
+const SOURCE_MUTATION_ERROR: i64 = 2
+const SOURCE_MUTATION_LENGTH: usize = 33.usize()
+
+@link_name("getenv")
+extern source_mutation_getenv(name: cstr) -> u8&?
+@link_name("open")
+extern source_mutation_open(path: cstr, flags: i64, ...) -> i64
+@link_name("write")
+extern source_mutation_write(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
+@link_name("close")
+extern source_mutation_close(fd: i64) -> i64
+
+def main() -> i64 can[Console, Unsafe.PointerCast]:
+    if source_mutation_getenv("ELISA_SOURCE_MUTATION_PATH") is value:
+        path: cstr = value.cast[cstr] can Unsafe.PointerCast
+        fd: i64 = source_mutation_open(path, SOURCE_MUTATION_WRITE_ONLY + SOURCE_MUTATION_TRUNCATE, SOURCE_MUTATION_FILE_MODE)
+        return SOURCE_MUTATION_ERROR if fd < SOURCE_MUTATION_ZERO
+        replacement: cstr = "def main() -> i64:\n    return 0\n"
+        bytes: u8& = replacement.cast[u8&] can Unsafe.PointerCast
+        result: i64 = source_mutation_write(fd, bytes, SOURCE_MUTATION_LENGTH)
+        _ = source_mutation_close(fd)
+        return SOURCE_MUTATION_ERROR if result != SOURCE_MUTATION_LENGTH.i64()
+        return SOURCE_MUTATION_SUCCESS
+    return SOURCE_MUTATION_ERROR

@@ -1553,6 +1553,10 @@ extend ProfilerNative:
                 overall_timed_out <- true if run_result.timed_out
                 repetition <- repetition + 1
 
+            source_after_run: darray[u8] = read_file(source)
+            if not byte_arrays_equal(source_check, source_after_run):
+                cleanup_temp(temporary)
+                return report_error("source changed during profiling; retry with a stable source file")
             metric_times: mutable darray[i64] = []
             if measurement_execution_times.count > 0:
                 metric_times.extend(measurement_execution_times)
