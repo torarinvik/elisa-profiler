@@ -25,7 +25,7 @@ make compiler-ledger-smoke
 make compiler-seed
 make compiler-smoke
 make runtime-abi-smoke
-make profiler-smoke
+make profiler-native-smoke
 make test
 
 scripts/elisa-compiler -o build/hello.o examples/hello.elisa

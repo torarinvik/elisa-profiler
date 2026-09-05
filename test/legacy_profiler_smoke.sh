@@ -5,12 +5,12 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --warmup 1 --repeat 2 --location-timing --recent-path \
     --cwd "$ROOT" --stdin "$ROOT/README.md" --env ELISA_PROFILER_SMOKE=1 \
     --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
-"$ROOT/scripts/elisa-profiler" doctor --json > "$WORK/doctor.json"
+"$ROOT/scripts/elisa-profiler-legacy.py" doctor --json > "$WORK/doctor.json"
 python3 - "$WORK/doctor.json" <<'PY'
 import json
 import sys
@@ -24,13 +24,13 @@ assert all(check["ok"] for check in doctor["checks"] if check["required"])
 assert any(check["name"] == "runtime build manifest" for check in doctor["checks"])
 print("doctor smoke OK")
 PY
-ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler" report \
+ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler-legacy.py" report \
     "$WORK/report.json" --format html --top 5 --output "$WORK/offline.html"
-ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler" report \
+ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler-legacy.py" report \
     "$WORK/report.json" --format folded --output "$WORK/offline.folded"
 grep -q 'Elisa profile' "$WORK/offline.html"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/offline.folded"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --event-trace --format json --output "$WORK/event-trace-report.json"
 test -s "$WORK/event-trace-report.json"
 python3 - "$WORK/event-trace-report.json" <<'PY'
@@ -51,7 +51,7 @@ assert all(
 )
 print("event trace smoke OK")
 PY
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --event-trace --max-event-trace-events 10 --format json \
     --output "$WORK/capped-event-trace-report.json"
 python3 - "$WORK/capped-event-trace-report.json" <<'PY'
@@ -74,11 +74,11 @@ assert [event["sequence"] for event in repetition["event_trace"]] == list(range(
 assert capped_report["summary"]["events"] > 10
 print("capped event trace smoke OK")
 PY
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format folded --output "$WORK/hot-loop.folded"
 grep -Eq '^main(;accumulate)? [1-9][0-9]*$' "$WORK/hot-loop.folded"
 grep -Eq '^main;accumulate [1-9][0-9]*$' "$WORK/hot-loop.folded"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --timing-clock cpu --format json \
     --output "$WORK/cpu-timing-report.json"
 python3 - "$WORK/cpu-timing-report.json" <<'PY'
@@ -94,10 +94,10 @@ assert cpu_report["run"]["execution_ms_mean"] > 0
 assert any(function["inclusive_ns"] > 0 for function in cpu_report["functions"])
 print("CPU timing smoke OK")
 PY
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format speedscope --output "$WORK/hot-loop.speedscope.json"
 test -s "$WORK/hot-loop.speedscope.json"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format html --top 5 --output "$WORK/hot-loop.html"
 test -s "$WORK/hot-loop.html"
 grep -q '<table data-sortable>' "$WORK/hot-loop.html"
@@ -110,17 +110,17 @@ grep -q 'Compile' "$WORK/hot-loop.html"
 grep -q 'Definition' "$WORK/hot-loop.html"
 grep -q 'Measured repetitions' "$WORK/hot-loop.html"
 grep -q 'run 2' "$WORK/hot-loop.html"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format text --output "$WORK/timing.txt"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/hot_loop.elisa" \
     --opt-level 2 --repeat 2 --location-timing \
     --cwd "$ROOT" --stdin "$ROOT/README.md" --env ELISA_PROFILER_SMOKE=1 \
     --format json --output "$WORK/o2-report.json"
-"$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
+"$ROOT/scripts/elisa-profiler-legacy.py" compare "$WORK/report.json" "$WORK/o2-report.json" \
     --format text --top 3 --output "$WORK/comparison.txt"
-"$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
+"$ROOT/scripts/elisa-profiler-legacy.py" compare "$WORK/report.json" "$WORK/o2-report.json" \
     --format json --output "$WORK/comparison.json"
-"$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
+"$ROOT/scripts/elisa-profiler-legacy.py" compare "$WORK/report.json" "$WORK/o2-report.json" \
     --format html --top 3 --output "$WORK/comparison.html"
 test -s "$WORK/comparison.html"
 grep -q 'Elisa profile comparison' "$WORK/comparison.html"
@@ -176,22 +176,22 @@ assert speedscope["profiles"][0]["unit"] == "nanoseconds"
 assert speedscope["profiles"][0]["samples"]
 assert sum(speedscope["profiles"][0]["weights"]) > 0
 PY
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/included_program.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/included_program.elisa" \
     --format json --output "$WORK/included-report.json"
 test -s "$WORK/included-report.json"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/signed_values.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/signed_values.elisa" \
     --repeat 2 --format json --output "$WORK/signed-report.json"
 test -s "$WORK/signed-report.json"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/recursive.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/recursive.elisa" \
     --repeat 2 --location-timing --format json --output "$WORK/recursive-report.json"
 test -s "$WORK/recursive-report.json"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/deep_recursion.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/deep_recursion.elisa" \
     --format json --output "$WORK/deep-recursion-report.json"
 test -s "$WORK/deep-recursion-report.json"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/threaded.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/threaded.elisa" \
     --repeat 2 --location-timing --format json --output "$WORK/threaded-report.json"
 test -s "$WORK/threaded-report.json"
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/threaded.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/threaded.elisa" \
     --location-timing --timing-clock cpu --format json --output "$WORK/threaded-cpu-report.json"
 test -s "$WORK/threaded-cpu-report.json"
 
@@ -480,7 +480,7 @@ print("threaded CPU timing OK")
 PY
 
 set +e
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/crash.elisa" \
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/crash.elisa" \
     --format json --output "$WORK/crash-report.json"
 crash_status=$?
 set -e
@@ -509,7 +509,7 @@ print("crash capture OK")
 PY
 
 set +e
-"$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/timeout.elisa" --timeout 2 --format json --output "$WORK/timeout-report.json"
+"$ROOT/scripts/elisa-profiler-legacy.py" profile "$ROOT/examples/timeout.elisa" --timeout 2 --format json --output "$WORK/timeout-report.json"
 timeout_status=$?
 set -e
 test "$timeout_status" -eq 143
