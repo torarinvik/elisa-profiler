@@ -101,6 +101,9 @@ module ProfilerNative:
         const NATIVE_BYTE_CONTROL_LIMIT: u8 = 32
         const NATIVE_BYTE_COMMA: u8 = 44
         const NATIVE_BYTE_EQUALS: u8 = 61
+        const NATIVE_BYTE_SEMICOLON: u8 = 59
+        const NATIVE_BYTE_LEFT_BRACKET: u8 = 91
+        const NATIVE_BYTE_RIGHT_BRACKET: u8 = 93
         const NATIVE_BYTE_DOUBLE_QUOTE: u8 = 34
         const NATIVE_BYTE_AMPERSAND: u8 = 38
         const NATIVE_BYTE_LESS_THAN: u8 = 60
@@ -1242,6 +1245,129 @@ module ProfilerNative:
             buffer.push(NATIVE_BYTE_NEWLINE) if summary.folded_records.count > NATIVE_ZERO.usize()
 
 
+        def folded_line_end(records: darray[u8]&, start: usize) -> usize:
+            cursor: mutable usize = start
+            while cursor < records.count |cursor, records|:
+                break if records[cursor] == NATIVE_BYTE_NEWLINE
+                cursor <- cursor + NATIVE_ONE.usize()
+            return cursor
+
+
+        def folded_line_weight(records: darray[u8]&, start: usize, stop: usize) -> i64 can[Abort.Panic, Memory.Allocate]:
+            separator: mutable usize = start
+            cursor: mutable usize = start
+            while cursor < stop |cursor, separator, records|:
+                separator <- cursor if records[cursor] == NATIVE_BYTE_SPACE
+                cursor <- cursor + NATIVE_ONE.usize()
+            return NATIVE_ZERO if separator == start or separator + NATIVE_ONE.usize() >= stop
+            weight: mutable darray[u8] = []
+            for index in separator + NATIVE_ONE.usize()..<stop |weight, records|:
+                weight.push(records[index])
+            return protocol_number_field(weight)
+
+
+        def folded_stack_stop(records: darray[u8]&, start: usize, stop: usize) -> usize:
+            cursor: mutable usize = stop
+            while cursor > start |cursor, records|:
+                break if records[cursor - NATIVE_ONE.usize()] == NATIVE_BYTE_SPACE
+                cursor <- cursor - NATIVE_ONE.usize()
+            return cursor
+
+
+        def append_speedscope_frames(buffer: mutable darray[u8]&, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            first_frame: mutable bool = true
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < records.count |line_start, first_frame, records, buffer|:
+                line_end: usize = folded_line_end(records, line_start)
+                weight: i64 = folded_line_weight(records, line_start, line_end)
+                if weight > NATIVE_ZERO:
+                    stack_stop: usize = folded_stack_stop(records, line_start, line_end)
+                    frame_start: mutable usize = line_start
+                    while frame_start < stack_stop |frame_start, stack_stop, first_frame, records, buffer|:
+                        frame_end: mutable usize = frame_start
+                        while frame_end < stack_stop |frame_end, stack_stop, records|:
+                            break if records[frame_end] == NATIVE_BYTE_SEMICOLON
+                            frame_end <- frame_end + NATIVE_ONE.usize()
+                        frame: mutable darray[u8] = []
+                        for index in frame_start..<frame_end |frame, records|:
+                            frame.push(records[index])
+                        append_record_separator(buffer) if not first_frame
+                        append_text(buffer, "{\"name\":")
+                        append_json_string(buffer, frame)
+                        append_text(buffer, "}")
+                        first_frame <- false
+                        frame_start <- frame_end + NATIVE_ONE.usize() if frame_end < stack_stop else stack_stop
+                line_start <- line_end + NATIVE_ONE.usize() if line_end < records.count else records.count
+
+
+        def append_speedscope_samples(buffer: mutable darray[u8]&, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            first_sample: mutable bool = true
+            frame_index: mutable i64 = NATIVE_ZERO
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < records.count |line_start, first_sample, frame_index, records, buffer|:
+                line_end: usize = folded_line_end(records, line_start)
+                weight: i64 = folded_line_weight(records, line_start, line_end)
+                if weight > NATIVE_ZERO:
+                    stack_stop: usize = folded_stack_stop(records, line_start, line_end)
+                    frame_start: mutable usize = line_start
+                    first_frame: mutable bool = true
+                    append_record_separator(buffer) if not first_sample
+                    buffer.push(NATIVE_BYTE_LEFT_BRACKET)
+                    while frame_start < stack_stop |frame_start, stack_stop, frame_index, first_frame, records, buffer|:
+                        frame_end: mutable usize = frame_start
+                        while frame_end < stack_stop |frame_end, stack_stop, records|:
+                            break if records[frame_end] == NATIVE_BYTE_SEMICOLON
+                            frame_end <- frame_end + NATIVE_ONE.usize()
+                        append_record_separator(buffer) if not first_frame
+                        append_i64(buffer, frame_index)
+                        first_frame <- false
+                        frame_index <- frame_index + NATIVE_ONE
+                        frame_start <- frame_end + NATIVE_ONE.usize() if frame_end < stack_stop else stack_stop
+                    buffer.push(NATIVE_BYTE_RIGHT_BRACKET)
+                    first_sample <- false
+                line_start <- line_end + NATIVE_ONE.usize() if line_end < records.count else records.count
+
+
+        def append_speedscope_weights(buffer: mutable darray[u8]&, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            first_weight: mutable bool = true
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < records.count |line_start, first_weight, records, buffer|:
+                line_end: usize = folded_line_end(records, line_start)
+                weight: i64 = folded_line_weight(records, line_start, line_end)
+                if weight > NATIVE_ZERO:
+                    append_record_separator(buffer) if not first_weight
+                    append_i64(buffer, weight)
+                    first_weight <- false
+                line_start <- line_end + NATIVE_ONE.usize() if line_end < records.count else records.count
+
+
+        def folded_total_weight(records: darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate]:
+            total: mutable i64 = NATIVE_ZERO
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < records.count |line_start, total, records|:
+                line_end: usize = folded_line_end(records, line_start)
+                weight: i64 = folded_line_weight(records, line_start, line_end)
+                total <- total + weight if weight > NATIVE_ZERO
+                line_start <- line_end + NATIVE_ONE.usize() if line_end < records.count else records.count
+            return total
+
+
+        def append_speedscope_report(buffer: mutable darray[u8]&, source: darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"$schema\":\"https://www.speedscope.app/file-format-schema.json\",\"name\":")
+            append_json_string(buffer, source)
+            append_text(buffer, ",\"activeProfileIndex\":0,\"exporter\":\"elisa-profiler-native\",\"shared\":{\"frames\":[")
+            append_speedscope_frames(buffer, summary.folded_records)
+            append_text(buffer, "]},\"profiles\":[{\"type\":\"sampled\",\"name\":")
+            append_json_string(buffer, source)
+            append_text(buffer, ",\"unit\":\"nanoseconds\",\"startValue\":0,\"endValue\":")
+            append_i64(buffer, folded_total_weight(summary.folded_records))
+            append_text(buffer, ",\"samples\":[")
+            append_speedscope_samples(buffer, summary.folded_records)
+            append_text(buffer, "],\"weights\":[")
+            append_speedscope_weights(buffer, summary.folded_records)
+            append_text(buffer, "]}]}\n")
+
+
         def append_html_section(buffer: mutable darray[u8]&, title: sview, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<details open><summary>")
             append_text(buffer, title)
@@ -1548,7 +1674,7 @@ module ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH] or report CAPTURE [--format json] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile SOURCE [--format json|text|folded|speedscope|html] [--output PATH] or report CAPTURE [--format json] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
@@ -1564,6 +1690,7 @@ module ProfilerNative:
             format_text: mutable bool = false
             format_folded: mutable bool = false
             format_html: mutable bool = false
+            format_speedscope: mutable bool = false
             requested_repetitions: mutable i64 = NATIVE_ONE
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
@@ -1572,18 +1699,20 @@ module ProfilerNative:
             environment: mutable darray[u8] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, requested_repetitions, warmup_repetitions, trace_limit, working_directory, stdin_path, environment, source_seen|:
+            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, working_directory, stdin_path, environment, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
-                    return report_error("--format requires json, text, folded, or html") if index + NATIVE_ONE >= argc
+                    return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
                         format_text <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
                         format_folded <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
                         format_html <- true
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "speedscope") == NATIVE_ZERO:
+                        format_speedscope <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO:
-                        return report_error("--format requires json, text, folded, or html")
+                        return report_error("--format requires json, text, folded, speedscope, or html")
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
@@ -1913,6 +2042,8 @@ module ProfilerNative:
                 append_text_report(report, source, summary, final_exit_code, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
             elif format_folded:
                 append_folded_report(report, summary)
+            elif format_speedscope:
+                append_speedscope_report(report, source, summary)
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:

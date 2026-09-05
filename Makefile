@@ -55,6 +55,8 @@ profiler-native-smoke: profiler-native
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format html --output "$$native_work/hot-loop.html"; \
 		grep -Fq '<!doctype html>' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Functions' "$$native_work/hot-loop.html"; \
+		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format speedscope --output "$$native_work/hot-loop.speedscope.json"; \
+		python3 "$(PROFILER_ROOT)/test/speedscope_smoke.py" "$$native_work/hot-loop.speedscope.json"; \
 		! grep -Fq 'native-transition' "$$native_work/report.json"; \
 		grep -Fq '"branch":"' "$$native_work/report.json"; \
 		grep -Fq '"commit":"' "$$native_work/report.json"; \
