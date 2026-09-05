@@ -210,6 +210,11 @@ extend ProfilerNative:
             return value
 
 
+        def json_token_terminated(data: darray[u8]&, cursor: usize, stop: usize) -> bool:
+            return true if cursor >= stop
+            return data[cursor] == NATIVE_BYTE_SPACE or data[cursor] == NATIVE_BYTE_TAB or data[cursor] == NATIVE_BYTE_NEWLINE or data[cursor] == NATIVE_BYTE_CARRIAGE_RETURN or data[cursor] == NATIVE_BYTE_COMMA or data[cursor] == NATIVE_BYTE_RIGHT_BRACE or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+
+
         def json_millis_micros_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
             return NATIVE_NEGATIVE_ONE if start >= stop
             cursor: mutable usize = start
@@ -248,9 +253,11 @@ extend ProfilerNative:
         def json_bool_into(data: darray[u8]&, start: usize, stop: usize, result: mutable bool&) -> bool:
             return false if start >= stop
             if start + NATIVE_JSON_TRUE_LENGTH <= stop and data[start] == NATIVE_BYTE_ASCII_TRUE_T and data[start + NATIVE_ONE.usize()] == NATIVE_BYTE_ASCII_TRUE_R and data[start + NATIVE_TWO.usize()] == NATIVE_BYTE_ASCII_TRUE_U and data[start + NATIVE_THREE.usize()] == NATIVE_BYTE_ASCII_TRUE_E:
+                return false if not json_token_terminated(data, start + NATIVE_JSON_TRUE_LENGTH, stop)
                 result <- true
                 return true
             if start + NATIVE_JSON_FALSE_LENGTH <= stop and data[start] == NATIVE_BYTE_ASCII_FALSE_F and data[start + NATIVE_ONE.usize()] == NATIVE_BYTE_ASCII_FALSE_A and data[start + NATIVE_TWO.usize()] == NATIVE_BYTE_ASCII_FALSE_L and data[start + NATIVE_THREE.usize()] == NATIVE_BYTE_ASCII_FALSE_S and data[start + NATIVE_JSON_TRUE_LENGTH] == NATIVE_BYTE_ASCII_FALSE_E:
+                return false if not json_token_terminated(data, start + NATIVE_JSON_FALSE_LENGTH, stop)
                 result <- false
                 return true
             return false
@@ -267,9 +274,7 @@ extend ProfilerNative:
             return false if run_stop < NATIVE_ZERO
             value_start: i64 = json_key_value_start(data, "location_timing", run_start.usize(), run_stop.usize())
             return false if value_start < NATIVE_ZERO
-            return false if data[value_start.usize()] != NATIVE_BYTE_ASCII_TRUE_T and data[value_start.usize()] != NATIVE_BYTE_ASCII_FALSE_F
-            timing <- data[value_start.usize()] == NATIVE_BYTE_ASCII_TRUE_T
-            return true
+            return json_bool_into(data, value_start.usize(), run_stop.usize(), &timing)
 
 
         def json_read_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
@@ -290,6 +295,7 @@ extend ProfilerNative:
                 return false if data[value_index + NATIVE_ONE.usize()] != NATIVE_BYTE_ASCII_NULL_U
                 return false if data[value_index + NATIVE_TWO.usize()] != NATIVE_BYTE_ASCII_NULL_L
                 return false if data[value_index + NATIVE_THREE.usize()] != NATIVE_BYTE_ASCII_NULL_L
+                return false if not json_token_terminated(data, value_index + NATIVE_JSON_NULL_LENGTH, stop)
                 result <- NATIVE_NEGATIVE_ONE
                 return true
             value: i64 = json_number_at(data, value_index, stop)

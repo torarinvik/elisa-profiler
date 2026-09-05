@@ -163,6 +163,20 @@ def main() -> int:
         )
         if rejected_control.returncode == 0:
             raise SystemExit("native comparison accepted a raw control character in JSON")
+
+        invalid_token_path = root / "invalid-token.json"
+        invalid_token_path.write_text(
+            json.dumps(capture([])).replace('"exit_code": 0', '"exit_code": nullsuffix'),
+            encoding="utf-8",
+        )
+        rejected_token = subprocess.run(
+            [str(profiler), "compare", invalid_token_path, invalid_token_path, "--format", "json"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if rejected_token.returncode == 0:
+            raise SystemExit("native comparison accepted a suffixed JSON null token")
     print("native workload comparison smoke OK")
     return 0
 
