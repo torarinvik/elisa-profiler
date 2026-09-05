@@ -99,6 +99,7 @@ extern profiler_ffi_sview_at(view: sview, index: usize) -> u8
 
 include "./profiler_model.elisa"
 include "./profiler_protocol.elisa"
+include "./profiler_hash.elisa"
 include "./profiler_json.elisa"
 include "./profiler_comparison.elisa"
 include "./profiler_rendering.elisa"
@@ -639,8 +640,11 @@ extend ProfilerNative:
             append_text(buffer, "</main></body></html>\n")
 
 
-        def append_json_workload(buffer: mutable darray[u8]&, source: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate]:
-            append_text(buffer, ",\"workload\":{\"source_sha256\":null,\"source_size_bytes\":")
+        def append_json_workload(buffer: mutable darray[u8]&, source: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            append_text(buffer, ",\"workload\":{\"source_sha256\":")
+            source_digest: darray[u8] = sha256_hex(source)
+            append_json_string(buffer, source_digest)
+            append_text(buffer, ",\"source_size_bytes\":")
             append_i64(buffer, source.count.i64())
             append_text(buffer, ",\"working_directory\":")
             if working_directory.count == NATIVE_ZERO.usize():
@@ -653,7 +657,15 @@ extend ProfilerNative:
             else:
                 append_text(buffer, "{\"path\":")
                 append_json_string(buffer, stdin_path)
-                append_text(buffer, ",\"sha256\":null}")
+                append_text(buffer, ",\"sha256\":")
+                stdin_readable: bool = readable_file(stdin_path)
+                stdin_data: darray[u8] = read_file(stdin_path) if stdin_readable else []
+                stdin_digest: darray[u8] = sha256_hex(stdin_data) if stdin_readable else []
+                if stdin_digest.count > NATIVE_ZERO.usize():
+                    append_json_string(buffer, stdin_digest)
+                else:
+                    append_text(buffer, "null")
+                append_text(buffer, "}")
             append_text(buffer, ",\"environment_override_keys\":[")
             environment_index: mutable usize = NATIVE_ZERO.usize()
             environment_first: mutable bool = true
@@ -688,7 +700,7 @@ extend ProfilerNative:
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
             cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool,
             working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
-        ) -> void can[Abort.Panic, Memory.Allocate]:
+        ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "{\"schema_version\":")
             append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
             append_text(buffer, ",\"source\":")

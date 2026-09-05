@@ -6,9 +6,10 @@ renderer must preserve that distinction in labels and comparisons.
 
 The optional `workload` object identifies the inputs that make a capture
 reproducible: source size, launch directory, stdin path when used, environment
-override names, and the exact target argument vector. It is descriptive
-provenance, not a claim that paths or stdin contents remain available after a
-capture is moved; a missing content digest is represented as `null`.
+override names, exact target argument vector, and native SHA-256 content
+digests for readable source/stdin bytes. It is descriptive provenance, not a
+claim that paths or stdin contents remain available after a capture is moved;
+an unreadable optional input digest is represented as `null`.
 
 ## Units and clocks
 

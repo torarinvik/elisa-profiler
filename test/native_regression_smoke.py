@@ -2,6 +2,7 @@
 """Exercise native report semantics and OS error paths through the public CLI."""
 
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -135,6 +136,7 @@ def main():
         run("profile", target, "--format", "json", "--output", output, expected=7)
         failed_report = json.loads(output.read_text())
         assert failed_report["run"]["exit_code"] == 7
+        assert failed_report["workload"]["source_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
         assert failed_report["run"]["signal"] is None
         assert failed_report["quality"] == {
             "capture": "target_exit",
@@ -162,6 +164,8 @@ def main():
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
+        assert len(measured["workload"]["source_sha256"]) == 64
+        assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
         repetitions = measured["run"]["repetitions"]
         assert len(repetitions) == 2
         assert all(set(item["detail_records"]) == {"locations", "functions", "call_edges", "stacks"} for item in repetitions)
