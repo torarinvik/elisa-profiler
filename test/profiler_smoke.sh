@@ -8,6 +8,20 @@ trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --warmup 1 --repeat 2 --location-timing --recent-path --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
+"$ROOT/scripts/elisa-profiler" doctor --json > "$WORK/doctor.json"
+python3 - "$WORK/doctor.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    doctor = json.load(stream)
+
+assert doctor["kind"] == "elisa_profiler_doctor"
+assert doctor["ok"] is True
+assert all(check["ok"] for check in doctor["checks"] if check["required"])
+assert any(check["name"] == "runtime build manifest" for check in doctor["checks"])
+print("doctor smoke OK")
+PY
 ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler" report \
     "$WORK/report.json" --format html --top 5 --output "$WORK/offline.html"
 ELISA_COMPILER_ROOT="$WORK/does-not-exist" "$ROOT/scripts/elisa-profiler" report \

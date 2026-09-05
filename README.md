@@ -69,6 +69,7 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop.html
     scripts/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
+    scripts/elisa-profiler doctor
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
     scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
         --format html -o profiles/comparison.html
@@ -185,6 +186,9 @@ using the same stack weights, ready to open in Speedscope or another compatible
 viewer.
 The `report` command renders an existing JSON report offline, so changing
 format or display limits never reruns the compiler or target.
+The `doctor` command performs a read-only prerequisite check for the compiler
+worktree, branch coverage, stage1 freshness, LLVM tools, runtime ABI, and the
+content-validated runtime manifest. `doctor --json` is suitable for scripts.
 The HTML format is a self-contained local report with summary cards, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies.

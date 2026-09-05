@@ -303,6 +303,27 @@ def load_runtime_build_manifest(runtime_object: Path) -> dict[str, Any]:
     }
 
 
+def runtime_build_fingerprint(compiler_root: Path, stage0_core: Path) -> dict[str, Any]:
+    build_script = compiler_root / "scripts" / "build_runtime_object.sh"
+    stage0_binary = stage0_core / "compiler" / "bin" / "elisac"
+    runtime_source_root = compiler_root / "elisacore_std"
+    runtime_sources = [
+        source
+        for source in runtime_source_root.rglob("*")
+        if source.is_file() and source.suffix in {".elisa", ".elisai"}
+    ] if runtime_source_root.is_dir() else []
+    _, _, compiler_status_sha256 = compiler_status_details(compiler_root)
+    return {
+        "format": 1,
+        "compiler_commit": git_value(compiler_root, "rev-parse", "HEAD"),
+        "compiler_status_sha256": compiler_status_sha256,
+        "runtime_sources_sha256": paths_sha256(runtime_source_root, runtime_sources),
+        "runtime_source_count": len(runtime_sources),
+        "build_script_sha256": file_sha256(build_script),
+        "stage0_binary_sha256": file_sha256(stage0_binary),
+    }
+
+
 def ensure_runtime(
     compiler_root: Path,
     runtime_object: Path,
@@ -313,22 +334,7 @@ def ensure_runtime(
 ) -> None:
     build_script = compiler_root / "scripts" / "build_runtime_object.sh"
     stage0_binary = stage0_core / "compiler" / "bin" / "elisac"
-    runtime_source_root = compiler_root / "elisacore_std"
-    runtime_sources = [
-        source
-        for source in runtime_source_root.rglob("*")
-        if source.is_file() and source.suffix in {".elisa", ".elisai"}
-    ] if runtime_source_root.is_dir() else []
-    _, _, compiler_status_sha256 = compiler_status_details(compiler_root)
-    runtime_fingerprint = {
-        "format": 1,
-        "compiler_commit": git_value(compiler_root, "rev-parse", "HEAD"),
-        "compiler_status_sha256": compiler_status_sha256,
-        "runtime_sources_sha256": paths_sha256(runtime_source_root, runtime_sources),
-        "runtime_source_count": len(runtime_sources),
-        "build_script_sha256": file_sha256(build_script),
-        "stage0_binary_sha256": file_sha256(stage0_binary),
-    }
+    runtime_fingerprint = runtime_build_fingerprint(compiler_root, stage0_core)
     manifest_path = Path(f"{runtime_object}.manifest.json")
     if runtime_object.is_file() and not rebuild:
         try:
@@ -2854,11 +2860,43 @@ def parse_report_arguments(argv: list[str]) -> argparse.Namespace:
     return args
 
 
+def parse_doctor_arguments(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="elisa-profiler doctor",
+        description="Check compiler, runtime, toolchain, and capture prerequisites.",
+    )
+    parser.add_argument(
+        "--compiler-root",
+        type=Path,
+        default=Path(os.environ.get("ELISA_COMPILER_ROOT", DEFAULT_COMPILER_ROOT)),
+    )
+    parser.add_argument(
+        "--runtime-object", type=Path, help="runtime object to inspect"
+    )
+    parser.add_argument(
+        "--stage0-core",
+        type=Path,
+        default=Path(os.environ.get("ELISA_STAGE0_CORE", DEFAULT_STAGE0_CORE)),
+    )
+    parser.add_argument("--json", action="store_true", help="emit machine-readable diagnostics")
+    args = parser.parse_args(argv)
+    args.compiler_root = args.compiler_root.resolve()
+    args.stage0_core = args.stage0_core.resolve()
+    if args.runtime_object is None:
+        args.runtime_object = args.compiler_root / "build" / "runtime" / "elisacore_runtime.o"
+    else:
+        args.runtime_object = args.runtime_object.resolve()
+    args.command = "doctor"
+    return args
+
+
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
     if argv and argv[0] == "compare":
         return parse_compare_arguments(argv[1:])
     if argv and argv[0] == "report":
         return parse_report_arguments(argv[1:])
+    if argv and argv[0] == "doctor":
+        return parse_doctor_arguments(argv[1:])
     if argv and argv[0] == "profile":
         argv = argv[1:]
     parser = argparse.ArgumentParser(
@@ -3309,6 +3347,140 @@ def report_profile(args: argparse.Namespace) -> int:
     return 0
 
 
+def doctor(args: argparse.Namespace) -> int:
+    checks: list[dict[str, Any]] = []
+
+    def add_check(name: str, ok: bool, detail: str, *, required: bool = True) -> None:
+        checks.append({"name": name, "ok": ok, "required": required, "detail": detail})
+
+    compiler_root = args.compiler_root
+    add_check(
+        "compiler worktree",
+        compiler_root.is_dir(),
+        str(compiler_root),
+    )
+    compiler_git = run_command(["git", "-C", str(compiler_root), "rev-parse", "--git-dir"])
+    add_check(
+        "compiler git repository",
+        compiler_git.returncode == 0,
+        compiler_git.stdout.strip() or compiler_git.stderr.strip() or "not a git repository",
+    )
+
+    audit_script = ROOT / "scripts" / "audit-compiler-branches.sh"
+    if compiler_git.returncode == 0 and audit_script.is_file():
+        audit_env = os.environ.copy()
+        audit_env["ELISA_COMPILER_ROOT"] = str(compiler_root)
+        audit = run_command([str(audit_script)], env=audit_env)
+        audit_detail = (audit.stdout + audit.stderr).strip()
+        add_check("compiler branch coverage", audit.returncode == 0, audit_detail or "no audit output")
+    else:
+        add_check("compiler branch coverage", False, "compiler repository unavailable")
+
+    stage1_script = compiler_root / "scripts" / "elisac_stage1.sh"
+    stage1_binary = compiler_root / "bin" / "elisac-stage1"
+    add_check("stage1 wrapper", stage1_script.is_file() and os.access(stage1_script, os.X_OK), str(stage1_script))
+    stage1_ready = stage1_binary.is_file() and os.access(stage1_binary, os.X_OK)
+    add_check("stage1 binary", stage1_ready, str(stage1_binary))
+    stale_source: Path | None = None
+    if stage1_ready:
+        try:
+            stage1_mtime = stage1_binary.stat().st_mtime_ns
+            for source_root in (compiler_root / "src", compiler_root / "elisacore_std"):
+                if not source_root.is_dir():
+                    continue
+                for source in source_root.rglob("*"):
+                    if (
+                        source.is_file()
+                        and source.suffix in {".elisa", ".elisai"}
+                        and source.stat().st_mtime_ns > stage1_mtime
+                    ):
+                        stale_source = source
+                        break
+                if stale_source is not None:
+                    break
+        except OSError as error:
+            stale_source = Path(f"unreadable: {error}")
+    add_check(
+        "stage1 freshness",
+        stage1_ready and stale_source is None,
+        "current" if stale_source is None and stage1_ready else str(stale_source or "stage1 binary unavailable"),
+    )
+
+    stage0_binary = args.stage0_core / "compiler" / "bin" / "elisac"
+    add_check(
+        "stage0 compiler",
+        stage0_binary.is_file() and os.access(stage0_binary, os.X_OK),
+        str(stage0_binary),
+        required=False,
+    )
+
+    try:
+        clang, objcopy, nm = compiler_tools()
+        add_check("clang", True, f"{clang} ({tool_version(clang)})")
+        add_check("objcopy", True, f"{objcopy} ({tool_version(objcopy)})")
+        add_check("nm", True, f"{nm} ({tool_version(nm)})")
+    except ProfilerError as error:
+        add_check("LLVM toolchain", False, str(error))
+        clang = objcopy = nm = ""
+
+    runtime_ready = args.runtime_object.is_file()
+    add_check("runtime object", runtime_ready, str(args.runtime_object))
+    runtime_manifest = load_runtime_build_manifest(args.runtime_object)
+    runtime_fingerprint_matches = False
+    if runtime_ready and runtime_manifest.get("present"):
+        runtime_fingerprint_matches = (
+            runtime_manifest.get("fingerprint")
+            == runtime_build_fingerprint(compiler_root, args.stage0_core)
+            and runtime_manifest.get("runtime_object_sha256")
+            == file_sha256(args.runtime_object)
+        )
+    add_check(
+        "runtime build manifest",
+        runtime_ready and runtime_fingerprint_matches,
+        runtime_manifest.get("path", "manifest unavailable")
+        if runtime_fingerprint_matches
+        else "missing or stale runtime manifest",
+    )
+    if runtime_ready and nm:
+        try:
+            symbols = defined_symbols(nm, args.runtime_object)
+            trace_symbols = sorted(
+                symbol
+                for symbol in symbols
+                if symbol.lstrip("_").startswith("elisa_trace_")
+            )
+            add_check("runtime trace ABI", bool(trace_symbols), ", ".join(trace_symbols) or "no trace callbacks")
+        except ProfilerError as error:
+            add_check("runtime trace ABI", False, str(error))
+    else:
+        add_check("runtime trace ABI", False, "runtime object or nm unavailable")
+
+    if compiler_git.returncode == 0:
+        _, dirty_files, _ = compiler_status_details(compiler_root)
+        add_check(
+            "compiler cleanliness",
+            True,
+            "clean" if not dirty_files else "dirty: " + ", ".join(dirty_files),
+            required=False,
+        )
+
+    required_ok = all(check["ok"] for check in checks if check["required"])
+    result = {
+        "kind": "elisa_profiler_doctor",
+        "schema_version": 1,
+        "ok": required_ok,
+        "checks": checks,
+    }
+    if args.json:
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+    else:
+        print(f"Elisa profiler doctor: {'PASS' if required_ok else 'FAIL'}")
+        for check in checks:
+            marker = "ok" if check["ok"] else "FAIL" if check["required"] else "warn"
+            print(f"[{marker}] {check['name']}: {check['detail']}")
+    return 0 if required_ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_arguments(sys.argv[1:] if argv is None else argv)
@@ -3316,6 +3488,8 @@ def main(argv: list[str] | None = None) -> int:
             return compare_profiles(args)
         if args.command == "report":
             return report_profile(args)
+        if args.command == "doctor":
+            return doctor(args)
         return profile(args)
     except ProfilerError as error:
         print(f"elisa-profiler: {error}", file=sys.stderr)
