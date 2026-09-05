@@ -138,6 +138,9 @@ edges, folded call stacks, and scalar value statistics
 interpretation instead of being reported as raw u64 bit patterns.
 The summary includes the number of distinct threads that emitted trace events,
 which makes worker activity visible in threaded targets.
+Native JSON also includes per-capture `thread_loss` records with repetition
+identity and per-thread detail/trace-drop counters; text and HTML reports expose
+the same diagnostics for offline inspection.
 The machine-readable contract is published at
 [`docs/profile.schema.json`](docs/profile.schema.json).
 Pass `--embed-source` when a portable JSON report should carry the exact source
