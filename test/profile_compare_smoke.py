@@ -11,13 +11,12 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-PROFILER = ROOT / "scripts" / "elisa-profiler"
+PROFILER = ROOT / "scripts" / "elisa-profiler-legacy.py"
 
 
 def assert_invalid_timeout() -> None:
     result = subprocess.run(
         [
-            sys.executable,
             str(PROFILER),
             "profile",
             str(ROOT / "examples" / "hello.elisa"),
@@ -35,7 +34,6 @@ def assert_invalid_timeout() -> None:
 def assert_invalid_event_trace_format() -> None:
     result = subprocess.run(
         [
-            sys.executable,
             str(PROFILER),
             "profile",
             str(ROOT / "examples" / "hello.elisa"),
@@ -143,7 +141,6 @@ def main() -> int:
 
         result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -204,7 +201,6 @@ def main() -> int:
         )
         different_clock_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -246,7 +242,6 @@ def main() -> int:
         count_candidate_path.write_text(json.dumps(count_candidate), encoding="utf-8")
         count_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(count_baseline_path),
@@ -278,7 +273,6 @@ def main() -> int:
         incomplete_path.write_text(json.dumps(incomplete_candidate), encoding="utf-8")
         incomplete_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -322,7 +316,6 @@ def main() -> int:
         new_edge_comparison_path = root / "new-edge-comparison.json"
         new_edge = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_without_edge_path),
@@ -362,7 +355,6 @@ def main() -> int:
         different_sample_comparison_path = root / "different-sample-comparison.json"
         different_sample = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -391,7 +383,6 @@ def main() -> int:
 
         failing = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -412,7 +403,6 @@ def main() -> int:
         failed_baseline_path.write_text(json.dumps(failed_baseline), encoding="utf-8")
         rejected = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(failed_baseline_path),
@@ -431,7 +421,6 @@ def main() -> int:
         invalid_metric_path.write_text(json.dumps(invalid_metric), encoding="utf-8")
         invalid_metric_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -450,7 +439,6 @@ def main() -> int:
         invalid_stack_path.write_text(json.dumps(invalid_stack), encoding="utf-8")
         invalid_stack_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -469,7 +457,6 @@ def main() -> int:
         negative_metric_path.write_text(json.dumps(negative_metric), encoding="utf-8")
         negative_metric_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -486,7 +473,6 @@ def main() -> int:
         nonfinite_path.write_text('{"schema_version": 1, "value": NaN}\n', encoding="utf-8")
         nonfinite_result = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(baseline_path),
@@ -503,7 +489,6 @@ def main() -> int:
         malformed_path.write_text(json.dumps({"schema_version": 1, "run": {}}), encoding="utf-8")
         malformed = subprocess.run(
             [
-                sys.executable,
                 str(PROFILER),
                 "compare",
                 str(malformed_path),

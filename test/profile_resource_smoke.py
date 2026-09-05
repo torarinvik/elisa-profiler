@@ -10,7 +10,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-PROFILER = ROOT / "scripts" / "elisa-profiler"
+PROFILER = ROOT / "scripts" / "elisa-profiler-legacy.py"
 
 
 def load_profiler():

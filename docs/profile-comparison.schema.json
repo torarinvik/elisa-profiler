@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://elisa-lang.org/schemas/profile-comparison-v1.json",
   "title": "Elisa profiler comparison",
-  "description": "Machine-readable output from scripts/elisa-profiler compare.",
+  "description": "Machine-readable output from the Elisa-native profiler compare command.",
   "type": "object",
   "required": [
     "schema_version",
