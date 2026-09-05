@@ -458,32 +458,6 @@ module ProfilerNative:
                     return false
                 assignment_start <- assignment_stop + NATIVE_ONE.usize()
             return true
-
-
-        def clear_environment_overrides(environment: darray[u8]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
-            assignment_start: mutable usize = NATIVE_ZERO.usize()
-            while assignment_start < environment.count |environment, assignment_start|:
-                assignment_stop: mutable usize = assignment_start
-                while assignment_stop < environment.count and environment[assignment_stop] != NATIVE_BYTE_NUL |environment, assignment_stop|:
-                    assignment_stop <- assignment_stop + NATIVE_ONE.usize()
-                assignment: mutable darray[u8] = []
-                for assignment_index in assignment_start..<assignment_stop |assignment, environment|:
-                    assignment.push(environment[assignment_index])
-                equals: mutable usize = assignment.count
-                for assignment_index in 0..<assignment.count |assignment, equals|:
-                    if assignment[assignment_index] == NATIVE_BYTE_EQUALS:
-                        equals <- assignment_index
-                        break
-                return if equals == NATIVE_ZERO.usize() or equals == assignment.count
-                name: mutable darray[u8] = []
-                for assignment_index in 0..<equals |assignment, name|:
-                    name.push(assignment[assignment_index])
-                name.push(NATIVE_BYTE_NUL)
-                name_cstr: cstr = (&name[0]).cast[cstr] can Unsafe.PointerCast
-                _ = profiler_ffi_unsetenv(name_cstr)
-                assignment_start <- assignment_stop + NATIVE_ONE.usize()
-
-
         def executable_available(path: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
@@ -546,12 +520,6 @@ module ProfilerNative:
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
                 return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
-            if not apply_environment_overrides(environment):
-                _ = profiler_ffi_close(stdout_fd)
-                _ = profiler_ffi_close(stderr_fd)
-                clear_target_environment()
-                clear_environment_overrides(environment)
-                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             stdin_fd: mutable i64 = NATIVE_NEGATIVE_ONE
             if stdin_path.count > NATIVE_ZERO.usize():
                 stdin_fd <- open_input_file(stdin_path)
@@ -559,7 +527,6 @@ module ProfilerNative:
                     _ = profiler_ffi_close(stdout_fd)
                     _ = profiler_ffi_close(stderr_fd)
                     clear_target_environment()
-                    clear_environment_overrides(environment)
                     return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             start_time: ProfilerNativeTimespec = read_monotonic()
             process: i64 = profiler_ffi_fork()
@@ -574,6 +541,8 @@ module ProfilerNative:
                     working_directory_cstr.push(NATIVE_BYTE_NUL)
                     if profiler_ffi_chdir((&working_directory_cstr[0]).cast[cstr] can Unsafe.PointerCast) != NATIVE_ZERO:
                         profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
+                if not apply_environment_overrides(environment):
+                    profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 if stdin_fd >= NATIVE_ZERO:
@@ -589,7 +558,6 @@ module ProfilerNative:
                 if stdin_fd >= NATIVE_ZERO:
                     _ = profiler_ffi_close(stdin_fd)
                 clear_target_environment()
-                clear_environment_overrides(environment)
                 return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             status: mutable i64 = NATIVE_ZERO
             waited: i64 = profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
@@ -599,7 +567,6 @@ module ProfilerNative:
             if stdin_fd >= NATIVE_ZERO:
                 _ = profiler_ffi_close(stdin_fd)
             clear_target_environment()
-            clear_environment_overrides(environment)
             return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO} if waited != process
             return TargetRunResult{status: status, elapsed_ns: elapsed_nanoseconds(start_time, finish_time)}
 
