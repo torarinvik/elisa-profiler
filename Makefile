@@ -12,7 +12,7 @@ NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.json
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke profiler-native profiler-native-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -131,6 +131,9 @@ profile-budget-smoke: profiler-native
 profile-workload-compare-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/profile_workload_compare_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
+native-timeout-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/native_timeout_smoke.py" "$(NATIVE_PROFILER_BIN)"
+
 .PHONY: native-regression-smoke
 native-regression-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/native_regression_smoke.py"
@@ -194,4 +197,4 @@ source-mapping-smoke:
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-manifest-smoke compiler-smoke profiler-native-smoke profile-budget-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke profile-budget-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke source-mapping-smoke process-group-smoke

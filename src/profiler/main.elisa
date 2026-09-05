@@ -49,6 +49,12 @@ extern profiler_ffi_execv(path: cstr, argv: mutable cstr&&) -> i64
 extern profiler_ffi_execvp(path: cstr, argv: mutable cstr&&) -> i64
 @link_name("waitpid")
 extern profiler_ffi_waitpid(pid: i64, status: mutable i64&, options: i64) -> i64
+@link_name("setpgid")
+extern profiler_ffi_setpgid(process: i64, process_group: i64) -> i64
+@link_name("kill")
+extern profiler_ffi_kill(process: i64, signal: i64) -> i64
+@link_name("usleep")
+extern profiler_ffi_usleep(microseconds: u32) -> i64
 @link_name("dup2")
 extern profiler_ffi_dup2(old_fd: i64, new_fd: i64) -> i64
 @link_name("chdir")
@@ -122,6 +128,59 @@ extend ProfilerNative:
 
         def append_micros_as_millis(buffer: mutable darray[u8]&, microseconds: i64) -> void can[Abort.Panic, Memory.Allocate]:
             append_millis(buffer, microseconds * NATIVE_NANOS_PER_MICROSECOND)
+
+
+        def append_timeout_seconds(buffer: mutable darray[u8]&, timeout_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            whole_seconds: i64 = timeout_ns / NATIVE_NANOS_PER_SECOND
+            fraction: mutable i64 = timeout_ns % NATIVE_NANOS_PER_SECOND
+            append_i64(buffer, whole_seconds)
+            if fraction > NATIVE_ZERO:
+                buffer.push(NATIVE_BYTE_PERIOD)
+                divisor: mutable i64 = NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR
+                while divisor > NATIVE_ZERO |buffer, fraction, divisor|:
+                    buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + fraction / divisor).u8())
+                    fraction <- fraction % divisor
+                    divisor <- divisor / NATIVE_DECIMAL_BASE
+
+
+        def parse_positive_timeout_ns(value: cstr) -> i64 can[Unsafe.PointerCast]:
+            bytes: u8& = value.cast[u8&] can Unsafe.PointerCast
+            cursor: mutable i64 = NATIVE_ZERO
+            whole: mutable i64 = NATIVE_ZERO
+            fraction: mutable i64 = NATIVE_ZERO
+            fractional_digits: mutable i64 = NATIVE_ZERO
+            saw_digit: mutable bool = false
+            saw_fraction_digit: mutable bool = false
+            saw_period: mutable bool = false
+            while true |bytes, cursor, whole, fraction, fractional_digits, saw_digit, saw_fraction_digit, saw_period|:
+                byte_ref: u8& = bytes + cursor
+                byte: u8 = byte_ref
+                break if byte == NATIVE_BYTE_NUL
+                if byte == NATIVE_BYTE_PERIOD:
+                    return NATIVE_NEGATIVE_ONE if saw_period
+                    saw_period <- true
+                    cursor <- cursor + NATIVE_ONE
+                    continue
+                return NATIVE_NEGATIVE_ONE if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                saw_digit <- true
+                if saw_period:
+                    return NATIVE_NEGATIVE_ONE if fractional_digits >= NATIVE_TIMEOUT_FRACTION_DIGITS
+                    fraction <- fraction * NATIVE_DECIMAL_BASE + digit
+                    fractional_digits <- fractional_digits + NATIVE_ONE
+                    saw_fraction_digit <- true
+                else:
+                    return NATIVE_NEGATIVE_ONE if whole > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                    whole <- whole * NATIVE_DECIMAL_BASE + digit
+                cursor <- cursor + NATIVE_ONE
+            return NATIVE_NEGATIVE_ONE if not saw_digit or (saw_period and not saw_fraction_digit)
+            while fractional_digits < NATIVE_TIMEOUT_FRACTION_DIGITS |fraction, fractional_digits|:
+                fraction <- fraction * NATIVE_DECIMAL_BASE
+                fractional_digits <- fractional_digits + NATIVE_ONE
+            return NATIVE_NEGATIVE_ONE if whole > (NATIVE_I64_MAX - fraction) / NATIVE_NANOS_PER_SECOND
+            result: i64 = whole * NATIVE_NANOS_PER_SECOND + fraction
+            return NATIVE_NEGATIVE_ONE if result <= NATIVE_ZERO
+            return result
 
 
         def read_monotonic() -> ProfilerNativeTimespec:
@@ -418,7 +477,7 @@ extend ProfilerNative:
             append_i64(buffer, signal) if signal >= NATIVE_ZERO
 
 
-        def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
             detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
@@ -443,6 +502,10 @@ extend ProfilerNative:
             if signal >= NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
                 append_text(buffer, "\"signal_termination\"")
+                first_reason <- false
+            if timed_out:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"timeout\"")
                 first_reason <- false
             if target_exit != NATIVE_ZERO and signal < NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
@@ -557,7 +620,7 @@ extend ProfilerNative:
 
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
-            exit_code: i64, status: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
+            exit_code: i64, status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
             working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
@@ -634,7 +697,7 @@ extend ProfilerNative:
             else:
                 append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
             append_text(buffer, "},")
-            append_quality(buffer, summary, status, event_trace)
+            append_quality(buffer, summary, status, event_trace, timed_out)
             append_text(buffer, ",\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
             append_i64(buffer, NATIVE_ZERO)
             append_text(buffer, ",\"unmapped_locations\":")
@@ -663,7 +726,12 @@ extend ProfilerNative:
             append_i64(buffer, opt_level)
             append_text(buffer, "\",\"execution_ms\":")
             append_millis(buffer, execution_ns)
-            append_text(buffer, ",\"timeout_s\":null,\"execution_ms_min\":")
+            append_text(buffer, ",\"timeout_s\":")
+            if timeout_ns <= NATIVE_ZERO:
+                append_text(buffer, "null")
+            else:
+                append_timeout_seconds(buffer, timeout_ns)
+            append_text(buffer, ",\"execution_ms_min\":")
             append_millis(buffer, execution_min_ns)
             append_text(buffer, ",\"execution_ms_mean\":")
             append_millis(buffer, execution_mean_ns)
@@ -899,7 +967,7 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -915,13 +983,14 @@ extend ProfilerNative:
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
             capture_byte_limit: mutable i64 = NATIVE_DEFAULT_CAPTURE_BYTES
+            timeout_ns: mutable i64 = NATIVE_ZERO
             working_directory: mutable darray[u8] = []
             stdin_path: mutable darray[u8] = []
             environment: mutable darray[u8] = []
             target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1029,6 +1098,13 @@ extend ProfilerNative:
                     byte_limit: i64 = parse_nonnegative_cstr(byte_limit_text)
                     return report_error("--max-capture-bytes requires a non-negative integer") if byte_limit < NATIVE_ZERO
                     capture_byte_limit <- byte_limit
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--timeout") == NATIVE_ZERO:
+                    return report_error("--timeout requires a finite positive number of seconds") if index + NATIVE_ONE >= argc
+                    timeout_value: i64 = parse_positive_timeout_ns(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--timeout requires a finite positive number of seconds") if timeout_value <= NATIVE_ZERO
+                    timeout_ns <- timeout_value
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "-O0") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--opt-level=0") == NATIVE_ZERO:
@@ -1222,7 +1298,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO, capture_byte_limit)
+                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 warmup_ns <- warmup_ns + warmup_result.elapsed_ns
                 if warmup_result.status != NATIVE_ZERO:
@@ -1235,13 +1311,14 @@ extend ProfilerNative:
             completed_repetitions: mutable i64 = NATIVE_ZERO
             successful_repetitions: mutable i64 = NATIVE_ZERO
             failed_repetitions: mutable i64 = NATIVE_ZERO
+            overall_timed_out: mutable bool = false
             repetition: mutable i64 = NATIVE_ONE
-            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions|:
+            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out|:
                 capture_fd: i64 = open_output_file(capture_path)
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
-                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit)
+                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
                 return report_error("native target produced no collector capture") if capture.count == NATIVE_ZERO.usize()
@@ -1264,6 +1341,7 @@ extend ProfilerNative:
                 else:
                     failed_repetitions <- failed_repetitions + 1
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
+                overall_timed_out <- true if run_result.timed_out
                 repetition <- repetition + 1
 
             metric_times: mutable darray[i64] = []
@@ -1299,7 +1377,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, overall_timed_out, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

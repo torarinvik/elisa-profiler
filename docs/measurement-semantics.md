@@ -23,6 +23,12 @@ capture is moved; a missing content digest is represented as `null`.
 - `execution_ms` is the launcher-observed elapsed duration around the child
   process. It includes startup and shutdown work and is not interchangeable
   with the sum of instrumented function durations.
+- `timeout_s` is the requested positive per-execution wall-time limit, or `null`
+  when no limit was requested. When the limit is reached, the native launcher
+  sends `SIGTERM` to the target's process group, waits up to its bounded grace
+  period, and then sends `SIGKILL` if necessary. A timed-out repetition keeps
+  `timed_out: true`, reports the observed termination signal, and adds `timeout`
+  to `quality.reasons`.
 - `compile_ms` covers target compilation, object preparation, collector build,
   and link steps performed for the capture.
 - `thread_count` is the maximum number of registered collector threads seen in

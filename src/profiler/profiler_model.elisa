@@ -16,6 +16,9 @@ module ProfilerNative:
         const NATIVE_NEGATIVE_ONE: i64 = -1
         const NATIVE_CHILD_FAILURE_STATUS: i64 = 127
         const NATIVE_WAIT_NO_OPTIONS: i64 = 0
+        const NATIVE_WAIT_NO_HANG: i64 = 1
+        const NATIVE_WAIT_POLL_MICROSECONDS: u32 = 1000
+        const NATIVE_TIMEOUT_GRACE_MILLISECONDS: i64 = 2000
         const NATIVE_ENV_OVERWRITE: i64 = 1
         const NATIVE_ACCESS_EXECUTE: i64 = 1
         const NATIVE_EXIT_STATUS_BASE: i64 = 256
@@ -29,6 +32,8 @@ module ProfilerNative:
         const NATIVE_NANOS_PER_SECOND: i64 = 1000000000
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
+        const NATIVE_TIMEOUT_FRACTION_DIGITS: i64 = 9
+        const NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR: i64 = 100000000
         const NATIVE_MICROSECONDS_PER_MILLISECOND: i64 = 1000
         const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
@@ -122,6 +127,8 @@ module ProfilerNative:
         const NATIVE_O_TRUNC: i64 = 1024
         const NATIVE_FILE_MODE: i64 = 420
         const NATIVE_MONOTONIC_CLOCK: i64 = 6
+        const NATIVE_SIGNAL_TERM: i64 = 15
+        const NATIVE_SIGNAL_KILL: i64 = 9
         const NATIVE_REPORT_SCHEMA_VERSION: i64 = 1
         const NATIVE_ARTIFACT_VERSION: i64 = 1
         const NATIVE_PROTOCOL_KIND_STATEMENT: i64 = 1
@@ -138,6 +145,7 @@ module ProfilerNative:
         struct TargetRunResult:
             status: i64
             elapsed_ns: i64
+            timed_out: bool
 
         struct CaptureSummary:
             events: mutable i64
