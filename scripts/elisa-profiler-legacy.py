@@ -710,6 +710,8 @@ def parse_profile(
                     "capture_bytes_used": 0,
                     "capture_bytes_dropped": 0,
                     "crash_signal": crash_signal,
+                    "capture_started": capture_started,
+                    "capture_complete": capture_started and capture_complete,
                 },
                 [],
                 [],
@@ -723,6 +725,8 @@ def parse_profile(
     meta["trace_captured"] = trace_captured
     meta["trace_omitted"] = trace_omitted
     meta["trace_limit"] = trace_limit
+    meta["capture_started"] = capture_started
+    meta["capture_complete"] = capture_started and capture_complete
     if crash_signal is not None:
         meta["crash_signal"] = crash_signal
     return (
