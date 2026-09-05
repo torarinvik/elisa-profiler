@@ -4,9 +4,9 @@
 # compile -> instrument -> run -> protocol decode -> JSON report path. The low-level C
 # collector remains an ABI/runtime component; all orchestration and report policy lives here.
 #
-# The initial native slice intentionally emits summary-only v1 reports. Detail records and
-# offline renderers are being ported behind the same model, with the existing implementation
-# serving as a golden-output oracle during the transition.
+# The native implementation owns the profiler CLI, execution boundary, protocol decoder,
+# aggregation model, and report writers. The low-level C collector remains an explicit ABI
+# component; it is not a second profiler front door.
 include "../../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
 
 struct ProfilerNativeTimespec:
@@ -63,12 +63,63 @@ module ProfilerNative:
         # All implementation details stay private to the profiler facade. The only
         # source-level API exported by this module is `run`; libc symbols above are
         # deliberately aliased to keep the global FFI namespace collision-free.
+        const NATIVE_ZERO: i64 = 0
+        const NATIVE_ONE: i64 = 1
+        const NATIVE_TWO: i64 = 2
+        const NATIVE_THREE: i64 = 3
+        const NATIVE_NEGATIVE_ONE: i64 = -1
+        const NATIVE_CHILD_FAILURE_STATUS: i64 = 127
+        const NATIVE_WAIT_NO_OPTIONS: i64 = 0
+        const NATIVE_ENV_OVERWRITE: i64 = 1
+        const NATIVE_ACCESS_EXECUTE: i64 = 1
+        const NATIVE_EXIT_STATUS_BASE: i64 = 256
+        const NATIVE_SIGNAL_EXIT_BASE: i64 = 128
+        const NATIVE_DECIMAL_BASE: i64 = 10
+        const NATIVE_HEX_BASE: i64 = 16
+        const NATIVE_NANOS_PER_SECOND: i64 = 1000000000
+        const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
+        const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
+        const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
+        const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
+        const NATIVE_READ_CHUNK_BYTES: usize = 8192
+        const NATIVE_DEFAULT_TRACE_LIMIT: i64 = 1000000
+        const NATIVE_DIRECTORY_MODE: i64 = 448
+        const NATIVE_COMMAND_ARGUMENT_INDEX: i64 = 1
+        const NATIVE_FIRST_OPTION_INDEX: i64 = 2
+        const NATIVE_MIN_COMMAND_ARGUMENTS: i64 = 2
+        const NATIVE_MIN_PATH_ARGUMENTS: i64 = 3
+        const NATIVE_STANDARD_OUTPUT: i64 = 1
+        const NATIVE_STANDARD_ERROR: i64 = 2
+        const NATIVE_BYTE_NUL: u8 = 0
+        const NATIVE_BYTE_TAB: u8 = 9
+        const NATIVE_BYTE_NEWLINE: u8 = 10
+        const NATIVE_BYTE_CARRIAGE_RETURN: u8 = 13
+        const NATIVE_BYTE_CONTROL_LIMIT: u8 = 32
+        const NATIVE_BYTE_COMMA: u8 = 44
+        const NATIVE_BYTE_DOUBLE_QUOTE: u8 = 34
+        const NATIVE_BYTE_APOSTROPHE: u8 = 39
+        const NATIVE_BYTE_PERIOD: u8 = 46
+        const NATIVE_BYTE_MINUS: u8 = 45
+        const NATIVE_BYTE_ASCII_ZERO: u8 = 48
+        const NATIVE_BYTE_ASCII_NINE: u8 = 57
+        const NATIVE_BYTE_BACKSLASH: u8 = 92
+        const NATIVE_HEX_LETTER_OFFSET: u8 = 87
         const NATIVE_O_RDONLY: i64 = 0
         const NATIVE_O_WRONLY: i64 = 1
         const NATIVE_O_CREAT: i64 = 64
         const NATIVE_O_TRUNC: i64 = 512
         const NATIVE_FILE_MODE: i64 = 420
         const NATIVE_MONOTONIC_CLOCK: i64 = 6
+        const NATIVE_REPORT_SCHEMA_VERSION: i64 = 1
+        const NATIVE_PROTOCOL_KIND_STATEMENT: i64 = 1
+        const NATIVE_PROTOCOL_KIND_VALUE: i64 = 2
+        const NATIVE_PROTOCOL_KIND_FUNCTION: i64 = 3
+        const NATIVE_PROTOCOL_SIGNED_FALSE: i64 = 0
+        const NATIVE_PROTOCOL_SIGNED_TRUE: i64 = 1
+        const NATIVE_PROTOCOL_ERROR_LOCATION: i64 = 1
+        const NATIVE_PROTOCOL_ERROR_CALL: i64 = 2
+        const NATIVE_PROTOCOL_ERROR_STACK: i64 = 3
+        const NATIVE_PROTOCOL_ERROR_EVENT: i64 = 4
 
         struct TargetRunResult:
             status: i64
@@ -103,74 +154,74 @@ module ProfilerNative:
         
         
         def append_i64(buffer: mutable darray[u8]&, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
-            if value == 0:
-                buffer.push(48)
+            if value == NATIVE_ZERO:
+                buffer.push(NATIVE_BYTE_ASCII_ZERO)
                 return
-            negative: bool = value < 0
+            negative: bool = value < NATIVE_ZERO
             magnitude: mutable i64 = -value if negative else value
-            buffer.push(45) if negative
+            buffer.push(NATIVE_BYTE_MINUS) if negative
             digits: mutable darray[u8] = []
-            while magnitude > 0 |digits, magnitude|:
-                digits.push((48 + (magnitude % 10)).u8())
-                magnitude <- magnitude / 10
+            while magnitude > NATIVE_ZERO |digits, magnitude|:
+                digits.push((NATIVE_BYTE_ASCII_ZERO.i64() + (magnitude % NATIVE_DECIMAL_BASE)).u8())
+                magnitude <- magnitude / NATIVE_DECIMAL_BASE
             for index in 0..<digits.count |buffer, digits|:
                 buffer.push(digits[digits.count - 1.usize() - index])
 
 
         def append_millis(buffer: mutable darray[u8]&, nanoseconds: i64) -> void can[Abort.Panic, Memory.Allocate]:
-            whole: i64 = nanoseconds / 1000000
-            fraction: i64 = (nanoseconds % 1000000) / 1000
+            whole: i64 = nanoseconds / NATIVE_NANOS_PER_MILLISECOND
+            fraction: i64 = (nanoseconds % NATIVE_NANOS_PER_MILLISECOND) / NATIVE_NANOS_PER_MICROSECOND
             append_i64(buffer, whole)
-            buffer.push(46)
-            buffer.push(48 + (fraction / 100).u8())
-            buffer.push(48 + ((fraction / 10) % 10).u8())
-            buffer.push(48 + (fraction % 10).u8())
+            buffer.push(NATIVE_BYTE_PERIOD)
+            buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + (fraction / NATIVE_MILLIS_HUNDREDS_DIVISOR)).u8())
+            buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + ((fraction / NATIVE_DECIMAL_TENS_DIVISOR) % NATIVE_DECIMAL_BASE)).u8())
+            buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + (fraction % NATIVE_DECIMAL_BASE)).u8())
 
 
         def read_monotonic() -> ProfilerNativeTimespec:
-            timestamp: mutable ProfilerNativeTimespec = ProfilerNativeTimespec{seconds: 0, nanoseconds: 0}
+            timestamp: mutable ProfilerNativeTimespec = ProfilerNativeTimespec{seconds: NATIVE_ZERO, nanoseconds: NATIVE_ZERO}
             _ = profiler_ffi_clock_gettime(NATIVE_MONOTONIC_CLOCK, &timestamp)
             return timestamp
 
 
         def elapsed_nanoseconds(start: ProfilerNativeTimespec, finish: ProfilerNativeTimespec) -> i64:
-            return (finish.seconds - start.seconds) * 1000000000 + finish.nanoseconds - start.nanoseconds
+            return (finish.seconds - start.seconds) * NATIVE_NANOS_PER_SECOND + finish.nanoseconds - start.nanoseconds
         
         
         def append_cstr(buffer: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             value_bytes: u8& = value.cast[u8&] can Unsafe.PointerCast
-            cursor: mutable i64 = 0
+            cursor: mutable i64 = NATIVE_ZERO
             while true |buffer, cursor, value_bytes|:
                 byte_ref: u8& = value_bytes + cursor
                 byte: u8 = byte_ref
-                break if byte == 0
+                break if byte == NATIVE_BYTE_NUL
                 buffer.push(byte)
-                cursor <- cursor + 1
+                cursor <- cursor + NATIVE_ONE
         
         
         def append_json_string(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
-            buffer.push(34)
+            buffer.push(NATIVE_BYTE_DOUBLE_QUOTE)
             for index in 0..<value.count |buffer, value|:
                 byte: u8 = value[index]
-                if byte == 34:
+                if byte == NATIVE_BYTE_DOUBLE_QUOTE:
                     append_text(buffer, "\\\"")
-                elif byte == 92:
+                elif byte == NATIVE_BYTE_BACKSLASH:
                     append_text(buffer, "\\\\")
-                elif byte == 10:
+                elif byte == NATIVE_BYTE_NEWLINE:
                     append_text(buffer, "\\n")
-                elif byte == 13:
+                elif byte == NATIVE_BYTE_CARRIAGE_RETURN:
                     append_text(buffer, "\\r")
-                elif byte == 9:
+                elif byte == NATIVE_BYTE_TAB:
                     append_text(buffer, "\\t")
-                elif byte < 32:
+                elif byte < NATIVE_BYTE_CONTROL_LIMIT:
                     append_text(buffer, "\\u00")
-                    high: u8 = (byte / 16).u8()
-                    low: u8 = (byte % 16).u8()
-                    buffer.push(48 + high if high < 10 else 87 + high)
-                    buffer.push(48 + low if low < 10 else 87 + low)
+                    high: u8 = (byte / NATIVE_HEX_BASE.u8()).u8()
+                    low: u8 = (byte % NATIVE_HEX_BASE.u8()).u8()
+                    buffer.push(NATIVE_BYTE_ASCII_ZERO + high if high < NATIVE_DECIMAL_BASE.u8() else NATIVE_HEX_LETTER_OFFSET + high)
+                    buffer.push(NATIVE_BYTE_ASCII_ZERO + low if low < NATIVE_DECIMAL_BASE.u8() else NATIVE_HEX_LETTER_OFFSET + low)
                 else:
                     buffer.push(byte)
-            buffer.push(34)
+            buffer.push(NATIVE_BYTE_DOUBLE_QUOTE)
         
         
         def append_json_key(buffer: mutable darray[u8]&, key: sview) -> void can[Abort.Panic, Memory.Allocate]:
@@ -182,14 +233,14 @@ module ProfilerNative:
         def append_shell_quoted(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             # Single-quote every path/command argument. A literal single quote is represented
             # as the shell-safe close-quote/backslash/open-quote sequence.
-            buffer.push(39)
+            buffer.push(NATIVE_BYTE_APOSTROPHE)
             for index in 0..<value.count |buffer, value|:
                 byte: u8 = value[index]
-                if byte == 39:
+                if byte == NATIVE_BYTE_APOSTROPHE:
                     append_text(buffer, "'\\''")
                 else:
                     buffer.push(byte)
-            buffer.push(39)
+            buffer.push(NATIVE_BYTE_APOSTROPHE)
         
         
         def copy_cstr(destination: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -199,15 +250,15 @@ module ProfilerNative:
         def copy_environment(name: sview, destination: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             name_storage: mutable darray[u8] = []
             append_text(name_storage, name)
-            name_storage.push(0)
+            name_storage.push(NATIVE_BYTE_NUL)
             if profiler_ffi_getenv((&name_storage[0]).cast[cstr] can Unsafe.PointerCast) is value:
-                cursor: mutable i64 = 0
+                cursor: mutable i64 = NATIVE_ZERO
                 while true |destination, cursor, value|:
                     byte_ref: u8& = value + cursor
                     byte: u8 = byte_ref
-                    break if byte == 0
+                    break if byte == NATIVE_BYTE_NUL
                     destination.push(byte)
-                    cursor <- cursor + 1
+                    cursor <- cursor + NATIVE_ONE
                 return true
             return false
         
@@ -225,13 +276,13 @@ module ProfilerNative:
         
         
         def make_cstr(path: mutable darray[u8]&) -> cstr can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
-            path.push(0)
+            path.push(NATIVE_BYTE_NUL)
             return (&path[0]).cast[cstr] can Unsafe.PointerCast
 
 
         def remove_temp_file(directory: darray[u8]&, suffix: sview) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path: mutable darray[u8] = path_with_suffix(directory, suffix)
-            path.push(0)
+            path.push(NATIVE_BYTE_NUL)
             _ = profiler_ffi_unlink((&path[0]).cast[cstr] can Unsafe.PointerCast)
 
 
@@ -249,44 +300,44 @@ module ProfilerNative:
             remove_temp_file(directory, "/program.err")
             directory_copy: mutable darray[u8] = []
             directory_copy.extend(directory)
-            directory_copy.push(0)
+            directory_copy.push(NATIVE_BYTE_NUL)
             _ = profiler_ffi_rmdir((&directory_copy[0]).cast[cstr] can Unsafe.PointerCast)
 
 
         def write_stderr(buffer: darray[u8]&) -> void can[Abort.Panic, Console]:
-            return if buffer.count == 0
-            _ = profiler_ffi_write(2, &buffer[0], buffer.count) can Console
+            return if buffer.count == NATIVE_ZERO.usize()
+            _ = profiler_ffi_write(NATIVE_STANDARD_ERROR, &buffer[0], buffer.count) can Console
         
         
         def report_error(message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
             buffer: mutable darray[u8] = []
             append_text(buffer, "elisa-profiler: ")
             append_text(buffer, message)
-            buffer.push(10)
+            buffer.push(NATIVE_BYTE_NEWLINE)
             write_stderr(buffer)
-            return 2
+            return NATIVE_TWO
 
 
         def report_protocol_error(summary: CaptureSummary) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
             buffer: mutable darray[u8] = []
             append_text(buffer, "elisa-profiler: malformed native protocol code=")
             append_i64(buffer, summary.malformed_code)
-            buffer.push(10)
+            buffer.push(NATIVE_BYTE_NEWLINE)
             write_stderr(buffer)
-            return 2
+            return NATIVE_TWO
 
 
         def write_file(path: darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
-            path_copy.push(0)
+            path_copy.push(NATIVE_BYTE_NUL)
             path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
             fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
-            false return if fd < 0
-            written: mutable usize = 0.usize()
+            false return if fd < NATIVE_ZERO
+            written: mutable usize = NATIVE_ZERO.usize()
             while written < data.count |written, data, fd|:
                 amount: i64 = profiler_ffi_write(fd, &data[written], data.count - written) can Console
-                if amount <= 0:
+                if amount <= NATIVE_ZERO:
                     _ = profiler_ffi_close(fd)
                     return false
                 written <- written + amount.usize()
@@ -297,7 +348,7 @@ module ProfilerNative:
         def open_output_file(path: darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
-            path_copy.push(0)
+            path_copy.push(NATIVE_BYTE_NUL)
             path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
             return profiler_ffi_open(path_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
 
@@ -312,103 +363,104 @@ module ProfilerNative:
         def executable_available(path: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
-            path_copy.push(0)
+            path_copy.push(NATIVE_BYTE_NUL)
             path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
-            return profiler_ffi_access(path_cstr, 1) == 0
+            return profiler_ffi_access(path_cstr, NATIVE_ACCESS_EXECUTE) == NATIVE_ZERO
 
 
         def readable_file(path: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
-            path_copy.push(0)
+            path_copy.push(NATIVE_BYTE_NUL)
             path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
-            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_RDONLY, 0)
-            return false if fd < 0
+            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_RDONLY, NATIVE_ZERO)
+            return false if fd < NATIVE_ZERO
             _ = profiler_ffi_close(fd)
             return true
 
 
         def run_target_direct(executable: darray[u8]&, stdout_path: darray[u8]&, stderr_path: darray[u8]&, capture_fd: i64, event_trace: bool, recent_path: bool, trace_limit: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             stdout_fd: i64 = open_output_file(stdout_path)
-            return TargetRunResult{status: -1, elapsed_ns: 0} if stdout_fd < 0
+            return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO} if stdout_fd < NATIVE_ZERO
             stderr_fd: i64 = open_output_file(stderr_path)
-            if stderr_fd < 0:
+            if stderr_fd < NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
-                return TargetRunResult{status: -1, elapsed_ns: 0}
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             executable_arg: mutable darray[u8] = []
             executable_arg.extend(executable)
-            executable_arg.push(0)
+            executable_arg.push(NATIVE_BYTE_NUL)
             executable_cstr: cstr = (&executable_arg[0]).cast[cstr] can Unsafe.PointerCast
             fd_text: mutable darray[u8] = []
             append_i64(fd_text, capture_fd)
-            fd_text.push(0)
+            fd_text.push(NATIVE_BYTE_NUL)
             fd_cstr: cstr = (&fd_text[0]).cast[cstr] can Unsafe.PointerCast
-            if profiler_ffi_setenv("ELISA_PROFILE_FD", fd_cstr, 1) != 0:
+            if profiler_ffi_setenv("ELISA_PROFILE_FD", fd_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
-                return TargetRunResult{status: -1, elapsed_ns: 0}
+                clear_target_environment()
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             trace_flag: mutable cstr = "0"
             trace_flag <- "1" if event_trace
-            if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE", trace_flag, 1) != 0:
+            if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE", trace_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: -1, elapsed_ns: 0}
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             limit_text: mutable darray[u8] = []
-            append_i64(limit_text, trace_limit if event_trace else 0)
-            limit_text.push(0)
+            append_i64(limit_text, trace_limit if event_trace else NATIVE_ZERO)
+            limit_text.push(NATIVE_BYTE_NUL)
             limit_cstr: cstr = (&limit_text[0]).cast[cstr] can Unsafe.PointerCast
-            if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE_LIMIT", limit_cstr, 1) != 0:
+            if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE_LIMIT", limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: -1, elapsed_ns: 0}
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             recent_flag: mutable cstr = "0"
             recent_flag <- "1" if recent_path and not event_trace
-            if profiler_ffi_setenv("ELISA_PROFILE_RECENT_PATH", recent_flag, 1) != 0:
+            if profiler_ffi_setenv("ELISA_PROFILE_RECENT_PATH", recent_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: -1, elapsed_ns: 0}
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
             start_time: ProfilerNativeTimespec = read_monotonic()
             process: i64 = profiler_ffi_fork()
-            if process == 0:
-                if profiler_ffi_dup2(stdout_fd, 1) < 0 or profiler_ffi_dup2(stderr_fd, 2) < 0:
-                    profiler_ffi_process_exit(127)
+            if process == NATIVE_ZERO:
+                if profiler_ffi_dup2(stdout_fd, NATIVE_STANDARD_OUTPUT) < NATIVE_ZERO or profiler_ffi_dup2(stderr_fd, NATIVE_STANDARD_ERROR) < NATIVE_ZERO:
+                    profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 target_argv: mutable darray[cstr] = []
                 target_argv.push(executable_cstr)
                 target_argv.push(null)
                 _ = profiler_ffi_execv(executable_cstr, (&target_argv[0]).cast[mutable cstr&&] can Unsafe.PointerCast)
-                profiler_ffi_process_exit(127)
-            if process < 0:
+                profiler_ffi_process_exit(NATIVE_CHILD_FAILURE_STATUS)
+            if process < NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
-                return TargetRunResult{status: -1, elapsed_ns: 0}
-            status: mutable i64 = 0
-            waited: i64 = profiler_ffi_waitpid(process, &status, 0)
+                return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO}
+            status: mutable i64 = NATIVE_ZERO
+            waited: i64 = profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_OPTIONS)
             finish_time: ProfilerNativeTimespec = read_monotonic()
             _ = profiler_ffi_close(stdout_fd)
             _ = profiler_ffi_close(stderr_fd)
             clear_target_environment()
-            return TargetRunResult{status: -1, elapsed_ns: 0} if waited != process
+            return TargetRunResult{status: NATIVE_NEGATIVE_ONE, elapsed_ns: NATIVE_ZERO} if waited != process
             return TargetRunResult{status: status, elapsed_ns: elapsed_nanoseconds(start_time, finish_time)}
 
 
         def read_file(path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             path_copy: mutable darray[u8] = []
             path_copy.extend(path)
-            path_copy.push(0)
+            path_copy.push(NATIVE_BYTE_NUL)
             path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
-            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_RDONLY, 0)
+            fd: i64 = profiler_ffi_open(path_cstr, NATIVE_O_RDONLY, NATIVE_ZERO)
             result: mutable darray[u8] = []
-            return result if fd < 0
-            chunk: mutable darray[u8] = [0 for _ in 0..<8192]
+            return result if fd < NATIVE_ZERO
+            chunk: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_READ_CHUNK_BYTES]
             while true |result, chunk, fd|:
                 amount: i64 = profiler_ffi_read(fd, &chunk[0], chunk.count) can Console
-                break if amount <= 0
+                break if amount <= NATIVE_ZERO
                 for index in 0..<amount.usize() |result, chunk|:
                     result.push(chunk[index])
             _ = profiler_ffi_close(fd)
@@ -426,11 +478,11 @@ module ProfilerNative:
         def protocol_field_into(data: darray[u8]&, start: usize, stop: usize, destination: mutable darray[u8]&) -> usize can[Abort.Panic, Memory.Allocate]:
             field_end: mutable usize = start
             while field_end < stop |field_end, data|:
-                break if data[field_end] == 9
-                field_end <- field_end + 1.usize()
+                break if data[field_end] == NATIVE_BYTE_TAB
+                field_end <- field_end + NATIVE_ONE.usize()
             for index in start..<field_end |destination, data|:
                 destination.push(data[index])
-            return field_end + 1.usize() if field_end < stop and data[field_end] == 9 else field_end
+            return field_end + NATIVE_ONE.usize() if field_end < stop and data[field_end] == NATIVE_BYTE_TAB else field_end
 
 
         def protocol_field_is(value: darray[u8]&, expected: sview) -> bool can[Abort.Panic]:
@@ -441,26 +493,26 @@ module ProfilerNative:
 
 
         def protocol_unsigned(value: darray[u8]&) -> bool can[Abort.Panic]:
-            false return if value.count == 0
+            false return if value.count == NATIVE_ZERO.usize()
             for index in 0..<value.count |value|:
-                false return if value[index] < 48 or value[index] > 57
+                false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
             return true
 
 
         def protocol_signed(value: darray[u8]&, allow_overflow: bool) -> bool can[Abort.Panic]:
             return true if allow_overflow and protocol_field_is(value, "overflow")
-            false return if value.count == 0
-            start: mutable usize = 0.usize()
-            if value[0] == 45:
-                start <- 1.usize()
+            false return if value.count == NATIVE_ZERO.usize()
+            start: mutable usize = NATIVE_ZERO.usize()
+            if value[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS:
+                start <- NATIVE_ONE.usize()
             false return if start == value.count
             for index in start..<value.count |value|:
-                false return if value[index] < 48 or value[index] > 57
+                false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
             return true
 
 
         def append_record_separator(records: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
-            records.push(44) if records.count > 0
+            records.push(NATIVE_BYTE_COMMA) if records.count > NATIVE_ZERO.usize()
 
 
         def append_protocol_number(records: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -468,13 +520,13 @@ module ProfilerNative:
 
 
         def protocol_number_field(value: darray[u8]&) -> i64:
-            result: mutable i64 = 0
+            result: mutable i64 = NATIVE_ZERO
             for index in 0..<value.count |result, value|:
-                result <- result * 10 + (value[index] - 48).i64()
+                result <- result * NATIVE_DECIMAL_BASE + (value[index] - NATIVE_BYTE_ASCII_ZERO).i64()
             return result
 
 
-        def append_location_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_location_record(summary: mutable CaptureSummary&, location_records: mutable darray[u8]&, function_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             kind_field: mutable darray[u8] = []
             function_field: mutable darray[u8] = []
             line_field: mutable darray[u8] = []
@@ -500,44 +552,44 @@ module ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &field_interval)
             cursor <- protocol_field_into(data, cursor, stop, &field_max_interval)
             kind_name: mutable sview = ""
-            if protocol_field_is(kind_field, "1"):
+            if protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_STATEMENT:
                 kind_name <- "statement"
-            elif protocol_field_is(kind_field, "2"):
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_VALUE:
                 kind_name <- "value"
-            elif protocol_field_is(kind_field, "3"):
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_FUNCTION:
                 kind_name <- "function"
             else:
                 summary.malformed <- true
-                summary.malformed_code <- 1
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_LOCATION
                 return
-            valid: mutable bool = function_field.count > 0 and protocol_unsigned(line_field) and protocol_unsigned(count_field)
-            valid <- valid and (protocol_field_is(signed_field, "0") or protocol_field_is(signed_field, "1"))
+            valid: mutable bool = function_field.count > NATIVE_ZERO.usize() and protocol_unsigned(line_field) and protocol_unsigned(count_field)
+            valid <- valid and (protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_FALSE or protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE)
             valid <- valid and protocol_unsigned(field_interval) and protocol_unsigned(field_max_interval)
             if kind_name == "function":
                 valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
             elif kind_name == "value":
-                signed_value: bool = protocol_field_is(signed_field, "1")
+                signed_value: bool = protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE
                 valid <- valid and protocol_signed(field_min, false) and protocol_signed(field_max, false)
                 valid <- valid and protocol_signed(field_sum, true) and protocol_signed(field_last, false)
-                valid <- valid and (protocol_field_is(variable_field, "-") or variable_field.count > 0)
+                valid <- valid and (protocol_field_is(variable_field, "-") or variable_field.count > NATIVE_ZERO.usize())
                 if not signed_value:
                     valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_last)
             else:
                 valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
             if not valid:
                 summary.malformed <- true
-                summary.malformed_code <- 1
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_LOCATION
                 return
 
-            append_record_separator(summary.location_records)
-            append_text(summary.location_records, "{\"kind\":\"")
-            append_text(summary.location_records, kind_name)
-            append_text(summary.location_records, "\",\"function\":")
-            append_json_string(summary.location_records, function_field)
-            append_text(summary.location_records, ",\"line\":")
-            append_protocol_number(summary.location_records, line_field)
-            append_text(summary.location_records, ",\"count\":")
-            append_protocol_number(summary.location_records, count_field)
+            append_record_separator(location_records)
+            append_text(location_records, "{\"kind\":\"")
+            append_text(location_records, kind_name)
+            append_text(location_records, "\",\"function\":")
+            append_json_string(location_records, function_field)
+            append_text(location_records, ",\"line\":")
+            append_protocol_number(location_records, line_field)
+            append_text(location_records, ",\"count\":")
+            append_protocol_number(location_records, count_field)
             count_number: i64 = protocol_number_field(count_field)
             if kind_name == "statement":
                 summary.statement_events <- summary.statement_events + count_number
@@ -546,63 +598,77 @@ module ProfilerNative:
             else:
                 summary.function_events <- summary.function_events + count_number
             if kind_name == "value":
-                append_text(summary.location_records, ",\"variable\":")
+                append_text(location_records, ",\"variable\":")
                 if protocol_field_is(variable_field, "-"):
-                    append_text(summary.location_records, "null")
+                    append_text(location_records, "null")
                 else:
-                    append_json_string(summary.location_records, variable_field)
-                append_text(summary.location_records, ",\"signed\":")
-                append_text(summary.location_records, "true" if protocol_field_is(signed_field, "1") else "false")
-                append_text(summary.location_records, ",\"minimum\":")
-                append_protocol_number(summary.location_records, field_min)
-                append_text(summary.location_records, ",\"maximum\":")
-                append_protocol_number(summary.location_records, field_max)
-                append_text(summary.location_records, ",\"sum\":")
+                    append_json_string(location_records, variable_field)
+                append_text(location_records, ",\"signed\":")
+                append_text(location_records, "true" if protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE else "false")
+                append_text(location_records, ",\"minimum\":")
+                append_protocol_number(location_records, field_min)
+                append_text(location_records, ",\"maximum\":")
+                append_protocol_number(location_records, field_max)
+                append_text(location_records, ",\"sum\":")
                 if protocol_field_is(field_sum, "overflow"):
-                    append_text(summary.location_records, "null,\"sum_overflow\":true")
+                    append_text(location_records, "null,\"sum_overflow\":true")
                 else:
-                    append_protocol_number(summary.location_records, field_sum)
-                append_text(summary.location_records, ",\"last\":")
-                append_protocol_number(summary.location_records, field_last)
+                    append_protocol_number(location_records, field_sum)
+                append_text(location_records, ",\"last\":")
+                append_protocol_number(location_records, field_last)
             elif kind_name == "function":
-                append_text(summary.location_records, ",\"inclusive_ns\":")
-                append_protocol_number(summary.location_records, field_min)
-                append_text(summary.location_records, ",\"self_ns\":")
-                append_protocol_number(summary.location_records, field_max)
-                append_text(summary.location_records, ",\"completed_calls\":")
-                append_protocol_number(summary.location_records, field_sum)
-            append_text(summary.location_records, ",\"interval_ns\":")
-            append_protocol_number(summary.location_records, field_interval)
-            append_text(summary.location_records, ",\"max_interval_ns\":")
-            append_protocol_number(summary.location_records, field_max_interval)
-            append_text(summary.location_records, ",\"compiler_line\":")
-            append_protocol_number(summary.location_records, line_field)
-            append_text(summary.location_records, ",\"source\":")
-            append_json_string(summary.location_records, source)
-            append_text(summary.location_records, ",\"source_text\":null")
-            append_text(summary.location_records, "}")
+                append_text(location_records, ",\"inclusive_ns\":")
+                append_protocol_number(location_records, field_min)
+                append_text(location_records, ",\"self_ns\":")
+                append_protocol_number(location_records, field_max)
+                append_text(location_records, ",\"completed_calls\":")
+                append_protocol_number(location_records, field_sum)
+            append_text(location_records, ",\"interval_ns\":")
+            append_protocol_number(location_records, field_interval)
+            append_text(location_records, ",\"max_interval_ns\":")
+            append_protocol_number(location_records, field_max_interval)
+            append_text(location_records, ",\"compiler_line\":")
+            append_protocol_number(location_records, line_field)
+            append_text(location_records, ",\"source\":")
+            append_json_string(location_records, source)
+            append_text(location_records, ",\"source_text\":null")
+            append_text(location_records, "}")
             if kind_name == "function":
-                append_record_separator(summary.function_records)
-                append_text(summary.function_records, "{\"function\":")
-                append_json_string(summary.function_records, function_field)
-                append_text(summary.function_records, ",\"events\":")
-                append_protocol_number(summary.function_records, count_field)
-                append_text(summary.function_records, ",\"statement_events\":0,\"value_events\":0,\"call_events\":")
-                append_protocol_number(summary.function_records, count_field)
-                append_text(summary.function_records, ",\"locations\":1,\"interval_ns\":")
-                append_protocol_number(summary.function_records, field_interval)
-                append_text(summary.function_records, ",\"max_interval_ns\":")
-                append_protocol_number(summary.function_records, field_max_interval)
-                append_text(summary.function_records, ",\"inclusive_ns\":")
-                append_protocol_number(summary.function_records, field_min)
-                append_text(summary.function_records, ",\"self_ns\":")
-                append_protocol_number(summary.function_records, field_max)
-                append_text(summary.function_records, ",\"completed_calls\":")
-                append_protocol_number(summary.function_records, field_sum)
-                append_text(summary.function_records, ",\"definitions\":[],\"mean_inclusive_ns\":0,\"mean_self_ns\":0,\"inclusive_percent\":0.0,\"self_percent\":0.0}")
+                append_record_separator(function_records)
+                append_text(function_records, "{\"function\":")
+                append_json_string(function_records, function_field)
+                append_text(function_records, ",\"events\":")
+                append_protocol_number(function_records, count_field)
+                append_text(function_records, ",\"statement_events\":")
+                append_i64(function_records, NATIVE_ZERO)
+                append_text(function_records, ",\"value_events\":")
+                append_i64(function_records, NATIVE_ZERO)
+                append_text(function_records, ",\"call_events\":")
+                append_protocol_number(function_records, count_field)
+                append_text(function_records, ",\"locations\":")
+                append_i64(function_records, NATIVE_ONE)
+                append_text(function_records, ",\"interval_ns\":")
+                append_protocol_number(function_records, field_interval)
+                append_text(function_records, ",\"max_interval_ns\":")
+                append_protocol_number(function_records, field_max_interval)
+                append_text(function_records, ",\"inclusive_ns\":")
+                append_protocol_number(function_records, field_min)
+                append_text(function_records, ",\"self_ns\":")
+                append_protocol_number(function_records, field_max)
+                append_text(function_records, ",\"completed_calls\":")
+                append_protocol_number(function_records, field_sum)
+                append_text(function_records, ",\"definitions\":[],\"mean_inclusive_ns\":")
+                append_i64(function_records, NATIVE_ZERO)
+                append_text(function_records, ",\"mean_self_ns\":")
+                append_i64(function_records, NATIVE_ZERO)
+                append_text(function_records, ",\"inclusive_percent\":")
+                append_text(function_records, "0.0")
+                append_text(function_records, ",\"self_percent\":")
+                append_text(function_records, "0.0")
+                append_text(function_records, "}")
 
 
-        def append_call_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_call_record(summary: mutable CaptureSummary&, call_edge_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
             caller_field: mutable darray[u8] = []
             callee_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
@@ -613,25 +679,25 @@ module ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &calls_field)
             cursor <- protocol_field_into(data, cursor, stop, &completed_field)
             cursor <- protocol_field_into(data, cursor, stop, &inclusive_field)
-            if caller_field.count == 0 or callee_field.count == 0 or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(inclusive_field):
+            if caller_field.count == NATIVE_ZERO.usize() or callee_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(inclusive_field):
                 summary.malformed <- true
-                summary.malformed_code <- 2
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
                 return
-            append_record_separator(summary.call_edge_records)
-            append_text(summary.call_edge_records, "{\"caller\":")
-            append_json_string(summary.call_edge_records, caller_field)
-            append_text(summary.call_edge_records, ",\"callee\":")
-            append_json_string(summary.call_edge_records, callee_field)
-            append_text(summary.call_edge_records, ",\"call_events\":")
-            append_protocol_number(summary.call_edge_records, calls_field)
-            append_text(summary.call_edge_records, ",\"completed_calls\":")
-            append_protocol_number(summary.call_edge_records, completed_field)
-            append_text(summary.call_edge_records, ",\"inclusive_ns\":")
-            append_protocol_number(summary.call_edge_records, inclusive_field)
-            append_text(summary.call_edge_records, "}")
+            append_record_separator(call_edge_records)
+            append_text(call_edge_records, "{\"caller\":")
+            append_json_string(call_edge_records, caller_field)
+            append_text(call_edge_records, ",\"callee\":")
+            append_json_string(call_edge_records, callee_field)
+            append_text(call_edge_records, ",\"call_events\":")
+            append_protocol_number(call_edge_records, calls_field)
+            append_text(call_edge_records, ",\"completed_calls\":")
+            append_protocol_number(call_edge_records, completed_field)
+            append_text(call_edge_records, ",\"inclusive_ns\":")
+            append_protocol_number(call_edge_records, inclusive_field)
+            append_text(call_edge_records, "}")
 
 
-        def append_stack_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
             stack_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
             completed_field: mutable darray[u8] = []
@@ -640,23 +706,23 @@ module ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &calls_field)
             cursor <- protocol_field_into(data, cursor, stop, &completed_field)
             cursor <- protocol_field_into(data, cursor, stop, &self_field)
-            if stack_field.count == 0 or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(self_field):
+            if stack_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(self_field):
                 summary.malformed <- true
-                summary.malformed_code <- 3
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
                 return
-            append_record_separator(summary.stack_records)
-            append_text(summary.stack_records, "{\"stack\":")
-            append_json_string(summary.stack_records, stack_field)
-            append_text(summary.stack_records, ",\"call_events\":")
-            append_protocol_number(summary.stack_records, calls_field)
-            append_text(summary.stack_records, ",\"completed_calls\":")
-            append_protocol_number(summary.stack_records, completed_field)
-            append_text(summary.stack_records, ",\"self_ns\":")
-            append_protocol_number(summary.stack_records, self_field)
-            append_text(summary.stack_records, "}")
+            append_record_separator(stack_records)
+            append_text(stack_records, "{\"stack\":")
+            append_json_string(stack_records, stack_field)
+            append_text(stack_records, ",\"call_events\":")
+            append_protocol_number(stack_records, calls_field)
+            append_text(stack_records, ",\"completed_calls\":")
+            append_protocol_number(stack_records, completed_field)
+            append_text(stack_records, ",\"self_ns\":")
+            append_protocol_number(stack_records, self_field)
+            append_text(stack_records, "}")
 
 
-        def append_event_record(summary: mutable CaptureSummary&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_event_record(summary: mutable CaptureSummary&, event_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             sequence_field: mutable darray[u8] = []
             kind_field: mutable darray[u8] = []
             function_field: mutable darray[u8] = []
@@ -672,91 +738,98 @@ module ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &signed_field)
             cursor <- protocol_field_into(data, cursor, stop, &value_field)
             kind_name: mutable sview = ""
-            if protocol_field_is(kind_field, "1"):
+            if protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_STATEMENT:
                 kind_name <- "statement"
-            elif protocol_field_is(kind_field, "2"):
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_VALUE:
                 kind_name <- "value"
-            elif protocol_field_is(kind_field, "3"):
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_KIND_FUNCTION:
                 kind_name <- "function"
             else:
                 summary.malformed <- true
-                summary.malformed_code <- 4
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_EVENT
                 return
-            signed_value: bool = protocol_field_is(signed_field, "1")
-            valid: mutable bool = protocol_unsigned(sequence_field) and function_field.count > 0 and protocol_unsigned(line_field)
-            valid <- valid and (protocol_field_is(signed_field, "0") or signed_value)
+            signed_value: bool = protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE
+            valid: mutable bool = protocol_unsigned(sequence_field) and function_field.count > NATIVE_ZERO.usize() and protocol_unsigned(line_field)
+            valid <- valid and (protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_FALSE or signed_value)
             valid <- valid and protocol_signed(value_field, false)
             if not signed_value:
                 valid <- valid and protocol_unsigned(value_field)
             if not valid:
                 summary.malformed <- true
-                summary.malformed_code <- 4
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_EVENT
                 return
-            append_record_separator(summary.event_records)
-            append_text(summary.event_records, "{\"sequence\":")
-            append_protocol_number(summary.event_records, sequence_field)
-            append_text(summary.event_records, ",\"kind\":\"")
-            append_text(summary.event_records, kind_name)
-            append_text(summary.event_records, "\",\"function\":")
-            append_json_string(summary.event_records, function_field)
-            append_text(summary.event_records, ",\"line\":")
-            append_protocol_number(summary.event_records, line_field)
-            append_text(summary.event_records, ",\"variable\":")
+            append_record_separator(event_records)
+            append_text(event_records, "{\"sequence\":")
+            append_protocol_number(event_records, sequence_field)
+            append_text(event_records, ",\"kind\":\"")
+            append_text(event_records, kind_name)
+            append_text(event_records, "\",\"function\":")
+            append_json_string(event_records, function_field)
+            append_text(event_records, ",\"line\":")
+            append_protocol_number(event_records, line_field)
+            append_text(event_records, ",\"variable\":")
             if protocol_field_is(variable_field, "-"):
-                append_text(summary.event_records, "null")
+                append_text(event_records, "null")
             else:
-                append_json_string(summary.event_records, variable_field)
-            append_text(summary.event_records, ",\"signed\":")
-            append_text(summary.event_records, "true" if signed_value else "false")
-            append_text(summary.event_records, ",\"value\":")
-            append_protocol_number(summary.event_records, value_field)
-            append_text(summary.event_records, ",\"compiler_line\":")
-            append_protocol_number(summary.event_records, line_field)
-            append_text(summary.event_records, ",\"source\":")
-            append_json_string(summary.event_records, source)
-            append_text(summary.event_records, ",\"source_text\":null")
-            append_text(summary.event_records, "}")
+                append_json_string(event_records, variable_field)
+            append_text(event_records, ",\"signed\":")
+            append_text(event_records, "true" if signed_value else "false")
+            append_text(event_records, ",\"value\":")
+            append_protocol_number(event_records, value_field)
+            append_text(event_records, ",\"compiler_line\":")
+            append_protocol_number(event_records, line_field)
+            append_text(event_records, ",\"source\":")
+            append_json_string(event_records, source)
+            append_text(event_records, ",\"source_text\":null")
+            append_text(event_records, "}")
 
 
         def parse_protocol_number(data: darray[u8]&, cursor: mutable usize&, stop: usize) -> i64:
-            value: mutable i64 = 0
-            while cursor < stop and data[cursor] >= 48 and data[cursor] <= 57 |cursor, value, data|:
-                value <- value * 10 + (data[cursor] - 48).i64()
-                cursor <- cursor + 1.usize()
-            cursor <- cursor + 1.usize() if cursor < stop and data[cursor] == 9
+            value: mutable i64 = NATIVE_ZERO
+            position: mutable usize = cursor
+            while position < stop and data[position] >= NATIVE_BYTE_ASCII_ZERO and data[position] <= NATIVE_BYTE_ASCII_NINE |position, value, data|:
+                value <- value * NATIVE_DECIMAL_BASE + (data[position] - NATIVE_BYTE_ASCII_ZERO).i64()
+                position <- position + NATIVE_ONE.usize()
+            position <- position + NATIVE_ONE.usize() if position < stop and data[position] == NATIVE_BYTE_TAB
+            cursor <- position
             return value
         
         
         def parse_capture(data: darray[u8]&, source: darray[u8]&) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
-                events: 0,
-                locations: 0,
-                statement_events: 0,
-                value_events: 0,
-                function_events: 0,
-                dropped: 0,
-                max_stack_depth: 0,
-                stack_overflow_entries: 0,
-                thread_count: 0,
-                trace_enabled: 0,
-                trace_captured: 0,
-                trace_omitted: 0,
-                trace_limit: 0,
+                events: NATIVE_ZERO,
+                locations: NATIVE_ZERO,
+                statement_events: NATIVE_ZERO,
+                value_events: NATIVE_ZERO,
+                function_events: NATIVE_ZERO,
+                dropped: NATIVE_ZERO,
+                max_stack_depth: NATIVE_ZERO,
+                stack_overflow_entries: NATIVE_ZERO,
+                thread_count: NATIVE_ZERO,
+                trace_enabled: NATIVE_ZERO,
+                trace_captured: NATIVE_ZERO,
+                trace_omitted: NATIVE_ZERO,
+                trace_limit: NATIVE_ZERO,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
                 stack_records: [],
                 event_records: [],
                 malformed: false,
-                malformed_code: 0,
+                malformed_code: NATIVE_ZERO,
             }
+            location_records: mutable darray[u8] = []
+            function_records: mutable darray[u8] = []
+            call_edge_records: mutable darray[u8] = []
+            stack_records: mutable darray[u8] = []
+            event_records: mutable darray[u8] = []
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
-            line_start: mutable usize = 0.usize()
+            line_start: mutable usize = NATIVE_ZERO.usize()
             while line_start < data.count |line_start, data, summary|:
                 line_stop: mutable usize = line_start
-                while line_stop < data.count and data[line_stop] != 10 |line_stop, data|:
-                    line_stop <- line_stop + 1.usize()
+                while line_stop < data.count and data[line_stop] != NATIVE_BYTE_NEWLINE |line_stop, data|:
+                    line_stop <- line_stop + NATIVE_ONE.usize()
                 if line_prefix(data, line_start, line_stop, meta_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(meta_prefix)
                     summary.events <- parse_protocol_number(data, &cursor, line_stop)
@@ -773,44 +846,49 @@ module ProfilerNative:
                     summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
-                    append_location_record(&summary, data, &cursor, line_stop, source)
+                    append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tcall\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tcall\t")
-                    append_call_record(&summary, data, &cursor, line_stop)
+                    append_call_record(&summary, &call_edge_records, data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
-                    append_stack_record(&summary, data, &cursor, line_stop)
+                    append_stack_record(&summary, &stack_records, data, &cursor, line_stop)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
-                    append_event_record(&summary, data, &cursor, line_stop, source)
+                    append_event_record(&summary, &event_records, data, &cursor, line_stop, source)
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\t"):
                     summary.malformed <- true
-                line_start <- line_stop + 1.usize()
+                line_start <- line_stop + NATIVE_ONE.usize()
+            summary.location_records <- location_records
+            summary.function_records <- function_records
+            summary.call_edge_records <- call_edge_records
+            summary.stack_records <- stack_records
+            summary.event_records <- event_records
             return summary
 
 
         def empty_capture_summary() -> CaptureSummary:
             return CaptureSummary{
-                events: 0,
-                locations: 0,
-                statement_events: 0,
-                value_events: 0,
-                function_events: 0,
-                dropped: 0,
-                max_stack_depth: 0,
-                stack_overflow_entries: 0,
-                thread_count: 0,
-                trace_enabled: 0,
-                trace_captured: 0,
-                trace_omitted: 0,
-                trace_limit: 0,
+                events: NATIVE_ZERO,
+                locations: NATIVE_ZERO,
+                statement_events: NATIVE_ZERO,
+                value_events: NATIVE_ZERO,
+                function_events: NATIVE_ZERO,
+                dropped: NATIVE_ZERO,
+                max_stack_depth: NATIVE_ZERO,
+                stack_overflow_entries: NATIVE_ZERO,
+                thread_count: NATIVE_ZERO,
+                trace_enabled: NATIVE_ZERO,
+                trace_captured: NATIVE_ZERO,
+                trace_omitted: NATIVE_ZERO,
+                trace_limit: NATIVE_ZERO,
                 location_records: [],
                 function_records: [],
                 call_edge_records: [],
                 stack_records: [],
                 event_records: [],
                 malformed: false,
-                malformed_code: 0,
+                malformed_code: NATIVE_ZERO,
             }
 
 
@@ -844,10 +922,10 @@ module ProfilerNative:
 
 
         def integer_sqrt(value: i64) -> i64:
-            return 0 if value <= 0
+            return NATIVE_ZERO if value <= NATIVE_ZERO
             guess: mutable i64 = value
             while guess > value / guess |guess, value|:
-                guess <- (guess + value / guess) / 2
+                guess <- (guess + value / guess) / NATIVE_TWO
             return guess
 
 
@@ -861,7 +939,7 @@ module ProfilerNative:
                 values[smallest] <- temporary
 
 
-        def append_repetition_record(buffer: mutable darray[u8]&, repetition: i64, requested: i64, result: TargetRunResult, summary: CaptureSummary, event_trace: bool) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_repetition_record(buffer: mutable darray[u8]&, repetition: i64, requested: i64, result: TargetRunResult, summary: CaptureSummary, event_trace: bool, recent_path: bool) -> void can[Abort.Panic, Memory.Allocate]:
             append_record_separator(buffer)
             append_text(buffer, "{\"repetition\":")
             append_i64(buffer, repetition)
@@ -894,15 +972,23 @@ module ProfilerNative:
                 append_text(buffer, "null")
             append_text(buffer, ",\"trace_complete\":")
             if event_trace:
-                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+                append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
             else:
                 append_text(buffer, "null")
+            if event_trace:
+                append_text(buffer, ",\"event_trace\":[")
+                buffer.extend(summary.event_records)
+                append_text(buffer, "]")
+            elif recent_path:
+                append_text(buffer, ",\"recent_events\":[")
+                buffer.extend(summary.event_records)
+                append_text(buffer, "]")
             append_text(buffer, "}")
         
         
         def system_exit_code(status: i64) -> i64:
-            return 127 if status < 0
-            return status / 256 if status % 256 == 0 else 128 + (status % 256)
+            return NATIVE_CHILD_FAILURE_STATUS if status < NATIVE_ZERO
+            return status / NATIVE_EXIT_STATUS_BASE if status % NATIVE_EXIT_STATUS_BASE == NATIVE_ZERO else NATIVE_SIGNAL_EXIT_BASE + (status % NATIVE_EXIT_STATUS_BASE)
         
         
         def append_detail_arrays(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
@@ -923,7 +1009,9 @@ module ProfilerNative:
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ms: i64
         ) -> void can[Abort.Panic, Memory.Allocate]:
-            append_text(buffer, "{\"schema_version\":1,\"source\":")
+            append_text(buffer, "{\"schema_version\":")
+            append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
+            append_text(buffer, ",\"source\":")
             append_json_string(buffer, source)
             append_text(buffer, ",\"compiler\":{\"root\":")
             append_json_string(buffer, compiler_root)
@@ -960,8 +1048,10 @@ module ProfilerNative:
             if not event_trace:
                 append_text(buffer, "null")
             else:
-                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
-            append_text(buffer, "},\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":0,\"unmapped_locations\":")
+                append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
+            append_text(buffer, "},\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
+            append_i64(buffer, NATIVE_ZERO)
+            append_text(buffer, ",\"unmapped_locations\":")
             append_i64(buffer, summary.locations)
             append_text(buffer, "},\"run\":{\"exit_code\":")
             append_i64(buffer, exit_code)
@@ -980,7 +1070,7 @@ module ProfilerNative:
             if not event_trace:
                 append_text(buffer, "null")
             else:
-                append_text(buffer, "true" if summary.trace_omitted == 0 and summary.trace_captured == summary.events else "false")
+                append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
             append_text(buffer, ",\"opt_level\":\"-O")
             append_i64(buffer, opt_level)
             append_text(buffer, "\",\"execution_ms\":")
@@ -1008,16 +1098,16 @@ module ProfilerNative:
             append_text(buffer, ",\"failed_repetitions\":")
             append_i64(buffer, failed_repetitions)
             append_text(buffer, ",\"measurement_repetitions\":")
-            append_i64(buffer, successful_repetitions if successful_repetitions > 0 else completed_repetitions)
+            append_i64(buffer, successful_repetitions if successful_repetitions > NATIVE_ZERO else completed_repetitions)
             append_text(buffer, ",\"measurement_basis\":\"")
-            append_text(buffer, "successful" if successful_repetitions > 0 else "all_completed")
+            append_text(buffer, "successful" if successful_repetitions > NATIVE_ZERO else "all_completed")
             append_text(buffer, "\",\"repetitions\":[")
             buffer.extend(repetition_records)
             append_text(buffer, "],\"compile_ms\":")
             append_millis(buffer, compile_ns)
             append_text(buffer, "},")
             append_detail_arrays(buffer, summary)
-            if program_stderr.count > 0:
+            if program_stderr.count > NATIVE_ZERO.usize():
                 append_text(buffer, ",\"program_stderr\":")
                 append_json_string(buffer, program_stderr)
             append_text(buffer, "}\n")
@@ -1028,7 +1118,7 @@ module ProfilerNative:
             for index in 0..<source.count |buffer, source|:
                 buffer.push(source[index])
             append_text(buffer, "\nstatus: ")
-            append_text(buffer, "ok\n" if exit_code == 0 else "target failed\n")
+            append_text(buffer, "ok\n" if exit_code == NATIVE_ZERO else "target failed\n")
             append_text(buffer, "events: ")
             append_i64(buffer, summary.events)
             append_text(buffer, "\nlocations: ")
@@ -1062,17 +1152,17 @@ module ProfilerNative:
 
         def doctor(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             output_path: mutable darray[u8] = []
-            index: mutable i64 = 2
+            index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
             while index < argc |index, slots, output_path|:
                 argument: cstr = slots[index].cast[cstr]
-                if profiler_ffi_strcmp(argument, "--format") == 0:
-                    return report_error("doctor supports only --format json") if index + 1 >= argc or profiler_ffi_strcmp(slots[index + 1].cast[cstr], "json") != 0
-                    index <- index + 2
+                if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
+                    return report_error("doctor supports only --format json") if index + NATIVE_ONE >= argc or profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO
+                    index <- index + NATIVE_TWO
                     continue
-                if profiler_ffi_strcmp(argument, "--output") == 0 or profiler_ffi_strcmp(argument, "-o") == 0:
-                    return report_error("--output requires a path") if index + 1 >= argc
-                    copy_cstr(output_path, slots[index + 1].cast[cstr])
-                    index <- index + 2
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("--output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
                     continue
                 return report_error("unknown doctor option")
             compiler_root: mutable darray[u8] = []
@@ -1108,155 +1198,155 @@ module ProfilerNative:
             append_text(report, ",\"collector_source\":")
             append_json_string(report, collector)
             append_text(report, "}}\n")
-            if output_path.count > 0:
-                return 0 if write_file(output_path, report)
+            if output_path.count > NATIVE_ZERO.usize():
+                return NATIVE_ZERO if write_file(output_path, report)
                 return report_error("could not write doctor report")
-            _ = profiler_ffi_write(1, &report[0], report.count) can Console
-            return 0 if all_ok else 2
+            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &report[0], report.count) can Console
+            return NATIVE_ZERO if all_ok else NATIVE_TWO
 
 
         def report_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler report CAPTURE [--format json] [--output PATH]") if argc < 3
+            return report_error("usage: elisa-profiler report CAPTURE [--format json] [--output PATH]") if argc < NATIVE_MIN_PATH_ARGUMENTS
             capture_path: mutable darray[u8] = []
             output_path: mutable darray[u8] = []
             format_json: mutable bool = false
             capture_seen: mutable bool = false
-            index: mutable i64 = 2
+            index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
             while index < argc |index, slots, capture_path, output_path, format_json, capture_seen|:
                 argument: cstr = slots[index].cast[cstr]
-                if profiler_ffi_strcmp(argument, "--format") == 0:
-                    return report_error("--format requires json") if index + 1 >= argc or profiler_ffi_strcmp(slots[index + 1].cast[cstr], "json") != 0
+                if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
+                    return report_error("--format requires json") if index + NATIVE_ONE >= argc or profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO
                     format_json <- true
-                    index <- index + 2
+                    index <- index + NATIVE_TWO
                     continue
-                if profiler_ffi_strcmp(argument, "--output") == 0 or profiler_ffi_strcmp(argument, "-o") == 0:
-                    return report_error("--output requires a path") if index + 1 >= argc
-                    copy_cstr(output_path, slots[index + 1].cast[cstr])
-                    index <- index + 2
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("--output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
                     continue
-                if argument[0] == 45:
+                if argument[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS:
                     return report_error("unknown report option")
                 return report_error("report accepts exactly one capture path") if capture_seen
                 copy_cstr(capture_path, argument)
                 capture_seen <- true
-                index <- index + 1
+                index <- index + NATIVE_ONE
             return report_error("report requires a capture path") if not capture_seen
             return report_error("report requires --format json") if not format_json
             report: darray[u8] = read_file(capture_path)
-            return report_error("capture could not be read") if report.count == 0
-            if output_path.count > 0:
-                return 0 if write_file(output_path, report)
+            return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
+            if output_path.count > NATIVE_ZERO.usize():
+                return NATIVE_ZERO if write_file(output_path, report)
                 return report_error("could not write offline report")
-            _ = profiler_ffi_write(1, &report[0], report.count) can Console
-            return 0
+            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &report[0], report.count) can Console
+            return NATIVE_ZERO
         
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH] or report CAPTURE [--format json] [--output PATH]") if argc < 2
+            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH] or report CAPTURE [--format json] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
-            first: cstr = slots[1].cast[cstr]
-            return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == 0
-            return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == 0
-            return report_error("unknown command; use profile or report") if profiler_ffi_strcmp(first, "profile") != 0
-            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH]") if argc < 3
+            first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
+            return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
+            return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
+            return report_error("unknown command; use profile, report, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO
+            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
-            opt_level: mutable i64 = 0
+            opt_level: mutable i64 = NATIVE_ZERO
             event_trace: mutable bool = false
             recent_path: mutable bool = false
             format_text: mutable bool = false
-            requested_repetitions: mutable i64 = 1
-            warmup_repetitions: mutable i64 = 0
-            trace_limit: mutable i64 = 1000000
+            requested_repetitions: mutable i64 = NATIVE_ONE
+            warmup_repetitions: mutable i64 = NATIVE_ZERO
+            trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
             source_seen: mutable bool = false
-            index: mutable i64 = 2
+            index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
             while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, requested_repetitions, warmup_repetitions, trace_limit, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
-                if profiler_ffi_strcmp(argument, "--format") == 0:
-                    return report_error("--format requires json or text") if index + 1 >= argc
-                    if profiler_ffi_strcmp(slots[index + 1].cast[cstr], "text") == 0:
+                if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
+                    return report_error("--format requires json or text") if index + NATIVE_ONE >= argc
+                    if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
                         format_text <- true
-                    elif profiler_ffi_strcmp(slots[index + 1].cast[cstr], "json") != 0:
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO:
                         return report_error("--format requires json or text")
-                    index <- index + 2
+                    index <- index + NATIVE_TWO
                     continue
-                if profiler_ffi_strcmp(argument, "--output") == 0 or profiler_ffi_strcmp(argument, "-o") == 0:
-                    return report_error("--output requires a path") if index + 1 >= argc
-                    copy_cstr(output, slots[index + 1].cast[cstr])
-                    index <- index + 2
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("--output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
                     continue
-                if profiler_ffi_strcmp(argument, "--event-trace") == 0:
+                if profiler_ffi_strcmp(argument, "--event-trace") == NATIVE_ZERO:
                     event_trace <- true
-                    index <- index + 1
+                    index <- index + NATIVE_ONE
                     continue
-                if profiler_ffi_strcmp(argument, "--recent-path") == 0:
+                if profiler_ffi_strcmp(argument, "--recent-path") == NATIVE_ZERO:
                     recent_path <- true
-                    index <- index + 1
+                    index <- index + NATIVE_ONE
                     continue
-                if profiler_ffi_strcmp(argument, "--repeat") == 0 or profiler_ffi_strcmp(argument, "--warmup") == 0:
-                    return report_error("--repeat/--warmup requires a positive integer") if index + 1 >= argc
-                    count_text: cstr = slots[index + 1].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--repeat") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--warmup") == NATIVE_ZERO:
+                    return report_error("--repeat/--warmup requires a positive integer") if index + NATIVE_ONE >= argc
+                    count_text: cstr = slots[index + NATIVE_ONE].cast[cstr]
                     count_bytes: u8& = count_text.cast[u8&] can Unsafe.PointerCast
-                    count: mutable i64 = 0
-                    count_cursor: mutable i64 = 0
+                    count: mutable i64 = NATIVE_ZERO
+                    count_cursor: mutable i64 = NATIVE_ZERO
                     while true |count_bytes, count_cursor, count|:
                         byte_ref: u8& = count_bytes + count_cursor
                         byte: u8 = byte_ref
-                        break if byte == 0
-                        return report_error("--repeat/--warmup requires a non-negative integer") if byte < 48 or byte > 57
-                        count <- count * 10 + (byte - 48).i64()
-                        count_cursor <- count_cursor + 1
-                    if profiler_ffi_strcmp(argument, "--repeat") == 0:
-                        return report_error("--repeat must be at least 1") if count < 1
+                        break if byte == NATIVE_BYTE_NUL
+                        return report_error("--repeat/--warmup requires a non-negative integer") if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                        count <- count * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                        count_cursor <- count_cursor + NATIVE_ONE
+                    if profiler_ffi_strcmp(argument, "--repeat") == NATIVE_ZERO:
+                        return report_error("--repeat must be at least 1") if count < NATIVE_ONE
                         requested_repetitions <- count
                     else:
                         warmup_repetitions <- count
-                    index <- index + 2
+                    index <- index + NATIVE_TWO
                     continue
-                if profiler_ffi_strcmp(argument, "--max-event-trace-events") == 0:
-                    return report_error("--max-event-trace-events requires a non-negative integer") if index + 1 >= argc
-                    limit_text: cstr = slots[index + 1].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--max-event-trace-events") == NATIVE_ZERO:
+                    return report_error("--max-event-trace-events requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    limit_text: cstr = slots[index + NATIVE_ONE].cast[cstr]
                     limit_bytes: u8& = limit_text.cast[u8&] can Unsafe.PointerCast
-                    limit: mutable i64 = 0
-                    limit_cursor: mutable i64 = 0
+                    limit: mutable i64 = NATIVE_ZERO
+                    limit_cursor: mutable i64 = NATIVE_ZERO
                     while true |limit_bytes, limit_cursor, limit|:
                         byte_ref: u8& = limit_bytes + limit_cursor
                         byte: u8 = byte_ref
-                        break if byte == 0
-                        return report_error("--max-event-trace-events requires a non-negative integer") if byte < 48 or byte > 57
-                        limit <- limit * 10 + (byte - 48).i64()
-                        limit_cursor <- limit_cursor + 1
+                        break if byte == NATIVE_BYTE_NUL
+                        return report_error("--max-event-trace-events requires a non-negative integer") if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                        limit <- limit * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                        limit_cursor <- limit_cursor + NATIVE_ONE
                     trace_limit <- limit
-                    index <- index + 2
+                    index <- index + NATIVE_TWO
                     continue
-                if profiler_ffi_strcmp(argument, "-O0") == 0 or profiler_ffi_strcmp(argument, "--opt-level=0") == 0:
-                    opt_level <- 0
-                    index <- index + 1
+                if profiler_ffi_strcmp(argument, "-O0") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--opt-level=0") == NATIVE_ZERO:
+                    opt_level <- NATIVE_ZERO
+                    index <- index + NATIVE_ONE
                     continue
-                if profiler_ffi_strcmp(argument, "-O1") == 0 or profiler_ffi_strcmp(argument, "--opt-level=1") == 0:
-                    opt_level <- 1
-                    index <- index + 1
+                if profiler_ffi_strcmp(argument, "-O1") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--opt-level=1") == NATIVE_ZERO:
+                    opt_level <- NATIVE_ONE
+                    index <- index + NATIVE_ONE
                     continue
-                if profiler_ffi_strcmp(argument, "-O2") == 0 or profiler_ffi_strcmp(argument, "--opt-level=2") == 0:
-                    opt_level <- 2
-                    index <- index + 1
+                if profiler_ffi_strcmp(argument, "-O2") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--opt-level=2") == NATIVE_ZERO:
+                    opt_level <- NATIVE_TWO
+                    index <- index + NATIVE_ONE
                     continue
-                if profiler_ffi_strcmp(argument, "-O3") == 0 or profiler_ffi_strcmp(argument, "--opt-level=3") == 0:
-                    opt_level <- 3
-                    index <- index + 1
+                if profiler_ffi_strcmp(argument, "-O3") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--opt-level=3") == NATIVE_ZERO:
+                    opt_level <- NATIVE_THREE
+                    index <- index + NATIVE_ONE
                     continue
-                if argument[0] == 45:
-                    return report_error("unknown option in Elisa-native transition slice")
+                if argument[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS:
+                    return report_error("unknown option in Elisa-native profiler")
                 return report_error("profile accepts exactly one source path") if source_seen
                 copy_cstr(source, argument)
                 source_seen <- true
-                index <- index + 1
+                index <- index + NATIVE_ONE
         
             return report_error("profile requires a source path") if not source_seen
             source_check: darray[u8] = read_file(source)
-            return report_error("source file could not be read") if source_check.count == 0
+            return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
         
             compiler_root: mutable darray[u8] = []
             environment_or("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", compiler_root)
@@ -1286,7 +1376,7 @@ module ProfilerNative:
             run_output_path: darray[u8] = path_with_suffix(temporary, "/program.out")
             run_error_path: darray[u8] = path_with_suffix(temporary, "/program.err")
             temp_cstr: cstr = make_cstr(temporary)
-            return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temp_cstr, 448) != 0
+            return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temp_cstr, NATIVE_DIRECTORY_MODE) != NATIVE_ZERO
             build_start: ProfilerNativeTimespec = read_monotonic()
 
             command: mutable darray[u8] = []
@@ -1301,9 +1391,9 @@ module ProfilerNative:
             append_shell_quoted(command, compile_output_path)
             append_text(command, " 2> ")
             append_shell_quoted(command, compile_error_path)
-            command.push(0)
+            command.push(NATIVE_BYTE_NUL)
             compile_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
-            if compile_status != 0:
+            if compile_status != NATIVE_ZERO:
                 diagnostics: darray[u8] = read_file(compile_error_path)
                 write_stderr(diagnostics)
                 cleanup_temp(temporary)
@@ -1315,18 +1405,18 @@ module ProfilerNative:
             append_shell_quoted(command, target_object)
             append_text(command, " ")
             append_shell_quoted(command, renamed_object)
-            command.push(0)
+            command.push(NATIVE_BYTE_NUL)
             rename_status: mutable i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
-            if rename_status != 0:
+            if rename_status != NATIVE_ZERO:
                 command <- []
                 append_shell_quoted(command, objcopy_tool)
                 append_text(command, " --redefine-sym main=elisa_profile_target_main ")
                 append_shell_quoted(command, target_object)
                 append_text(command, " ")
                 append_shell_quoted(command, renamed_object)
-                command.push(0)
+                command.push(NATIVE_BYTE_NUL)
                 rename_status <- profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
-            if rename_status != 0:
+            if rename_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not rename target main for collection")
 
@@ -1334,7 +1424,7 @@ module ProfilerNative:
             # private link copy and localize those callbacks so the C collector can
             # provide the externally-visible definitions without duplicate symbols.
             runtime_bytes: darray[u8] = read_file(runtime_object)
-            if runtime_bytes.count == 0:
+            if runtime_bytes.count == NATIVE_ZERO.usize():
                 cleanup_temp(temporary)
                 return report_error("runtime object could not be read")
             runtime_copy_ok: bool = write_file(runtime_collector_object, runtime_bytes)
@@ -1351,9 +1441,9 @@ module ProfilerNative:
             append_text(command, " --localize-symbol elisa_trace_function_exit")
             append_text(command, " --localize-symbol _elisa_trace_install_fault_handler --localize-symbol elisa_trace_install_fault_handler ")
             append_shell_quoted(command, runtime_collector_object)
-            command.push(0)
+            command.push(NATIVE_BYTE_NUL)
             localize_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
-            if localize_status != 0:
+            if localize_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not localize runtime trace callbacks")
         
@@ -1363,9 +1453,9 @@ module ProfilerNative:
             append_shell_quoted(command, collector_object)
             append_text(command, " ")
             append_shell_quoted(command, collector_source)
-            command.push(0)
+            command.push(NATIVE_BYTE_NUL)
             collector_status: i64 = profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast)
-            if collector_status != 0:
+            if collector_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not compile native collector")
         
@@ -1383,8 +1473,8 @@ module ProfilerNative:
             append_shell_quoted(command, compile_output_path)
             append_text(command, " 2> ")
             append_shell_quoted(command, link_error_path)
-            command.push(0)
-            if profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast) != 0:
+            command.push(NATIVE_BYTE_NUL)
+            if profiler_ffi_system((&command[0]).cast[cstr] can Unsafe.PointerCast) != NATIVE_ZERO:
                 diagnostics: darray[u8] = read_file(link_error_path)
                 write_stderr(diagnostics)
                 cleanup_temp(temporary)
@@ -1395,30 +1485,30 @@ module ProfilerNative:
             repetition_records: mutable darray[u8] = []
             all_execution_times: mutable darray[i64] = []
             measurement_execution_times: mutable darray[i64] = []
-            warmup_ns: mutable i64 = 0
-            warmup_index: mutable i64 = 1
+            warmup_ns: mutable i64 = NATIVE_ZERO
+            warmup_index: mutable i64 = NATIVE_ONE
             while warmup_index <= warmup_repetitions |warmup_index, warmup_ns|:
                 capture_fd: i64 = open_output_file(capture_path)
-                if capture_fd < 0:
+                if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, capture_fd, false, false, 0)
+                warmup_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, capture_fd, false, false, NATIVE_ZERO)
                 _ = profiler_ffi_close(capture_fd)
                 warmup_ns <- warmup_ns + warmup_result.elapsed_ns
-                if warmup_result.status != 0:
+                if warmup_result.status != NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("native profiler warmup failed")
                 warmup_index <- warmup_index + 1
 
             program_stderr: mutable darray[u8] = []
-            overall_status: mutable i64 = 0
-            completed_repetitions: mutable i64 = 0
-            successful_repetitions: mutable i64 = 0
-            failed_repetitions: mutable i64 = 0
-            repetition: mutable i64 = 1
+            overall_status: mutable i64 = NATIVE_ZERO
+            completed_repetitions: mutable i64 = NATIVE_ZERO
+            successful_repetitions: mutable i64 = NATIVE_ZERO
+            failed_repetitions: mutable i64 = NATIVE_ZERO
+            repetition: mutable i64 = NATIVE_ONE
             while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions|:
                 capture_fd: i64 = open_output_file(capture_path)
-                if capture_fd < 0:
+                if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
                 run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, capture_fd, event_trace, recent_path, trace_limit)
@@ -1430,19 +1520,19 @@ module ProfilerNative:
                     return report_protocol_error(current_summary)
                 current_stderr: darray[u8] = read_file(run_error_path)
                 if current_stderr.count > 0:
-                    if program_stderr.count > 0:
-                        program_stderr.push(10)
+                    if program_stderr.count > NATIVE_ZERO.usize():
+                        program_stderr.push(NATIVE_BYTE_NEWLINE)
                     program_stderr.extend(current_stderr)
                 merge_capture_summary(&summary, current_summary)
-                append_repetition_record(&repetition_records, repetition, requested_repetitions, run_result, current_summary, event_trace)
+                append_repetition_record(&repetition_records, repetition, requested_repetitions, run_result, current_summary, event_trace, recent_path)
                 all_execution_times.push(run_result.elapsed_ns)
                 completed_repetitions <- completed_repetitions + 1
-                if run_result.status == 0:
+                if run_result.status == NATIVE_ZERO:
                     successful_repetitions <- successful_repetitions + 1
                     measurement_execution_times.push(run_result.elapsed_ns)
                 else:
                     failed_repetitions <- failed_repetitions + 1
-                    overall_status <- run_result.status if overall_status == 0
+                    overall_status <- run_result.status if overall_status == NATIVE_ZERO
                 repetition <- repetition + 1
 
             metric_times: mutable darray[i64] = []
@@ -1451,17 +1541,17 @@ module ProfilerNative:
             else:
                 metric_times.extend(all_execution_times)
             sort_i64(metric_times)
-            total_execution_ns: mutable i64 = 0
+            total_execution_ns: mutable i64 = NATIVE_ZERO
             for index in 0..<metric_times.count |index, metric_times, total_execution_ns|:
                 total_execution_ns <- total_execution_ns + metric_times[index]
             execution_min_ns: i64 = metric_times[0]
             execution_max_ns: i64 = metric_times[metric_times.count - 1.usize()]
             execution_median_ns: i64 = metric_times[metric_times.count / 2.usize()]
             execution_mean_ns: i64 = total_execution_ns / metric_times.count.i64()
-            mean_millis: i64 = execution_mean_ns / 1000000
-            variance: mutable i64 = 0
+            mean_millis: i64 = execution_mean_ns / NATIVE_NANOS_PER_MILLISECOND
+            variance: mutable i64 = NATIVE_ZERO
             for index in 0..<metric_times.count |index, metric_times, variance, mean_millis|:
-                difference: i64 = metric_times[index] / 1000000 - mean_millis
+                difference: i64 = metric_times[index] / NATIVE_NANOS_PER_MILLISECOND - mean_millis
                 variance <- variance + difference * difference
             variance <- variance / metric_times.count.i64()
             execution_stdev_ms: i64 = integer_sqrt(variance)
@@ -1472,10 +1562,10 @@ module ProfilerNative:
             else:
                 append_report(report, source, compiler_root, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
             cleanup_temp(temporary)
-            if output.count > 0:
-                return 0 if write_file(output, report)
+            if output.count > NATIVE_ZERO.usize():
+                return NATIVE_ZERO if write_file(output, report)
                 return report_error("could not write native profile report")
-            _ = profiler_ffi_write(1, &report[0], report.count) can Console
+            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &report[0], report.count) can Console
             return final_exit_code
 
 
