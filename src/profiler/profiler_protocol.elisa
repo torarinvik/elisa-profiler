@@ -133,6 +133,16 @@ extend ProfilerNative:
                     valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_last)
             else:
                 valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
+            if valid:
+                interval_number: i64 = protocol_number_field(field_interval)
+                max_interval_number: i64 = protocol_number_field(field_max_interval)
+                valid <- max_interval_number <= interval_number
+                if kind_name == "function":
+                    inclusive_number: i64 = protocol_number_field(field_min)
+                    self_number: i64 = protocol_number_field(field_max)
+                    completed_number: i64 = protocol_number_field(field_sum)
+                    call_number: i64 = protocol_number_field(count_field)
+                    valid <- valid and self_number <= inclusive_number and completed_number <= call_number
             if not valid:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_LOCATION
@@ -246,6 +256,12 @@ extend ProfilerNative:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
                 return
+            call_number: i64 = protocol_number_field(calls_field)
+            completed_number: i64 = protocol_number_field(completed_field)
+            if completed_number > call_number:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
+                return
             append_record_separator(call_edge_records)
             append_text(call_edge_records, "{\"caller\":")
             append_json_string(call_edge_records, caller_field)
@@ -275,6 +291,12 @@ extend ProfilerNative:
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
                 return
             if stack_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(self_field):
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
+                return
+            call_number: i64 = protocol_number_field(calls_field)
+            completed_number: i64 = protocol_number_field(completed_field)
+            if completed_number > call_number:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
                 return
@@ -433,11 +455,20 @@ extend ProfilerNative:
             trace_prefix: sview = "ELISA_PROFILE\t1\ttrace\t"
             crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
-            while line_start < data.count |line_start, data, summary|:
+            line_count: mutable usize = NATIVE_ZERO.usize()
+            while line_start < data.count |line_start, line_count, data, summary|:
+                if line_count >= NATIVE_MAX_PROTOCOL_LINES:
+                    summary.malformed <- true
+                    summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                    break
+                line_count <- line_count + NATIVE_ONE.usize()
                 line_stop: mutable usize = line_start
                 while line_stop < data.count and data[line_stop] != NATIVE_BYTE_NEWLINE |line_stop, data|:
                     line_stop <- line_stop + NATIVE_ONE.usize()
-                if line_prefix(data, line_start, line_stop, meta_prefix):
+                if line_stop - line_start > NATIVE_MAX_PROTOCOL_LINE_BYTES:
+                    summary.malformed <- true
+                    summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
+                elif line_prefix(data, line_start, line_stop, meta_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(meta_prefix)
                     summary.events <- parse_protocol_number(data, &cursor, line_stop)
                     summary.locations <- parse_protocol_number(data, &cursor, line_stop)
