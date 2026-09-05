@@ -8,15 +8,16 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-2ba0a27 fix: integrate compiler correctness fixes for profiler
+583c492 merge: sync latest compiler fixes into profiler worktree
 ```
 
-That commit contains the reviewed source and regression-test deltas found in the
-compiler worktrees during the profiler setup. The dedicated compiler branch also
-contains the previously committed profiler-facing CLI fix (`770ec6f`) and the
-complete committed ancestry of the local compiler branches. `make compiler-audit`
-is the repeatable check that every local branch tip remains an ancestor of the
-dedicated compiler branch.
+That merge contains the reviewed source and regression-test deltas found in the
+compiler worktrees during the profiler setup, plus the later qualified-module
+error-call lowering fix from `codex/wasm-sdk` (`22a0744`). The dedicated compiler
+branch also contains the previously committed profiler-facing CLI fix (`770ec6f`)
+and the complete committed ancestry of the local compiler branches. `make
+compiler-audit` is the repeatable check that every local branch tip remains an
+ancestor of the dedicated compiler branch.
 
 ## Imported changes
 
@@ -32,6 +33,9 @@ mutating their original worktrees:
 - The transpiler stage1 worktree: module code generation, packed-register and type
   table code generation, machine-statement and aggregate-type parsing, and breadth
   object-emission coverage.
+- The wasm SDK compiler branch: qualified module error-call lowering and its
+  parity/reproduction fixtures, merged as committed source rather than copied
+  over the sibling worktree.
 
 The other audited worktrees were inspected as well. Worktrees whose only delta was
 `.DS_Store` were not imported; the Neural Workshop worktree had no compiler source
