@@ -1992,6 +1992,7 @@ def build_comparison_report(
         "events": "summary",
         "dropped_events": "summary",
         "stack_overflow_entries": "summary",
+        "trace_events_omitted": "summary",
     }
     profile_metric_names = {"dropped_events": "dropped"}
     metrics = {
@@ -2153,6 +2154,7 @@ def build_comparison_report(
     quality_metric_messages = {
         "dropped_events": "candidate profile dropped trace events",
         "stack_overflow_entries": "candidate profile exceeded the tracked call-stack depth",
+        "trace_events_omitted": "candidate profile omitted full event-trace events",
     }
     for metric_name, message in quality_metric_messages.items():
         metric = metrics[metric_name]
@@ -2292,6 +2294,7 @@ def build_comparison_report(
     quality_descriptions = (
         ("dropped_events", "dropped trace events"),
         ("stack_overflow_entries", "call-stack overflow entries"),
+        ("trace_events_omitted", "omitted full event-trace events"),
     )
     for label, report in (("baseline", baseline), ("candidate", candidate)):
         summary = report.get("summary", {})
@@ -2428,6 +2431,7 @@ def comparison_text(report: dict[str, Any], top: int) -> str:
         f"  events: {comparison_metric_text(report['metrics']['events'])}",
         f"  dropped trace events: {comparison_metric_text(report['metrics']['dropped_events'])}",
         f"  stack overflow entries: {comparison_metric_text(report['metrics']['stack_overflow_entries'])}",
+        f"  omitted full event-trace events: {comparison_metric_text(report['metrics']['trace_events_omitted'])}",
         "",
         f"Function changes (top {min(top, len(report['functions']))}):",
     ]
@@ -2500,6 +2504,7 @@ def comparison_html(report: dict[str, Any], top: int) -> str:
         ["Events", comparison_metric_text(report["metrics"]["events"])],
         ["Dropped trace events", comparison_metric_text(report["metrics"]["dropped_events"])],
         ["Stack overflow entries", comparison_metric_text(report["metrics"]["stack_overflow_entries"])],
+        ["Omitted full event-trace events", comparison_metric_text(report["metrics"]["trace_events_omitted"])],
     ]
     function_rows = [
         [

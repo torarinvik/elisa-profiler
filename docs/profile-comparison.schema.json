@@ -34,7 +34,8 @@
         "peak_rss_bytes",
         "events",
         "dropped_events",
-        "stack_overflow_entries"
+        "stack_overflow_entries",
+        "trace_events_omitted"
       ],
       "properties": {
         "execution_ms_mean": { "$ref": "#/$defs/metric" },
@@ -43,7 +44,8 @@
         "peak_rss_bytes": { "$ref": "#/$defs/metric" },
         "events": { "$ref": "#/$defs/metric" },
         "dropped_events": { "$ref": "#/$defs/metric" },
-        "stack_overflow_entries": { "$ref": "#/$defs/metric" }
+        "stack_overflow_entries": { "$ref": "#/$defs/metric" },
+        "trace_events_omitted": { "$ref": "#/$defs/metric" }
       },
       "additionalProperties": true
     },
