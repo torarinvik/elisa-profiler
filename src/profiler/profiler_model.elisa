@@ -132,6 +132,7 @@ module ProfilerNative:
         const NATIVE_PROTOCOL_ERROR_CALL: i64 = 2
         const NATIVE_PROTOCOL_ERROR_STACK: i64 = 3
         const NATIVE_PROTOCOL_ERROR_EVENT: i64 = 4
+        const NATIVE_PROTOCOL_ERROR_META: i64 = 5
 
         struct TargetRunResult:
             status: i64

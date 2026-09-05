@@ -663,8 +663,12 @@ extend ProfilerNative:
 
         def protocol_unsigned(value: darray[u8]&) -> bool can[Abort.Panic]:
             false return if value.count == NATIVE_ZERO.usize()
-            for index in 0..<value.count |value|:
+            parsed: mutable i64 = NATIVE_ZERO
+            for index in 0..<value.count |value, parsed|:
                 false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (value[index] - NATIVE_BYTE_ASCII_ZERO).i64()
+                false return if parsed > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                parsed <- parsed * NATIVE_DECIMAL_BASE + digit
             return true
 
 
@@ -672,11 +676,18 @@ extend ProfilerNative:
             return true if allow_overflow and protocol_field_is(value, "overflow")
             false return if value.count == NATIVE_ZERO.usize()
             start: mutable usize = NATIVE_ZERO.usize()
+            negative: mutable bool = false
             if value[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS:
+                negative <- true
                 start <- NATIVE_ONE.usize()
             false return if start == value.count
-            for index in start..<value.count |value|:
+            parsed: mutable i64 = NATIVE_ZERO
+            for index in start..<value.count |value, parsed, negative|:
                 false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (value[index] - NATIVE_BYTE_ASCII_ZERO).i64()
+                permits_signed_minimum: bool = negative and index + NATIVE_ONE.usize() == value.count and parsed == NATIVE_I64_MAX / NATIVE_DECIMAL_BASE and digit == NATIVE_ONE + NATIVE_I64_MAX % NATIVE_DECIMAL_BASE
+                false return if parsed > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE and not permits_signed_minimum
+                parsed <- parsed * NATIVE_DECIMAL_BASE + digit if not permits_signed_minimum
             return true
 
 
@@ -692,7 +703,8 @@ extend ProfilerNative:
             records.extend(value)
 
 
-        def protocol_number_field(value: darray[u8]&) -> i64:
+        def protocol_number_field(value: darray[u8]&) -> i64 can[Abort.Panic]:
+            return NATIVE_NEGATIVE_ONE if not protocol_unsigned(value)
             result: mutable i64 = NATIVE_ZERO
             for index in 0..<value.count |result, value|:
                 result <- result * NATIVE_DECIMAL_BASE + (value[index] - NATIVE_BYTE_ASCII_ZERO).i64()
@@ -967,12 +979,21 @@ extend ProfilerNative:
 
         def parse_protocol_number(data: darray[u8]&, cursor: mutable usize&, stop: usize) -> i64:
             value: mutable i64 = NATIVE_ZERO
+            valid: mutable bool = true
+            digits: mutable usize = NATIVE_ZERO.usize()
             position: mutable usize = cursor
-            while position < stop and data[position] >= NATIVE_BYTE_ASCII_ZERO and data[position] <= NATIVE_BYTE_ASCII_NINE |position, value, data|:
-                value <- value * NATIVE_DECIMAL_BASE + (data[position] - NATIVE_BYTE_ASCII_ZERO).i64()
+            while position < stop and data[position] != NATIVE_BYTE_TAB |position, value, valid, digits, data|:
+                if data[position] < NATIVE_BYTE_ASCII_ZERO or data[position] > NATIVE_BYTE_ASCII_NINE:
+                    valid <- false
+                elif valid:
+                    digit: i64 = (data[position] - NATIVE_BYTE_ASCII_ZERO).i64()
+                    valid <- false if value > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                    value <- value * NATIVE_DECIMAL_BASE + digit if valid
+                digits <- digits + NATIVE_ONE.usize()
                 position <- position + NATIVE_ONE.usize()
             position <- position + NATIVE_ONE.usize() if position < stop and data[position] == NATIVE_BYTE_TAB
             cursor <- position
+            return NATIVE_NEGATIVE_ONE if not valid or digits == NATIVE_ZERO.usize()
             return value
         
         
@@ -1042,15 +1063,24 @@ extend ProfilerNative:
                         summary.capture_byte_limit <- parse_protocol_number(data, &cursor, line_stop)
                         summary.capture_bytes_used <- parse_protocol_number(data, &cursor, line_stop)
                         summary.capture_bytes_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                    if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                 elif line_prefix(data, line_start, line_stop, trace_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(trace_prefix)
                     summary.trace_enabled <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_captured <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_omitted <- parse_protocol_number(data, &cursor, line_stop)
                     summary.trace_limit <- parse_protocol_number(data, &cursor, line_stop)
+                    if summary.trace_enabled < NATIVE_ZERO or summary.trace_captured < NATIVE_ZERO or summary.trace_omitted < NATIVE_ZERO or summary.trace_limit < NATIVE_ZERO:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                 elif line_prefix(data, line_start, line_stop, crash_prefix):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len(crash_prefix)
                     summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
+                    if summary.crash_signal < NATIVE_ZERO:
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                 elif line_prefix(data, line_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
                     cursor: mutable usize = line_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
                     append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source)
