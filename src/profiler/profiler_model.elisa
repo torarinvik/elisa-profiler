@@ -45,6 +45,11 @@ module ProfilerNative:
         const NATIVE_MAX_FILE_BYTES: usize = 134217728
         const NATIVE_MAX_PROTOCOL_LINE_BYTES: usize = 1048576
         const NATIVE_MAX_PROTOCOL_LINES: usize = 10000000
+        const NATIVE_MAX_PROTOCOL_FRAME_BYTES: usize = 1048576
+        const NATIVE_MAX_PROTOCOL_FRAMES: i64 = 1000000
+        const NATIVE_MAX_PROTOCOL_DETAIL_RECORDS: i64 = 1000000
+        const NATIVE_MAX_PROTOCOL_EVENT_RECORDS: i64 = 1000000
+        const NATIVE_MAX_PROTOCOL_THREAD_RECORDS: i64 = 1000000
         const NATIVE_UNAME_BUFFER_BYTES: usize = 4096
         const NATIVE_LINUX_RSS_UNIT_BYTES: i64 = 1024
         const NATIVE_SHA256_BLOCK_BYTES: usize = 64
@@ -193,6 +198,7 @@ module ProfilerNative:
             function_record_count: mutable i64
             call_edge_record_count: mutable i64
             stack_record_count: mutable i64
+            event_record_count: mutable i64
             thread_loss_record_count: mutable i64
             dropped: mutable i64
             max_stack_depth: mutable i64

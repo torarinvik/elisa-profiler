@@ -43,6 +43,16 @@ transport. `valid_bytes` is the end of the last checksum-validated frame,
 file size at the last manifest update. A partial file may extend past
 `valid_bytes`; recovery must never parse beyond the validated boundary.
 
+Native readers also apply fixed safety limits before normalizing records: each
+protocol line and framed payload is at most 1 MiB, a capture contains at most
+one million validated frames, each detail array contains at most one million
+records, and thread-loss/event detail has its own one-million-record bound.
+These are parser safety limits, not measurement limits advertised to a target;
+the collector's configured detail and byte budgets remain the authoritative
+quality controls for a valid capture. A complete capture that exceeds a reader
+limit is rejected as malformed, while recovery may stop at a final truncated
+tail after the last validated frame.
+
 ## Units and clocks
 
 - `events`, `locations`, `statement_events`, `value_events`, and

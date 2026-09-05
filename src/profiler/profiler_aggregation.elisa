@@ -16,6 +16,7 @@ extend ProfilerNative:
                 function_record_count: NATIVE_ZERO,
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
+                event_record_count: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
@@ -62,6 +63,7 @@ extend ProfilerNative:
             destination.function_record_count <- destination.function_record_count + incoming.function_record_count
             destination.call_edge_record_count <- destination.call_edge_record_count + incoming.call_edge_record_count
             destination.stack_record_count <- destination.stack_record_count + incoming.stack_record_count
+            destination.event_record_count <- destination.event_record_count + incoming.event_record_count
             destination.thread_loss_record_count <- destination.thread_loss_record_count + incoming.thread_loss_record_count
             destination.dropped <- destination.dropped + incoming.dropped
             destination.max_stack_depth <- incoming.max_stack_depth if incoming.max_stack_depth > destination.max_stack_depth

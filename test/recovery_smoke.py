@@ -13,13 +13,15 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "docs" / "profile.schema.json"
+MAX_NATIVE_PROTOCOL_FRAME_BYTES = 1024 * 1024
 
 
-def frame(sequence: int, payload: bytes) -> bytes:
+def frame(sequence: int, payload: bytes, declared_length: int | None = None) -> bytes:
     checksum = 14695981039346656037
     for byte in payload:
         checksum = ((checksum ^ byte) * 1099511628211) & ((1 << 64) - 1)
-    header = f"ELISA_PROFILE\t1\tframe\t{sequence}\t{len(payload)}\t{checksum}\t".encode()
+    length = len(payload) if declared_length is None else declared_length
+    header = f"ELISA_PROFILE\t1\tframe\t{sequence}\t{length}\t{checksum}\t".encode()
     return header + payload + b"\n"
 
 
@@ -92,6 +94,23 @@ def main() -> int:
         )
         assert legacy_process.returncode == 0, (legacy_process.returncode, legacy_process.stdout, legacy_process.stderr)
         assert json.loads(legacy_output.read_text(encoding="utf-8"))["run"]["collection_mode"] == "full"
+        oversized_capture = work / "oversized-frame.txt"
+        oversized_capture.write_bytes(
+            complete
+            + frame(2, b"ELISA_PROFILE\t1\tend\t1", MAX_NATIVE_PROTOCOL_FRAME_BYTES + 1)
+            + frame(3, b"ELISA_PROFILE\t1\tend\t1")
+        )
+        oversized_manifest = work / "oversized-frame.manifest.json"
+        oversized_payload = dict(manifest_payload)
+        oversized_payload["capture_path"] = str(oversized_capture)
+        oversized_manifest.write_text(json.dumps(oversized_payload), encoding="utf-8")
+        oversized_process = subprocess.run(
+            [str(native), "recover", str(oversized_manifest), "--format", "json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert oversized_process.returncode != 0, "recovery accepted an oversized framed payload"
     print("recovery smoke OK")
     return 0
 

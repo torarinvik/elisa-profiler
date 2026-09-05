@@ -370,9 +370,11 @@ extend ProfilerNative:
             return false if array_stop < NATIVE_ZERO
             cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
             array_content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
-            while cursor < array_content_stop |cursor, array_content_stop, data, kind|:
+            record_count: mutable i64 = NATIVE_ZERO
+            while cursor < array_content_stop |cursor, array_content_stop, data, kind, record_count|:
                 cursor <- json_skip_whitespace(data, cursor, array_content_stop)
                 break if cursor >= array_content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if record_count >= NATIVE_MAX_PROTOCOL_DETAIL_RECORDS
                 return false if data[cursor] != NATIVE_BYTE_LEFT_BRACE
                 object_stop: i64 = json_object_end(data, cursor, array_content_stop)
                 return false if object_stop < NATIVE_ZERO
@@ -435,6 +437,7 @@ extend ProfilerNative:
                         return false if self_ns > inclusive_ns
                 else:
                     return false
+                record_count <- record_count + NATIVE_ONE
                 cursor <- object_stop.usize()
                 cursor <- json_skip_whitespace(data, cursor, array_content_stop)
                 if cursor < array_content_stop:
@@ -455,9 +458,11 @@ extend ProfilerNative:
             return false if thread_stop < NATIVE_ZERO
             cursor: mutable usize = thread_start.usize() + NATIVE_ONE.usize()
             content_stop: usize = thread_stop.usize() - NATIVE_ONE.usize()
-            while cursor < content_stop |cursor, content_stop, data|:
+            thread_record_count: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, content_stop, data, thread_record_count|:
                 cursor <- json_skip_whitespace(data, cursor, content_stop)
                 break if cursor >= content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if thread_record_count >= NATIVE_MAX_PROTOCOL_THREAD_RECORDS
                 return false if data[cursor] != NATIVE_BYTE_LEFT_BRACE
                 object_stop: i64 = json_object_end(data, cursor, content_stop)
                 return false if object_stop < NATIVE_ZERO
@@ -478,6 +483,7 @@ extend ProfilerNative:
                 return false if not json_read_number_field(data, "trace_dropped", cursor, object_stop.usize(), &trace_dropped)
                 return false if not json_read_number_field(data, "bytes_dropped", cursor, object_stop.usize(), &bytes_dropped)
                 return false if repetition < NATIVE_ZERO or repetition == NATIVE_ZERO and json_key_value_start(data, "repetition", cursor, object_stop.usize()) >= NATIVE_ZERO or thread_id < NATIVE_ZERO or events < NATIVE_ZERO or location_dropped < NATIVE_ZERO or call_edge_dropped < NATIVE_ZERO or stack_dropped < NATIVE_ZERO or trace_dropped < NATIVE_ZERO or bytes_dropped < NATIVE_ZERO
+                thread_record_count <- thread_record_count + NATIVE_ONE
                 cursor <- object_stop.usize()
                 cursor <- json_skip_whitespace(data, cursor, content_stop)
                 if cursor < content_stop:

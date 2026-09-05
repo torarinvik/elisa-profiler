@@ -97,6 +97,13 @@ extend ProfilerNative:
             records.extend(value)
 
 
+        def protocol_record_limit_reached(summary: mutable CaptureSummary&, count: i64, error_code: i64, limit: i64) -> bool:
+            return false if count < limit
+            summary.malformed <- true
+            summary.malformed_code <- error_code
+            return true
+
+
         def protocol_number_field(value: darray[u8]&) -> i64 can[Abort.Panic]:
             return NATIVE_NEGATIVE_ONE if not protocol_unsigned(value)
             result: mutable i64 = NATIVE_ZERO
@@ -106,6 +113,7 @@ extend ProfilerNative:
 
 
         def append_location_record(summary: mutable CaptureSummary&, location_records: mutable darray[u8]&, function_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.location_record_count, NATIVE_PROTOCOL_ERROR_LOCATION, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             kind_field: mutable darray[u8] = []
             function_field: mutable darray[u8] = []
             line_field: mutable darray[u8] = []
@@ -264,6 +272,7 @@ extend ProfilerNative:
 
 
         def append_call_record(summary: mutable CaptureSummary&, call_edge_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.call_edge_record_count, NATIVE_PROTOCOL_ERROR_CALL, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             caller_field: mutable darray[u8] = []
             callee_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
@@ -304,6 +313,7 @@ extend ProfilerNative:
 
 
         def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.stack_record_count, NATIVE_PROTOCOL_ERROR_STACK, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             stack_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
             completed_field: mutable darray[u8] = []
@@ -348,6 +358,7 @@ extend ProfilerNative:
 
 
         def append_event_record(summary: mutable CaptureSummary&, event_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.event_record_count, NATIVE_PROTOCOL_ERROR_EVENT, NATIVE_MAX_PROTOCOL_EVENT_RECORDS)
             sequence_field: mutable darray[u8] = []
             kind_field: mutable darray[u8] = []
             function_field: mutable darray[u8] = []
@@ -411,9 +422,11 @@ extend ProfilerNative:
             append_json_string(event_records, source)
             append_text(event_records, ",\"source_text\":null")
             append_text(event_records, "}")
+            summary.event_record_count <- summary.event_record_count + NATIVE_ONE
 
 
         def append_thread_loss_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.thread_loss_record_count, NATIVE_PROTOCOL_ERROR_THREAD, NATIVE_MAX_PROTOCOL_THREAD_RECORDS)
             thread_id: mutable darray[u8] = []
             events: mutable darray[u8] = []
             location_dropped: mutable darray[u8] = []
@@ -485,6 +498,7 @@ extend ProfilerNative:
                 function_record_count: NATIVE_ZERO,
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
+                event_record_count: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
@@ -561,15 +575,20 @@ extend ProfilerNative:
                         checksum_field: mutable darray[u8] = []
                         frame_cursor <- protocol_field_into(data, frame_cursor, line_stop, &checksum_field)
                         frame_valid <- frame_sequence == next_frame_sequence and frame_sequence >= NATIVE_ZERO
-                        frame_valid <- frame_valid and frame_length >= NATIVE_ZERO and frame_cursor <= line_stop
+                        frame_valid <- frame_valid and frame_length >= NATIVE_ZERO and frame_length <= NATIVE_MAX_PROTOCOL_FRAME_BYTES.i64() and frame_cursor <= line_stop
                         frame_valid <- frame_valid and protocol_unsigned_u64(checksum_field)
                         frame_valid <- frame_valid and frame_length == (line_stop - frame_cursor).i64()
                         frame_valid <- frame_valid and frame_checksum(data, frame_cursor, line_stop) == protocol_u64_number_field(checksum_field)
                         if frame_valid:
-                            record_start <- frame_cursor
-                            next_frame_sequence <- next_frame_sequence + NATIVE_ONE
-                            summary.valid_frames <- summary.valid_frames + NATIVE_ONE
-                            summary.valid_capture_bytes <- (line_stop + (NATIVE_ONE.usize() if line_stop < data.count else NATIVE_ZERO.usize())).i64()
+                            if summary.valid_frames >= NATIVE_MAX_PROTOCOL_FRAMES:
+                                summary.malformed <- true
+                                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
+                                frame_valid <- false
+                            else:
+                                record_start <- frame_cursor
+                                next_frame_sequence <- next_frame_sequence + NATIVE_ONE
+                                summary.valid_frames <- summary.valid_frames + NATIVE_ONE
+                                summary.valid_capture_bytes <- (line_stop + (NATIVE_ONE.usize() if line_stop < data.count else NATIVE_ZERO.usize())).i64()
                         else:
                             truncated_tail: bool = allow_partial_tail and line_stop == data.count and line_stop > line_start
                             if truncated_tail:
