@@ -215,6 +215,7 @@ def main():
         assert all(
             set(record)
             == {
+                "repetition",
                 "thread_id",
                 "events",
                 "location_dropped",
@@ -226,6 +227,7 @@ def main():
             for record in measured["thread_loss"]
         )
         assert all(record["events"] > 0 for record in measured["thread_loss"])
+        assert {record["repetition"] for record in measured["thread_loss"]} == {1, 2}
         assert all(item["detail_records"]["locations"] >= item["detail_records"]["functions"] for item in repetitions)
         assert all(item["cpu_user_ms"] is not None for item in repetitions)
         assert all(item["cpu_system_ms"] is not None for item in repetitions)
@@ -252,6 +254,7 @@ def main():
         threaded = json.loads(threaded_output.read_text(encoding="utf-8"))
         assert threaded["summary"]["thread_count"] >= 3
         assert len(threaded["thread_loss"]) >= 3
+        assert all(record["repetition"] == 1 for record in threaded["thread_loss"])
         assert all(record["events"] > 0 for record in threaded["thread_loss"])
         assert any(function["function"] == "worker" for function in threaded["functions"])
         assert b"thread loss records: present" in run("report", threaded_output, "--format", "text")

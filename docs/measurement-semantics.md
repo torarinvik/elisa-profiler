@@ -140,7 +140,8 @@ functions, caller-to-callee edges, and stack paths. These are evidence counts
 for that run, not independent statistical samples; a lower count must be
 interpreted with the repetition's drop, overflow, and completeness fields.
 When native collection is enabled, `thread_loss` records the event count and
-loss counters for each profiler thread. `location_dropped`,
+loss counters for each profiler thread. `repetition` identifies the target
+run because collector thread IDs are local to a capture. `location_dropped`,
 `call_edge_dropped`, and `stack_dropped` identify bounded-detail loss;
 `trace_dropped` and `bytes_dropped` identify omitted event-trace records. A
 thread record is diagnostic evidence, not a replacement for aggregate counters.

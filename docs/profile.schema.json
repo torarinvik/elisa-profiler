@@ -486,6 +486,7 @@
       "type": "object",
       "required": ["thread_id", "events", "location_dropped", "call_edge_dropped", "stack_dropped", "trace_dropped", "bytes_dropped"],
       "properties": {
+        "repetition": { "type": "integer", "minimum": 1 },
         "thread_id": { "type": "integer", "minimum": 0 },
         "events": { "type": "integer", "minimum": 0 },
         "location_dropped": { "type": "integer", "minimum": 0 },

@@ -413,7 +413,7 @@ extend ProfilerNative:
             append_text(event_records, "}")
 
 
-        def append_thread_loss_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_thread_loss_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             thread_id: mutable darray[u8] = []
             events: mutable darray[u8] = []
             location_dropped: mutable darray[u8] = []
@@ -434,7 +434,9 @@ extend ProfilerNative:
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_THREAD
                 return
             append_record_separator(records)
-            append_text(records, "{\"thread_id\":")
+            append_text(records, "{\"repetition\":")
+            append_i64(records, repetition)
+            append_text(records, ",\"thread_id\":")
             append_protocol_number(records, thread_id)
             append_text(records, ",\"events\":")
             append_protocol_number(records, events)
@@ -472,7 +474,7 @@ extend ProfilerNative:
             return value
         
         
-        def parse_capture(data: darray[u8]&, source: darray[u8]&, allow_partial_tail: bool) -> CaptureSummary:
+        def parse_capture(data: darray[u8]&, source: darray[u8]&, allow_partial_tail: bool, repetition: i64) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
@@ -637,7 +639,7 @@ extend ProfilerNative:
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     elif frame_valid and line_prefix(data, record_start, line_stop, thread_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(thread_prefix)
-                        append_thread_loss_record(&summary, &thread_loss_records, data, &cursor, line_stop)
+                        append_thread_loss_record(&summary, &thread_loss_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, crash_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(crash_prefix)
                         summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
