@@ -590,7 +590,7 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
             append_i64(buffer, summary.thread_count)
             append_text(buffer, "</dd></div></dl>")
-            append_html_section(buffer, "Functions", summary.function_records)
+            append_html_function_browser(buffer, summary.function_records)
             append_html_section(buffer, "Call edges", summary.call_edge_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
             append_html_section(buffer, "Locations", summary.location_records)

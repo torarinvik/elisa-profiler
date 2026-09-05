@@ -167,6 +167,17 @@ extend ProfilerNative:
             return true
 
 
+        # The browser view keeps metric values as decimal strings until the UI
+        # sorts them with BigInt. JSON.parse would round i64 timings above
+        # JavaScript's safe-integer range, making a report visually incorrect.
+        # The small record scanner therefore extracts only the shallow scalar
+        # fields needed by this table and never converts metric text to Number.
+        def append_html_function_browser(buffer: mutable darray[u8]&, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<style>.panel{margin-top:1.25rem}.panel h2{margin-bottom:.5rem}.panel label{display:block;font-weight:650;margin-bottom:.25rem}.panel input{width:100%;box-sizing:border-box;padding:.55rem .7rem;border:1px solid #8c959f;border-radius:6px;font:inherit;background:inherit;color:inherit}.table-scroll{overflow:auto;margin-top:.75rem}.panel table{width:100%;border-collapse:collapse;min-width:42rem}.panel th,.panel td{padding:.5rem .65rem;border-bottom:1px solid #d8dee4;text-align:left;white-space:nowrap}.panel th{font-size:.8rem;color:#57606a}.panel td:not(:first-child){font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right}.panel details{margin-top:.75rem}</style><section class='panel' aria-labelledby='hotspots-title'><h2 id='hotspots-title'>Hotspots</h2><label for='function-filter'>Filter functions</label><input id='function-filter' type='search' autocomplete='off' placeholder='name or percentage'><p id='function-status' role='status' aria-live='polite'></p><div class='table-scroll'><table><thead><tr><th scope='col'>Function</th><th scope='col'>Inclusive</th><th scope='col'>Self</th><th scope='col'>Calls</th><th scope='col'>Share</th></tr></thead><tbody id='function-rows'></tbody></table></div><details><summary>Raw function records</summary><pre id='function-records' hidden>")
+            append_html_escaped(buffer, records)
+            append_text(buffer, "</pre></details></section><script>(function(){'use strict';const raw=document.getElementById('function-records');const body=document.getElementById('function-rows');const filter=document.getElementById('function-filter');const status=document.getElementById('function-status');const quote=String.fromCharCode(34);const maxRows=200;function objects(text){const result=[];let start=-1,depth=0,inString=false,escaped=false;for(let index=0;index<text.length;index+=1){const byte=text.charAt(index);if(inString){if(escaped){escaped=false;}else if(byte===String.fromCharCode(92)){escaped=true;}else if(byte===quote){inString=false;}continue;}if(byte===quote){inString=true;}else if(byte==='{'){if(depth===0){start=index;}depth+=1;}else if(byte==='}'){depth-=1;if(depth===0&&start>=0){result.push(text.slice(start,index+1));start=-1;}}}return result;}function field(record,name){const marker=quote+name+quote+':';const start=record.indexOf(marker);if(start<0){return '';}let cursor=start+marker.length;while(cursor<record.length&&(record.charAt(cursor)===' '||record.charCodeAt(cursor)===9)){cursor+=1;}if(record.charAt(cursor)===quote){let end=cursor+1,escaped=false;for(;end<record.length;end+=1){const byte=record.charAt(end);if(escaped){escaped=false;}else if(byte===String.fromCharCode(92)){escaped=true;}else if(byte===quote){break;}}try{return JSON.parse(record.slice(cursor,end+1));}catch(_error){return '';}}let end=cursor;while(end<record.length&&((record.charCodeAt(end)>=48&&record.charCodeAt(end)<=57)||record.charAt(end)==='-')){end+=1;}return record.slice(cursor,end);}function magnitude(value){try{return BigInt(value||'0');}catch(_error){return BigInt(0);}}function render(){const query=(filter.value||'').toLowerCase();const rows=objects(raw.textContent||'').map(function(record){return{name:field(record,'function'),inclusive:field(record,'inclusive_ns'),self:field(record,'self_ns'),calls:field(record,'completed_calls'),share:field(record,'inclusive_percent')};}).filter(function(row){return row.name.toLowerCase().includes(query);}).sort(function(left,right){const a=magnitude(left.inclusive),b=magnitude(right.inclusive);return a===b?left.name.localeCompare(right.name):(a>b?-1:1);});body.replaceChildren();rows.slice(0,maxRows).forEach(function(row){const line=document.createElement('tr');[row.name,row.inclusive+' ns',row.self+' ns',row.calls,row.share+'%'].forEach(function(value){const cell=document.createElement('td');cell.textContent=value;line.appendChild(cell);});body.appendChild(line);});status.textContent=rows.length+' function'+(rows.length===1?'':'s')+' shown'+(rows.length>maxRows?' (first '+maxRows+')':'');}filter.addEventListener('input',render);render();}());</script>")
+
+
         def append_offline_html_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             source: mutable darray[u8] = []
             source_start: i64 = json_source_value_start(data)
@@ -192,6 +203,13 @@ extend ProfilerNative:
             return false if not json_read_location_timing(data, &timing)
             folded: mutable darray[u8] = []
             return false if not json_read_stacks_to_folded(data, &folded, timing)
+            functions_start: i64 = json_key_value_start(data, "functions", NATIVE_ZERO.usize(), data.count)
+            return false if functions_start < NATIVE_ZERO or data[functions_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            functions_stop: i64 = json_array_end(data, functions_start.usize(), data.count)
+            return false if functions_stop < NATIVE_ZERO
+            functions: mutable darray[u8] = []
+            for index in functions_start.usize()..<functions_stop.usize() |functions, data|:
+                functions.push(data[index])
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa offline renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
@@ -205,6 +223,7 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
             append_i64(buffer, thread_count)
             append_text(buffer, "</dd></div></dl>")
+            append_html_function_browser(buffer, functions)
             append_html_section(buffer, "Folded stacks", folded)
             append_text(buffer, "</main></body></html>\n")
             return true
