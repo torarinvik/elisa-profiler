@@ -173,6 +173,28 @@
     },
     "active_stack": { "$ref": "#/$defs/active_stack" },
     "program_stderr": { "type": "string" },
+    "workload": {
+      "type": "object",
+      "properties": {
+        "source_sha256": { "type": ["string", "null"] },
+        "source_size_bytes": { "type": "integer", "minimum": 0 },
+        "working_directory": { "type": "string" },
+        "stdin": {
+          "type": ["object", "null"],
+          "properties": {
+            "path": { "type": "string" },
+            "sha256": { "type": ["string", "null"] },
+            "size_bytes": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": true
+        },
+        "environment_override_keys": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
     "artifacts": { "type": "object", "additionalProperties": true }
   },
   "$defs": {

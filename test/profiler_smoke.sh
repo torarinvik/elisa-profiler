@@ -6,7 +6,9 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
-    --warmup 1 --repeat 2 --location-timing --recent-path --format json --output "$WORK/report.json"
+    --warmup 1 --repeat 2 --location-timing --recent-path \
+    --cwd "$ROOT" --stdin "$ROOT/README.md" --env ELISA_PROFILER_SMOKE=1 \
+    --format json --output "$WORK/report.json"
 test -s "$WORK/report.json"
 "$ROOT/scripts/elisa-profiler" doctor --json > "$WORK/doctor.json"
 python3 - "$WORK/doctor.json" <<'PY'
@@ -111,7 +113,9 @@ grep -q 'run 2' "$WORK/hot-loop.html"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
     --repeat 2 --location-timing --format text --output "$WORK/timing.txt"
 "$ROOT/scripts/elisa-profiler" profile "$ROOT/examples/hot_loop.elisa" \
-    --opt-level 2 --repeat 2 --location-timing --format json --output "$WORK/o2-report.json"
+    --opt-level 2 --repeat 2 --location-timing \
+    --cwd "$ROOT" --stdin "$ROOT/README.md" --env ELISA_PROFILER_SMOKE=1 \
+    --format json --output "$WORK/o2-report.json"
 "$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
     --format text --top 3 --output "$WORK/comparison.txt"
 "$ROOT/scripts/elisa-profiler" compare "$WORK/report.json" "$WORK/o2-report.json" \
@@ -191,7 +195,7 @@ test -s "$WORK/threaded-report.json"
     --location-timing --timing-clock cpu --format json --output "$WORK/threaded-cpu-report.json"
 test -s "$WORK/threaded-cpu-report.json"
 
-python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" <<'PY'
+python3 - "$WORK/report.json" "$WORK/included-report.json" "$WORK/signed-report.json" "$WORK/recursive-report.json" "$WORK/deep-recursion-report.json" "$ROOT/examples/included_program.elisa" "$ROOT/examples/included_helper.elisa" "$ROOT" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -206,6 +210,10 @@ assert report["compiler"]["runtime_object_sha256"]
 assert report["compiler"]["status_sha256"]
 assert report["compiler"]["runtime_build"]["present"] is True
 assert report["compiler"]["runtime_build"]["fingerprint"]["format"] == 1
+assert report["workload"]["working_directory"] == str(Path(sys.argv[8]).resolve())
+assert report["workload"]["stdin"]["size_bytes"] > 0
+assert report["workload"]["stdin"]["sha256"]
+assert report["workload"]["environment_override_keys"] == ["ELISA_PROFILER_SMOKE"]
 assert report["summary"]["dropped"] == 0
 assert report["summary"]["max_stack_depth"] == 2
 assert report["summary"]["stack_overflow_entries"] == 0

@@ -149,6 +149,9 @@ Useful controls:
     --event-trace          include every trace event in each measured JSON run
     --max-event-trace-events N  cap full-trace records per run (0 means unlimited)
     --compiler-root PATH   use another isolated compiler worktree
+    --cwd PATH             run the target from PATH
+    --stdin PATH           provide PATH as target standard input
+    --env KEY=VALUE        set a target environment variable (repeatable)
     --rebuild-runtime      rebuild the selected compiler runtime object
     --keep-temp            retain generated objects and the linked executable
 

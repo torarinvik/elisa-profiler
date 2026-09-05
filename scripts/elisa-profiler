@@ -134,6 +134,8 @@ def execute_program(
     resource_path: Path | None = None,
     env: dict[str, str] | None = None,
     profile_path: Path | None = None,
+    cwd: Path | None = None,
+    stdin_path: Path | None = None,
 ) -> tuple[int, bytes, bytes, bool, dict[str, float | int]]:
     command = [str(executable_path)]
     if resource_path is not None:
@@ -147,6 +149,7 @@ def execute_program(
     child_env = os.environ.copy() if env is None else env.copy()
     child_env.pop("ELISA_PROFILE_FD", None)
     profile_handle = None
+    stdin_handle = None
     pass_fds: tuple[int, ...] = ()
     try:
         if profile_path is not None and os.name == "posix":
@@ -154,9 +157,13 @@ def execute_program(
             profile_fd = profile_handle.fileno()
             child_env["ELISA_PROFILE_FD"] = str(profile_fd)
             pass_fds = (profile_fd,)
+        if stdin_path is not None:
+            stdin_handle = stdin_path.open("rb")
         process = subprocess.Popen(
             command,
             env=child_env,
+            cwd=str(cwd) if cwd is not None else None,
+            stdin=stdin_handle,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=os.name == "posix",
@@ -177,6 +184,8 @@ def execute_program(
     finally:
         if profile_handle is not None:
             profile_handle.close()
+        if stdin_handle is not None:
+            stdin_handle.close()
 
 
 def child_cpu_usage() -> tuple[float, float] | None:
@@ -1552,6 +1561,36 @@ def validate_profile_string(value: Any, path: Path, field: str, *, allow_null: b
 def validate_profile_report(report: dict[str, Any], path: Path) -> None:
     if not isinstance(report.get("source"), str):
         invalid_profile_field(path, "source", "a string")
+    workload = report.get("workload")
+    if workload is not None:
+        if not isinstance(workload, dict):
+            invalid_profile_field(path, "workload", "an object")
+        for field in ("source_sha256", "working_directory"):
+            if field in workload:
+                validate_profile_string(
+                    workload[field], path, f"workload.{field}", allow_null=field == "source_sha256"
+                )
+        if "source_size_bytes" in workload:
+            validate_profile_nonnegative_integer(
+                workload["source_size_bytes"], path, "workload.source_size_bytes", allow_null=False
+            )
+        if "environment_override_keys" in workload:
+            keys = workload["environment_override_keys"]
+            if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+                invalid_profile_field(path, "workload.environment_override_keys", "an array of strings")
+        stdin = workload.get("stdin")
+        if stdin is not None:
+            if not isinstance(stdin, dict):
+                invalid_profile_field(path, "workload.stdin", "an object or null")
+            for field in ("path", "sha256"):
+                if field in stdin:
+                    validate_profile_string(
+                        stdin[field], path, f"workload.stdin.{field}", allow_null=field == "sha256"
+                    )
+            if "size_bytes" in stdin:
+                validate_profile_nonnegative_integer(
+                    stdin["size_bytes"], path, "workload.stdin.size_bytes", allow_null=False
+                )
 
     compiler = report["compiler"]
     for field in (
@@ -1910,9 +1949,19 @@ def profile_run_failed(report: dict[str, Any]) -> bool:
 
 def comparison_identity(report: dict[str, Any], path: Path) -> dict[str, Any]:
     run = report["run"]
+    workload = report.get("workload", {})
+    if not isinstance(workload, dict):
+        workload = {}
+    stdin = workload.get("stdin")
+    if not isinstance(stdin, dict):
+        stdin = {}
     return {
         "path": str(path.resolve()),
         "source": report.get("source"),
+        "source_sha256": workload.get("source_sha256"),
+        "working_directory": workload.get("working_directory"),
+        "stdin_sha256": stdin.get("sha256"),
+        "environment_override_keys": workload.get("environment_override_keys", []),
         "compiler": report.get("compiler", {}),
         "opt_level": run.get("opt_level"),
         "location_timing": run.get("location_timing"),
@@ -2254,6 +2303,28 @@ def build_comparison_report(
                 )
     if baseline.get("source") != candidate.get("source"):
         warnings.append("baseline and candidate use different source paths")
+    baseline_workload = baseline.get("workload", {})
+    candidate_workload = candidate.get("workload", {})
+    if isinstance(baseline_workload, dict) and isinstance(candidate_workload, dict):
+        if (
+            baseline_workload.get("source_sha256") is not None
+            and candidate_workload.get("source_sha256") is not None
+            and baseline_workload.get("source_sha256")
+            != candidate_workload.get("source_sha256")
+        ):
+            warnings.append("baseline and candidate use different source contents")
+        if baseline_workload.get("working_directory") != candidate_workload.get("working_directory"):
+            if "working_directory" in baseline_workload and "working_directory" in candidate_workload:
+                warnings.append("baseline and candidate use different working directories")
+        baseline_stdin = baseline_workload.get("stdin")
+        candidate_stdin = candidate_workload.get("stdin")
+        if isinstance(baseline_stdin, dict) and isinstance(candidate_stdin, dict):
+            if baseline_stdin.get("sha256") != candidate_stdin.get("sha256"):
+                warnings.append("baseline and candidate use different stdin contents")
+        if baseline_workload.get("environment_override_keys") != candidate_workload.get(
+            "environment_override_keys"
+        ):
+            warnings.append("baseline and candidate use different environment overrides")
     if baseline["run"].get("location_timing") != candidate_run.get("location_timing"):
         warnings.append("baseline and candidate use different location-timing settings")
     if (
@@ -2599,6 +2670,7 @@ def build_report(
     timing_clock: str | None = None,
     event_trace_enabled: bool = False,
     trace_event_limit: int | None = None,
+    workload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_mapping = add_source_context(source, locations)
     add_source_context(source, recent_events)
@@ -2791,6 +2863,8 @@ def build_report(
         report["recent_events"] = recent_events
     if active_stack is not None:
         report["active_stack"] = active_stack
+    if workload is not None:
+        report["workload"] = workload
     if temp_root is not None:
         report["artifacts"] = {"build_directory": str(temp_root)}
     return report
@@ -2913,6 +2987,20 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=0, help="number of unreported executions before measuring")
     parser.add_argument("--timeout", type=float, help="maximum seconds per execution")
     parser.add_argument(
+        "--cwd", type=Path, help="working directory for the profiled program"
+    )
+    parser.add_argument(
+        "--stdin", dest="stdin_path", type=Path, help="file to provide as profiled-program stdin"
+    )
+    parser.add_argument(
+        "--env",
+        dest="environment",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="set a profiled-program environment variable (repeatable)",
+    )
+    parser.add_argument(
         "--location-timing",
         action="store_true",
         help="attribute time between trace events to source locations",
@@ -2964,15 +3052,32 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         parser.error("--warmup cannot be negative")
     if args.timeout is not None and (not math.isfinite(args.timeout) or args.timeout <= 0):
         parser.error("--timeout must be a finite positive number")
+    for assignment in args.environment:
+        if "=" not in assignment or not assignment.split("=", 1)[0]:
+            parser.error("--env must use KEY=VALUE")
     args.source = args.source.resolve()
     args.compiler_root = args.compiler_root.resolve()
     args.stage0_core = args.stage0_core.resolve()
+    if args.cwd is not None:
+        args.cwd = args.cwd.resolve()
+        if not args.cwd.is_dir():
+            parser.error(f"--cwd is not a directory: {args.cwd}")
+    if args.stdin_path is not None:
+        args.stdin_path = args.stdin_path.resolve()
+        if not args.stdin_path.is_file():
+            parser.error(f"--stdin file does not exist: {args.stdin_path}")
     if args.runtime_object is None:
         args.runtime_object = args.compiler_root / "build" / "runtime" / "elisacore_runtime.o"
     else:
         args.runtime_object = args.runtime_object.resolve()
     args.command = "profile"
     return args
+
+
+def apply_environment_overrides(environment: dict[str, str], assignments: list[str]) -> None:
+    for assignment in assignments:
+        key, value = assignment.split("=", 1)
+        environment[key] = value
 
 
 def profile(args: argparse.Namespace) -> int:
@@ -2993,6 +3098,13 @@ def profile(args: argparse.Namespace) -> int:
     env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = str(
         args.max_event_trace_events if args.event_trace else 0
     )
+    target_env = env.copy()
+    apply_environment_overrides(target_env, args.environment)
+    # Profiler control variables are owned by this invocation; an --env entry
+    # must not be able to redirect or disable collection accidentally.
+    target_env["ELISA_PROFILE_RECENT_PATH"] = env["ELISA_PROFILE_RECENT_PATH"]
+    target_env["ELISA_PROFILE_EVENT_TRACE"] = env["ELISA_PROFILE_EVENT_TRACE"]
+    target_env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = env["ELISA_PROFILE_EVENT_TRACE_LIMIT"]
     ensure_runtime(
         args.compiler_root,
         args.runtime_object,
@@ -3079,12 +3191,16 @@ def profile(args: argparse.Namespace) -> int:
         warmup_ms = 0.0
         for repetition in range(1, args.warmup + 1):
             warmup_start = time.perf_counter_ns()
-            warmup_env = env.copy()
+            warmup_env = target_env.copy()
             warmup_env["ELISA_PROFILE_RECENT_PATH"] = "0"
             warmup_env["ELISA_PROFILE_EVENT_TRACE"] = "0"
             warmup_env["ELISA_PROFILE_EVENT_TRACE_LIMIT"] = "0"
             warmup_status, _, _, warmup_timed_out, _ = execute_program(
-                executable_path, args.timeout, env=warmup_env
+                executable_path,
+                args.timeout,
+                env=warmup_env,
+                cwd=args.cwd,
+                stdin_path=args.stdin_path,
             )
             warmup_ms += (time.perf_counter_ns() - warmup_start) / 1_000_000
             if warmup_status != 0 or warmup_timed_out:
@@ -3120,8 +3236,10 @@ def profile(args: argparse.Namespace) -> int:
                 executable_path,
                 args.timeout,
                 resource_path,
-                env,
+                target_env,
                 profile_path=profile_path,
+                cwd=args.cwd,
+                stdin_path=args.stdin_path,
             )
             cpu_after = child_cpu_usage()
             cpu_delta = child_cpu_delta(cpu_before, cpu_after)
@@ -3236,6 +3354,22 @@ def profile(args: argparse.Namespace) -> int:
         else:
             exit_code = failed_run["exit_code"]
             signal = failed_run["signal"]
+        stdin_metadata: dict[str, Any] | None = None
+        if args.stdin_path is not None:
+            stdin_metadata = {
+                "path": str(args.stdin_path),
+                "sha256": file_sha256(args.stdin_path),
+                "size_bytes": args.stdin_path.stat().st_size,
+            }
+        workload = {
+            "source_sha256": file_sha256(args.source),
+            "source_size_bytes": args.source.stat().st_size,
+            "working_directory": str(args.cwd or Path.cwd()),
+            "stdin": stdin_metadata,
+            "environment_override_keys": sorted(
+                assignment.split("=", 1)[0] for assignment in args.environment
+            ),
+        }
         compiler_info = compiler_metadata(
             args.compiler_root,
             args.runtime_object,
@@ -3284,6 +3418,7 @@ def profile(args: argparse.Namespace) -> int:
             trace_event_limit=(
                 args.max_event_trace_events if args.event_trace else None
             ),
+            workload=workload,
         )
         rendered = render_profile(report, args.format, args.top)
         if args.output:
