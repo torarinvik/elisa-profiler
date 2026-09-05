@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-5028591f fix: resolve sibling stage0 from compiler worktree
+8636a9d3 test: guard gen2 self-host construction
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -148,6 +148,9 @@ including the fixed-blocker probes, compiler self-compilation, byte-level gen3/g
 fixed-point comparison, and repeated gen3 determinism probes. The compiler gate now
 bounds every probe class, not only the large compiler-source requests: a host loader
 stall is reported as a timeout with retained diagnostics instead of hanging the
-profiler integration suite. This target is intentionally separate from the ordinary
-native-profiler smoke because it is a high-memory compiler validation and may be
-skipped or retried when the macOS loader is unhealthy.
+profiler integration suite. Gen2 construction is also RSS-guarded by compiler
+commit `8636a9d3`, so an oversized self-host build reports a bounded failure
+instead of surfacing only as process status 137. This target is intentionally
+separate from the ordinary native-profiler smoke because it is a high-memory
+compiler validation and may be skipped or retried when the macOS loader is
+unhealthy.
