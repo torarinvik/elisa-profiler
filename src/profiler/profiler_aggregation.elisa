@@ -12,6 +12,10 @@ extend ProfilerNative:
                 statement_events: NATIVE_ZERO,
                 value_events: NATIVE_ZERO,
                 function_events: NATIVE_ZERO,
+                location_record_count: NATIVE_ZERO,
+                function_record_count: NATIVE_ZERO,
+                call_edge_record_count: NATIVE_ZERO,
+                stack_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO,
@@ -47,6 +51,10 @@ extend ProfilerNative:
             destination.statement_events <- destination.statement_events + incoming.statement_events
             destination.value_events <- destination.value_events + incoming.value_events
             destination.function_events <- destination.function_events + incoming.function_events
+            destination.location_record_count <- destination.location_record_count + incoming.location_record_count
+            destination.function_record_count <- destination.function_record_count + incoming.function_record_count
+            destination.call_edge_record_count <- destination.call_edge_record_count + incoming.call_edge_record_count
+            destination.stack_record_count <- destination.stack_record_count + incoming.stack_record_count
             destination.dropped <- destination.dropped + incoming.dropped
             destination.max_stack_depth <- incoming.max_stack_depth if incoming.max_stack_depth > destination.max_stack_depth
             destination.stack_overflow_entries <- destination.stack_overflow_entries + incoming.stack_overflow_entries
@@ -118,6 +126,15 @@ extend ProfilerNative:
             append_i64(buffer, summary.events)
             append_text(buffer, ",\"trace_locations\":")
             append_i64(buffer, summary.locations)
+            append_text(buffer, ",\"detail_records\":{\"locations\":")
+            append_i64(buffer, summary.location_record_count)
+            append_text(buffer, ",\"functions\":")
+            append_i64(buffer, summary.function_record_count)
+            append_text(buffer, ",\"call_edges\":")
+            append_i64(buffer, summary.call_edge_record_count)
+            append_text(buffer, ",\"stacks\":")
+            append_i64(buffer, summary.stack_record_count)
+            append_text(buffer, "}")
             append_text(buffer, ",\"trace_dropped\":")
             append_i64(buffer, summary.dropped)
             append_text(buffer, ",\"trace_threads\":")

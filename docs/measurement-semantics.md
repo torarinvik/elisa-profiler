@@ -86,6 +86,10 @@ Warmups are excluded from measured repetitions and are reported separately.
 Measured repetitions are retained individually in `run.repetitions`. The
 aggregate uses successful repetitions when at least one succeeds; otherwise it
 uses all completed repetitions and labels `measurement_basis` accordingly.
+Each repetition also reports `detail_records` for normalized locations,
+functions, caller-to-callee edges, and stack paths. These are evidence counts
+for that run, not independent statistical samples; a lower count must be
+interpreted with the repetition's drop, overflow, and completeness fields.
 No individual trace event is treated as an independent statistical sample.
 The median is the middle value (the arithmetic mean of the two middle values
 for an even count), and standard deviation is the population standard

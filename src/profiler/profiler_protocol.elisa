@@ -154,6 +154,7 @@ extend ProfilerNative:
                 summary.value_events <- summary.value_events + count_number
             else:
                 summary.function_events <- summary.function_events + count_number
+            summary.location_record_count <- summary.location_record_count + NATIVE_ONE
             if kind_name == "value":
                 append_text(location_records, ",\"variable\":")
                 if protocol_field_is(variable_field, "-"):
@@ -191,6 +192,7 @@ extend ProfilerNative:
             append_text(location_records, ",\"source_text\":null")
             append_text(location_records, "}")
             if kind_name == "function":
+                summary.function_record_count <- summary.function_record_count + NATIVE_ONE
                 append_record_separator(function_records)
                 append_text(function_records, "{\"function\":")
                 append_json_string(function_records, function_field)
@@ -256,6 +258,7 @@ extend ProfilerNative:
             append_text(call_edge_records, ",\"inclusive_ns\":")
             append_protocol_number(call_edge_records, inclusive_field)
             append_text(call_edge_records, "}")
+            summary.call_edge_record_count <- summary.call_edge_record_count + NATIVE_ONE
 
 
         def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
@@ -293,6 +296,7 @@ extend ProfilerNative:
                 append_protocol_number(folded_records, self_field)
             else:
                 append_protocol_number(folded_records, calls_field)
+            summary.stack_record_count <- summary.stack_record_count + NATIVE_ONE
 
 
         def append_event_record(summary: mutable CaptureSummary&, event_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -388,6 +392,10 @@ extend ProfilerNative:
                 statement_events: NATIVE_ZERO,
                 value_events: NATIVE_ZERO,
                 function_events: NATIVE_ZERO,
+                location_record_count: NATIVE_ZERO,
+                function_record_count: NATIVE_ZERO,
+                call_edge_record_count: NATIVE_ZERO,
+                stack_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO,

@@ -273,6 +273,17 @@
         "peak_rss_bytes": { "type": ["integer", "null"], "minimum": 0 },
         "trace_events": { "type": "integer", "minimum": 0 },
         "trace_locations": { "type": "integer", "minimum": 0 },
+        "detail_records": {
+          "type": "object",
+          "required": ["locations", "functions", "call_edges", "stacks"],
+          "properties": {
+            "locations": { "type": "integer", "minimum": 0 },
+            "functions": { "type": "integer", "minimum": 0 },
+            "call_edges": { "type": "integer", "minimum": 0 },
+            "stacks": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
         "trace_dropped": { "type": "integer", "minimum": 0 },
         "trace_threads": { "type": "integer", "minimum": 0 },
         "trace_max_stack_depth": { "type": "integer", "minimum": 0 },

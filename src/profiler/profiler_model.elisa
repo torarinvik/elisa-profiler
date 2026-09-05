@@ -157,6 +157,10 @@ module ProfilerNative:
             statement_events: mutable i64
             value_events: mutable i64
             function_events: mutable i64
+            location_record_count: mutable i64
+            function_record_count: mutable i64
+            call_edge_record_count: mutable i64
+            stack_record_count: mutable i64
             dropped: mutable i64
             max_stack_depth: mutable i64
             stack_overflow_entries: mutable i64
