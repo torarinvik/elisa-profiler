@@ -81,6 +81,7 @@ module ProfilerNative:
         const NATIVE_NANOS_PER_SECOND: i64 = 1000000000
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
+        const NATIVE_MICROSECONDS_PER_MILLISECOND: i64 = 1000
         const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192
@@ -90,6 +91,10 @@ module ProfilerNative:
         const NATIVE_FIRST_OPTION_INDEX: i64 = 2
         const NATIVE_MIN_COMMAND_ARGUMENTS: i64 = 2
         const NATIVE_MIN_PATH_ARGUMENTS: i64 = 3
+        const NATIVE_MIN_COMPARE_ARGUMENTS: i64 = 4
+        const NATIVE_COMPARE_BASELINE_INDEX: i64 = 2
+        const NATIVE_COMPARE_CANDIDATE_INDEX: i64 = 3
+        const NATIVE_COMPARE_FIRST_OPTION_INDEX: i64 = 4
         const NATIVE_STANDARD_OUTPUT: i64 = 1
         const NATIVE_STANDARD_ERROR: i64 = 2
         const NATIVE_STANDARD_INPUT: i64 = 0
@@ -191,6 +196,22 @@ module ProfilerNative:
             event_records: mutable darray[u8]
             malformed: mutable bool
             malformed_code: mutable i64
+
+        struct ComparisonCapture:
+            source: mutable darray[u8]
+            compiler_branch: mutable darray[u8]
+            compiler_commit: mutable darray[u8]
+            opt_level: mutable darray[u8]
+            events: mutable i64
+            locations: mutable i64
+            dropped: mutable i64
+            stack_overflow_entries: mutable i64
+            thread_count: mutable i64
+            trace_events_omitted: mutable i64
+            execution_mean_micros: mutable i64
+            compile_micros: mutable i64
+            exit_code: mutable i64
+            detail_budget_exceeded: mutable bool
         
         
         def append_text(buffer: mutable darray[u8]&, text: sview) -> void can[Abort.Panic, Memory.Allocate]:
@@ -236,6 +257,10 @@ module ProfilerNative:
             buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + (fraction / NATIVE_MILLIS_HUNDREDS_DIVISOR)).u8())
             buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + ((fraction / NATIVE_DECIMAL_TENS_DIVISOR) % NATIVE_DECIMAL_BASE)).u8())
             buffer.push((NATIVE_BYTE_ASCII_ZERO.i64() + (fraction % NATIVE_DECIMAL_BASE)).u8())
+
+
+        def append_micros_as_millis(buffer: mutable darray[u8]&, microseconds: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            append_millis(buffer, microseconds * NATIVE_NANOS_PER_MICROSECOND)
 
 
         def read_monotonic() -> ProfilerNativeTimespec:
@@ -1563,6 +1588,36 @@ module ProfilerNative:
             return -value if negative else value
 
 
+        def json_millis_micros_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
+            return NATIVE_NEGATIVE_ONE if start >= stop
+            cursor: mutable usize = start
+            whole: mutable i64 = NATIVE_ZERO
+            fraction: mutable i64 = NATIVE_ZERO
+            fraction_digits: mutable i64 = NATIVE_ZERO
+            in_fraction: mutable bool = false
+            seen_digit: mutable bool = false
+            while cursor < stop |cursor, whole, fraction, fraction_digits, in_fraction, seen_digit, data|:
+                byte: u8 = data[cursor]
+                if byte >= NATIVE_BYTE_ASCII_ZERO and byte <= NATIVE_BYTE_ASCII_NINE:
+                    seen_digit <- true
+                    if in_fraction:
+                        if fraction_digits < NATIVE_THREE:
+                            fraction <- fraction * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                            fraction_digits <- fraction_digits + NATIVE_ONE
+                    else:
+                        whole <- whole * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                elif byte == NATIVE_BYTE_PERIOD and not in_fraction:
+                    in_fraction <- true
+                else:
+                    break
+                cursor <- cursor + NATIVE_ONE.usize()
+            return NATIVE_NEGATIVE_ONE if not seen_digit
+            while fraction_digits < NATIVE_THREE |fraction, fraction_digits|:
+                fraction <- fraction * NATIVE_DECIMAL_BASE
+                fraction_digits <- fraction_digits + NATIVE_ONE
+            return whole * NATIVE_MICROSECONDS_PER_MILLISECOND + fraction
+
+
         def json_bool_into(data: darray[u8]&, start: usize, stop: usize, result: mutable bool&) -> bool:
             return false if start >= stop
             if start + NATIVE_JSON_TRUE_LENGTH <= stop and data[start] == NATIVE_BYTE_ASCII_TRUE_T and data[start + NATIVE_ONE.usize()] == NATIVE_BYTE_ASCII_TRUE_R and data[start + NATIVE_TWO.usize()] == NATIVE_BYTE_ASCII_TRUE_U and data[start + NATIVE_THREE.usize()] == NATIVE_BYTE_ASCII_TRUE_E:
@@ -1624,6 +1679,63 @@ module ProfilerNative:
             value: i64 = json_number_at(data, value_start.usize(), stop)
             return false if value < NATIVE_ZERO
             result <- value
+            return true
+
+
+        def json_read_string_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            return false if value_start < NATIVE_ZERO
+            return json_string_into(data, value_start.usize(), stop, result) >= NATIVE_ZERO
+
+
+        def json_read_millis_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            return false if value_start < NATIVE_ZERO
+            value: i64 = json_millis_micros_at(data, value_start.usize(), stop)
+            return false if value < NATIVE_ZERO
+            result <- value
+            return true
+
+
+        def json_read_bool_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable bool&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            return false if value_start < NATIVE_ZERO
+            return json_bool_into(data, value_start.usize(), stop, result)
+
+
+        def byte_arrays_equal(left: darray[u8]&, right: darray[u8]&) -> bool can[Abort.Panic]:
+            return false if left.count != right.count
+            for index in 0..<left.count |left, right|:
+                return false if left[index] != right[index]
+            return true
+
+
+        def read_comparison_capture(data: darray[u8]&, capture: mutable ComparisonCapture&) -> bool can[Abort.Panic, Memory.Allocate]:
+            schema_version: mutable i64 = NATIVE_ZERO
+            return false if not json_read_number_field(data, "schema_version", NATIVE_ZERO.usize(), data.count, &schema_version)
+            return false if schema_version != NATIVE_REPORT_SCHEMA_VERSION
+            compiler_start: i64 = json_key_value_start(data, "compiler", NATIVE_ZERO.usize(), data.count)
+            summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
+            run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
+            return false if compiler_start < NATIVE_ZERO or summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
+            compiler_stop: i64 = json_object_end(data, compiler_start.usize(), data.count)
+            summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
+            run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
+            return false if compiler_stop < NATIVE_ZERO or summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
+            return false if not json_read_string_field(data, "source", NATIVE_ZERO.usize(), data.count, &capture.source)
+            return false if not json_read_string_field(data, "branch", compiler_start.usize(), compiler_stop.usize(), &capture.compiler_branch)
+            return false if not json_read_string_field(data, "commit", compiler_start.usize(), compiler_stop.usize(), &capture.compiler_commit)
+            return false if not json_read_string_field(data, "opt_level", run_start.usize(), run_stop.usize(), &capture.opt_level)
+            return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &capture.events)
+            return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &capture.locations)
+            return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &capture.dropped)
+            return false if not json_read_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &capture.stack_overflow_entries)
+            return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &capture.thread_count)
+            return false if not json_read_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &capture.trace_events_omitted)
+            return false if not json_read_bool_field(data, "detail_budget_exceeded", summary_start.usize(), summary_stop.usize(), &capture.detail_budget_exceeded)
+            return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &capture.execution_mean_micros)
+            return false if not json_read_millis_field(data, "compile_ms", run_start.usize(), run_stop.usize(), &capture.compile_micros)
+            return false if not json_read_number_field(data, "exit_code", run_start.usize(), run_stop.usize(), &capture.exit_code)
             return true
 
 
@@ -1764,6 +1876,217 @@ module ProfilerNative:
             append_i64(buffer, dropped)
             append_text(buffer, "\n")
             return true
+
+
+        def append_comparison_warning_json(buffer: mutable darray[u8]&, warning: sview, include: bool, first: mutable bool&) -> i64 can[Abort.Panic, Memory.Allocate]:
+            return NATIVE_ZERO if not include
+            buffer.push(NATIVE_BYTE_COMMA) if not first
+            warning_value: mutable darray[u8] = []
+            append_text(warning_value, warning)
+            append_json_string(buffer, warning_value)
+            first <- false
+            return NATIVE_ONE
+
+
+        def append_comparison_warning_text(buffer: mutable darray[u8]&, warning: sview, include: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            return if not include
+            append_text(buffer, "  - ")
+            append_text(buffer, warning)
+            append_text(buffer, "\n")
+
+
+        def append_comparison_report(
+            buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool
+        ) -> void can[Abort.Panic, Memory.Allocate]:
+            source_mismatch: bool = not byte_arrays_equal(baseline.source, candidate.source)
+            compiler_mismatch: bool = not byte_arrays_equal(baseline.compiler_commit, candidate.compiler_commit)
+            optimization_mismatch: bool = not byte_arrays_equal(baseline.opt_level, candidate.opt_level)
+            target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
+            evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
+            if not format_json:
+                append_text(buffer, "Elisa profile comparison\n")
+                append_text(buffer, "baseline: ")
+                for index in 0..<baseline_path.count |buffer, baseline_path|:
+                    buffer.push(baseline_path[index])
+                append_text(buffer, "\ncandidate: ")
+                for index in 0..<candidate_path.count |buffer, candidate_path|:
+                    buffer.push(candidate_path[index])
+                append_text(buffer, "\nsource: ")
+                append_text(buffer, "same\n" if not source_mismatch else "different\n")
+                append_text(buffer, "compiler commit: ")
+                append_text(buffer, "same\n" if not compiler_mismatch else "different\n")
+                append_text(buffer, "optimization: ")
+                append_text(buffer, "same\n" if not optimization_mismatch else "different\n")
+                append_text(buffer, "wall mean: baseline=")
+                append_micros_as_millis(buffer, baseline.execution_mean_micros)
+                append_text(buffer, " ms candidate=")
+                append_micros_as_millis(buffer, candidate.execution_mean_micros)
+                append_text(buffer, " ms\ncompile: baseline=")
+                append_micros_as_millis(buffer, baseline.compile_micros)
+                append_text(buffer, " ms candidate=")
+                append_micros_as_millis(buffer, candidate.compile_micros)
+                append_text(buffer, " ms\nevents: baseline=")
+                append_i64(buffer, baseline.events)
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.events)
+                append_text(buffer, " delta=")
+                append_i64(buffer, candidate.events - baseline.events)
+                append_text(buffer, "\nlocations: baseline=")
+                append_i64(buffer, baseline.locations)
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.locations)
+                append_text(buffer, "\nthreads: baseline=")
+                append_i64(buffer, baseline.thread_count)
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.thread_count)
+                append_text(buffer, "\ndropped events: baseline=")
+                append_i64(buffer, baseline.dropped)
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.dropped)
+                append_text(buffer, "\nstack overflow entries: baseline=")
+                append_i64(buffer, baseline.stack_overflow_entries)
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.stack_overflow_entries)
+                append_text(buffer, "\n")
+                if source_mismatch or compiler_mismatch or optimization_mismatch or target_failure or evidence_loss:
+                    append_text(buffer, "warnings:\n")
+                    append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
+                    append_comparison_warning_text(buffer, "baseline and candidate use different compiler commits", compiler_mismatch)
+                    append_comparison_warning_text(buffer, "baseline and candidate use different optimization levels", optimization_mismatch)
+                    append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
+                    append_comparison_warning_text(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss)
+                return
+            append_text(buffer, "{\"kind\":\"profile_comparison\",\"schema_version\":")
+            append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
+            append_text(buffer, ",\"baseline\":{\"path\":")
+            append_json_string(buffer, baseline_path)
+            append_text(buffer, ",\"source\":")
+            append_json_string(buffer, baseline.source)
+            append_text(buffer, ",\"compiler_commit\":")
+            append_json_string(buffer, baseline.compiler_commit)
+            append_text(buffer, ",\"opt_level\":")
+            append_json_string(buffer, baseline.opt_level)
+            append_text(buffer, ",\"exit_code\":")
+            append_i64(buffer, baseline.exit_code)
+            append_text(buffer, "},\"candidate\":{\"path\":")
+            append_json_string(buffer, candidate_path)
+            append_text(buffer, ",\"source\":")
+            append_json_string(buffer, candidate.source)
+            append_text(buffer, ",\"compiler_commit\":")
+            append_json_string(buffer, candidate.compiler_commit)
+            append_text(buffer, ",\"opt_level\":")
+            append_json_string(buffer, candidate.opt_level)
+            append_text(buffer, ",\"exit_code\":")
+            append_i64(buffer, candidate.exit_code)
+            append_text(buffer, "},\"metrics\":{\"execution_ms_mean\":{\"baseline\":")
+            append_micros_as_millis(buffer, baseline.execution_mean_micros)
+            append_text(buffer, ",\"candidate\":")
+            append_micros_as_millis(buffer, candidate.execution_mean_micros)
+            append_text(buffer, ",\"delta_micros\":")
+            append_i64(buffer, candidate.execution_mean_micros - baseline.execution_mean_micros)
+            append_text(buffer, "},\"compile_ms\":{\"baseline\":")
+            append_micros_as_millis(buffer, baseline.compile_micros)
+            append_text(buffer, ",\"candidate\":")
+            append_micros_as_millis(buffer, candidate.compile_micros)
+            append_text(buffer, ",\"delta_micros\":")
+            append_i64(buffer, candidate.compile_micros - baseline.compile_micros)
+            append_text(buffer, "},\"events\":{\"baseline\":")
+            append_i64(buffer, baseline.events)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.events)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, candidate.events - baseline.events)
+            append_text(buffer, "},\"locations\":{\"baseline\":")
+            append_i64(buffer, baseline.locations)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.locations)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, candidate.locations - baseline.locations)
+            append_text(buffer, "},\"dropped_events\":{\"baseline\":")
+            append_i64(buffer, baseline.dropped)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.dropped)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, candidate.dropped - baseline.dropped)
+            append_text(buffer, "},\"thread_count\":{\"baseline\":")
+            append_i64(buffer, baseline.thread_count)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.thread_count)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, candidate.thread_count - baseline.thread_count)
+            append_text(buffer, "},\"stack_overflow_entries\":{\"baseline\":")
+            append_i64(buffer, baseline.stack_overflow_entries)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.stack_overflow_entries)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, candidate.stack_overflow_entries - baseline.stack_overflow_entries)
+            append_text(buffer, "},\"trace_events_omitted\":{\"baseline\":")
+            append_i64(buffer, baseline.trace_events_omitted)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.trace_events_omitted)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, candidate.trace_events_omitted - baseline.trace_events_omitted)
+            append_text(buffer, "}},\"warnings\":[")
+            warning_first: mutable bool = true
+            warning_count: mutable i64 = NATIVE_ZERO
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different source paths or contents", source_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different compiler commits", compiler_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different optimization levels", optimization_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline or candidate target execution failed", target_failure, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss, &warning_first)
+            append_text(buffer, "],\"status\":\"")
+            append_text(buffer, "warning" if warning_count > NATIVE_ZERO else "ok")
+            append_text(buffer, "\"}\n")
+
+
+        def compare_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return report_error("usage: elisa-profiler compare BASELINE CANDIDATE [--format text|json] [--output PATH]") if argc < NATIVE_MIN_COMPARE_ARGUMENTS
+            baseline_path: mutable darray[u8] = []
+            candidate_path: mutable darray[u8] = []
+            output_path: mutable darray[u8] = []
+            copy_cstr(baseline_path, slots[NATIVE_COMPARE_BASELINE_INDEX].cast[cstr])
+            copy_cstr(candidate_path, slots[NATIVE_COMPARE_CANDIDATE_INDEX].cast[cstr])
+            format_json: mutable bool = false
+            index: mutable i64 = NATIVE_COMPARE_FIRST_OPTION_INDEX
+            while index < argc |index, slots, output_path, format_json|:
+                argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
+                    return report_error("--format requires text or json") if index + NATIVE_ONE >= argc
+                    if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
+                        format_json <- true
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") != NATIVE_ZERO:
+                        return report_error("--format requires text or json")
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("--output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                return report_error("unknown compare option")
+            baseline_data: darray[u8] = read_file(baseline_path)
+            candidate_data: darray[u8] = read_file(candidate_path)
+            return report_error("baseline capture could not be read") if baseline_data.count == NATIVE_ZERO.usize()
+            return report_error("candidate capture could not be read") if candidate_data.count == NATIVE_ZERO.usize()
+            baseline: mutable ComparisonCapture = ComparisonCapture{
+                source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
+                dropped: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
+            }
+            candidate: mutable ComparisonCapture = ComparisonCapture{
+                source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
+                dropped: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
+            }
+            return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_data, &baseline)
+            return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_data, &candidate)
+            rendered: mutable darray[u8] = []
+            append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json)
+            if output_path.count > NATIVE_ZERO.usize():
+                return NATIVE_ZERO if write_file(output_path, rendered)
+                return report_error("could not write native comparison report")
+            _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &rendered[0], rendered.count) can Console
+            return NATIVE_ZERO
 
 
         def append_html_section(buffer: mutable darray[u8]&, title: sview, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -2102,8 +2425,9 @@ module ProfilerNative:
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
+            return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
-            return report_error("unknown command; use profile, report, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO
+            return report_error("unknown command; use profile, report, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO
             return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []

@@ -104,7 +104,13 @@ profiler-native-smoke: profiler-native
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_launch_probe.elisa" --cwd "$$native_work" --stdin "$(PROFILER_ROOT)/README.md" --env ELISA_PROFILER_LAUNCH=enabled --format json --output "$$native_work/launch-probe.json"; \
 		test -s "$$native_work/native-launch-cwd-marker.txt"; \
-		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/launch-probe.json"
+		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/launch-probe.json"; \
+		"$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format json --output "$$native_work/comparison.json"; \
+		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/comparison.schema.json" "$$native_work/comparison.json"; \
+		python3 "$(PROFILER_ROOT)/test/native_compare_smoke.py" "$$native_work/comparison.json"; \
+		"$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format text --output "$$native_work/comparison.txt"; \
+		grep -Fq 'Elisa profile comparison' "$$native_work/comparison.txt"; \
+		grep -Fq 'wall mean:' "$$native_work/comparison.txt"
 
 profile-budget-smoke: profiler-native
 	@"$(PROFILER_ROOT)/test/profile_budget_smoke.sh"

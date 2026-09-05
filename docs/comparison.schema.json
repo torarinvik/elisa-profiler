@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elisa-lang.org/schemas/profile-comparison-v1.json",
+  "title": "Elisa profiler comparison",
+  "description": "Summary comparison emitted by the Elisa-native profiler compare command.",
+  "type": "object",
+  "required": ["kind", "schema_version", "baseline", "candidate", "metrics", "warnings", "status"],
+  "properties": {
+    "kind": { "const": "profile_comparison" },
+    "schema_version": { "const": 1 },
+    "baseline": { "$ref": "#/$defs/identity" },
+    "candidate": { "$ref": "#/$defs/identity" },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "execution_ms_mean",
+        "compile_ms",
+        "events",
+        "locations",
+        "dropped_events",
+        "thread_count",
+        "stack_overflow_entries",
+        "trace_events_omitted"
+      ],
+      "properties": {
+        "execution_ms_mean": { "$ref": "#/$defs/timed_metric" },
+        "compile_ms": { "$ref": "#/$defs/timed_metric" },
+        "events": { "$ref": "#/$defs/count_metric" },
+        "locations": { "$ref": "#/$defs/count_metric" },
+        "dropped_events": { "$ref": "#/$defs/count_metric" },
+        "thread_count": { "$ref": "#/$defs/count_metric" },
+        "stack_overflow_entries": { "$ref": "#/$defs/count_metric" },
+        "trace_events_omitted": { "$ref": "#/$defs/count_metric" }
+      },
+      "additionalProperties": false
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "status": { "type": "string", "enum": ["ok", "warning"] }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["path", "source", "compiler_commit", "opt_level", "exit_code"],
+      "properties": {
+        "path": { "type": "string" },
+        "source": { "type": "string" },
+        "compiler_commit": { "type": "string" },
+        "opt_level": { "type": "string" },
+        "exit_code": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "timed_metric": {
+      "type": "object",
+      "required": ["baseline", "candidate", "delta_micros"],
+      "properties": {
+        "baseline": { "type": "number", "minimum": 0 },
+        "candidate": { "type": "number", "minimum": 0 },
+        "delta_micros": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "count_metric": {
+      "type": "object",
+      "required": ["baseline", "candidate", "delta"],
+      "properties": {
+        "baseline": { "type": "integer", "minimum": 0 },
+        "candidate": { "type": "integer", "minimum": 0 },
+        "delta": { "type": "integer" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
