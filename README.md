@@ -67,9 +67,9 @@ shell command strings for the normal profiling path, so paths and user-selected
 tool overrides are never re-parsed by a shell.
 
 Native profiles currently support JSON, text, folded-stack, Speedscope sampled,
-and HTML output. The native `report` command still accepts JSON captures as an
-identity-preserving offline copy; richer offline re-rendering is tracked in the
-implementation plan.
+and HTML output. The native `report` command preserves JSON captures and can
+regenerate folded-stack and Speedscope artifacts offline; HTML/text offline
+rendering and comparison remain tracked in the implementation plan.
 
 The native launcher also accepts `--cwd PATH`, `--stdin PATH`, and repeatable
 `--env KEY=VALUE` controls. These are applied only to the profiled child and are

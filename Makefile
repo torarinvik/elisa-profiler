@@ -48,6 +48,10 @@ profiler-native-smoke: profiler-native
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/report.json"; \
 		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format json --output "$$native_work/offline.json"; \
 		cmp -s "$$native_work/report.json" "$$native_work/offline.json"; \
+		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format folded --output "$$native_work/offline.folded"; \
+		grep -Fq 'main' "$$native_work/offline.folded"; \
+		"$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format speedscope --output "$$native_work/offline.speedscope.json"; \
+		python3 "$(PROFILER_ROOT)/test/speedscope_smoke.py" "$$native_work/offline.speedscope.json"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --recent-path --format json --output "$$native_work/recent.json"; \
 		grep -Fq '"recent_events":[{' "$$native_work/recent.json"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format folded --output "$$native_work/hot-loop.folded"; \
