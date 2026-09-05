@@ -50,8 +50,11 @@ profiler-native:
 	@test -x "$(NATIVE_STAGE1_BIN)" || { echo "stage1 compiler missing: $(NATIVE_STAGE1_BIN) (run make compiler-seed)" >&2; exit 2; }
 	@test -f "$(NATIVE_RUNTIME_OBJECT)" || { echo "runtime object missing: $(NATIVE_RUNTIME_OBJECT) (run $(COMPILER_WORKTREE)/scripts/build_runtime_object.sh)" >&2; exit 2; }
 	@mkdir -p "$(PROFILER_ROOT)/bin"
-	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
-		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -O0 -o "$(NATIVE_PROFILER_BIN)" "$(NATIVE_PROFILER_SOURCE)"
+	@set -eu; native_build="$$(mktemp -d "$(PROFILER_ROOT)/bin/.native-build.XXXXXX")"; \
+		trap 'rm -rf "$$native_build"' EXIT; \
+		ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -O0 -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
+		mv "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_BIN)"
 	@stage0="$${ELISACORE_BIN:-$(STAGE0_BIN)}"; \
 		if test -n "$$stage0"; then \
 			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
@@ -114,6 +117,21 @@ profiler-native-smoke: profiler-native
 
 profile-budget-smoke: profiler-native
 	@"$(PROFILER_ROOT)/test/profile_budget_smoke.sh"
+
+.PHONY: native-regression-smoke
+native-regression-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/native_regression_smoke.py"
+
+test: native-regression-smoke
+
+.PHONY: collector-regression-smoke
+collector-regression-smoke:
+	@set -eu; regression_work="$$(mktemp -d)"; trap 'rm -rf "$$regression_work"' EXIT; \
+		"$${ELISA_CLANG:-clang}" -std=c11 -O2 -fno-builtin -pthread \
+		-o "$$regression_work/collector" "$(PROFILER_ROOT)/test/collector_regression_smoke.c"; \
+		"$$regression_work/collector"
+
+test: collector-regression-smoke
 
 compiler-smoke:
 	@"$(PROFILER_ROOT)/test/compiler_smoke.sh"

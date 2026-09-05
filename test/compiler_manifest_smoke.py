@@ -47,6 +47,7 @@ def main() -> int:
         fail(f"manifest is not usable: {freshness.get('reasons')}")
     compiler = manifest["compiler"]
     stage0 = manifest["stage0"].get("path")
+    seed_flag = "--seed-opt-level=" + manifest["build_flags"]["seed_optimization"]
     command = [
         sys.executable,
         str(writer),
@@ -58,10 +59,10 @@ def main() -> int:
         manifest["runtime"]["path"],
         "--output",
         str(manifest_path),
-        "--seed-opt-level=-O0",
+        seed_flag,
         "--seed-max-rss-kb",
         str(manifest["build_flags"]["seed_max_rss_kb"]),
-        "--native-opt-level=-O0",
+        "--native-opt-level=" + manifest["build_flags"]["native_optimization"],
         "--check",
     ]
     if stage0:
@@ -70,8 +71,8 @@ def main() -> int:
     if current.returncode != 0:
         fail(f"current manifest did not validate: {current.stderr.strip()}")
     stale = subprocess.run(
-        [argument for argument in command if argument != "--seed-opt-level=-O0"]
-        + ["--seed-opt-level=-O1"],
+        [argument for argument in command if argument != seed_flag]
+        + ["--seed-opt-level=" + ("-O1" if seed_flag != "--seed-opt-level=-O1" else "-O0")],
         capture_output=True,
         text=True,
         check=False,

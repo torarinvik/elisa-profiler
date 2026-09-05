@@ -401,6 +401,7 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
         (profile_call_edge_size + 1) * PROFILE_TABLE_LOAD_NUMERATOR >=
             profile_call_edge_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
         if (!profile_grow_call_edges_locked()) {
+            ++profile_call_edge_dropped_count;
             pthread_mutex_unlock(&profile_lock);
             return;
         }
@@ -517,6 +518,7 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
         (profile_call_path_size + 1) * PROFILE_TABLE_LOAD_NUMERATOR >=
             profile_call_path_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
         if (!profile_grow_call_paths_locked()) {
+            ++profile_call_path_dropped_count;
             pthread_mutex_unlock(&profile_lock);
             return NULL;
         }
@@ -532,6 +534,7 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
     if (path == NULL) {
         path = calloc(1, sizeof(*path));
         if (path == NULL) {
+            ++profile_call_path_dropped_count;
             pthread_mutex_unlock(&profile_lock);
             return NULL;
         }
@@ -679,6 +682,7 @@ static void profile_record(const char *function_name, uint32_t line,
                            const char *variable_name, uint64_t value, uint8_t kind,
                            uint8_t is_signed, size_t call_depth,
                            int stack_overflowed) {
+    function_name = function_name == NULL ? "<unknown>" : function_name;
     pthread_mutex_lock(&profile_lock);
     profile_thread_state *thread = profile_get_thread_locked();
 #if !ELISA_PROFILE_TIMING
@@ -737,9 +741,9 @@ static void profile_record(const char *function_name, uint32_t line,
         pthread_mutex_unlock(&profile_lock);
         return;
     }
-    if (profile_capacity == 0 ||
+    if (existing == NULL && (profile_capacity == 0 ||
         (profile_size + 1) * PROFILE_TABLE_LOAD_NUMERATOR >=
-            profile_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
+            profile_capacity * PROFILE_TABLE_LOAD_DENOMINATOR)) {
         if (!profile_grow_locked()) {
             ++profile_dropped_count;
 #if ELISA_PROFILE_TIMING
@@ -1341,6 +1345,11 @@ static uint64_t profile_read_limit_environment(const char *name, uint64_t fallba
     const char *text = getenv(name);
     if (text == NULL || *text == '\0') {
         return fallback;
+    }
+    for (const char *cursor = text; *cursor != '\0'; ++cursor) {
+        if (*cursor < '0' || *cursor > '9') {
+            return fallback;
+        }
     }
     errno = 0;
     char *end = NULL;

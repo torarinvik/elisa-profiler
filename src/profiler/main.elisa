@@ -75,9 +75,12 @@ module ProfilerNative:
         const NATIVE_ENV_OVERWRITE: i64 = 1
         const NATIVE_ACCESS_EXECUTE: i64 = 1
         const NATIVE_EXIT_STATUS_BASE: i64 = 256
+        const NATIVE_SIGNAL_STATUS_BASE: i64 = 128
         const NATIVE_SIGNAL_EXIT_BASE: i64 = 128
         const NATIVE_DECIMAL_BASE: i64 = 10
         const NATIVE_HEX_BASE: i64 = 16
+        const NATIVE_HEX_DIGIT_ALPHA_VALUE: i64 = 10
+        const NATIVE_I64_MAX: i64 = 9223372036854775807
         const NATIVE_NANOS_PER_SECOND: i64 = 1000000000
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
@@ -124,6 +127,24 @@ module ProfilerNative:
         const NATIVE_JSON_TRUE_LENGTH: usize = 4
         const NATIVE_JSON_FALSE_LENGTH: usize = 5
         const NATIVE_JSON_UNICODE_DIGITS: usize = 4
+        const NATIVE_UNICODE_HIGH_SURROGATE_MIN: i64 = 55296
+        const NATIVE_UNICODE_HIGH_SURROGATE_MAX: i64 = 56319
+        const NATIVE_UNICODE_LOW_SURROGATE_MIN: i64 = 56320
+        const NATIVE_UNICODE_LOW_SURROGATE_MAX: i64 = 57343
+        const NATIVE_UNICODE_MAX: i64 = 1114111
+        const NATIVE_UNICODE_SURROGATE_BASE: i64 = 65536
+        const NATIVE_UNICODE_SURROGATE_SHIFT: i64 = 1024
+        const NATIVE_UTF8_CONTINUATION_BASE: i64 = 128
+        const NATIVE_UTF8_TWO_BYTE_BASE: i64 = 192
+        const NATIVE_UTF8_THREE_BYTE_BASE: i64 = 224
+        const NATIVE_UTF8_FOUR_BYTE_BASE: i64 = 240
+        const NATIVE_UTF8_CONTINUATION_MODULUS: i64 = 64
+        const NATIVE_UTF8_TWO_BYTE_LIMIT: i64 = 2047
+        const NATIVE_UTF8_THREE_BYTE_LIMIT: i64 = 65535
+        const NATIVE_UTF8_TWO_BYTE_DIVISOR: i64 = 64
+        const NATIVE_UTF8_THREE_BYTE_DIVISOR: i64 = 4096
+        const NATIVE_UTF8_FOUR_BYTE_DIVISOR: i64 = 262144
+        const NATIVE_ASCII_MAX: i64 = 127
         const NATIVE_BYTE_DOUBLE_QUOTE: u8 = 34
         const NATIVE_BYTE_AMPERSAND: u8 = 38
         const NATIVE_BYTE_LESS_THAN: u8 = 60
@@ -149,8 +170,8 @@ module ProfilerNative:
         const NATIVE_HEX_LETTER_OFFSET: u8 = 87
         const NATIVE_O_RDONLY: i64 = 0
         const NATIVE_O_WRONLY: i64 = 1
-        const NATIVE_O_CREAT: i64 = 64
-        const NATIVE_O_TRUNC: i64 = 512
+        const NATIVE_O_CREAT: i64 = 512
+        const NATIVE_O_TRUNC: i64 = 1024
         const NATIVE_FILE_MODE: i64 = 420
         const NATIVE_MONOTONIC_CLOCK: i64 = 6
         const NATIVE_REPORT_SCHEMA_VERSION: i64 = 1
@@ -205,6 +226,8 @@ module ProfilerNative:
             events: mutable i64
             locations: mutable i64
             dropped: mutable i64
+            dropped_call_edges: mutable i64
+            dropped_stacks: mutable i64
             stack_overflow_entries: mutable i64
             thread_count: mutable i64
             trace_events_omitted: mutable i64
@@ -338,9 +361,29 @@ module ProfilerNative:
         
         
         def copy_cstr(destination: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            destination <- []
             append_cstr(destination, value)
-        
-        
+
+
+        def parse_nonnegative_cstr(value: cstr) -> i64 can[Unsafe.PointerCast]:
+            bytes: u8& = value.cast[u8&] can Unsafe.PointerCast
+            cursor: mutable i64 = NATIVE_ZERO
+            result: mutable i64 = NATIVE_ZERO
+            digits: mutable i64 = NATIVE_ZERO
+            while true |bytes, cursor, result, digits|:
+                byte_ref: u8& = bytes + cursor
+                byte: u8 = byte_ref
+                break if byte == NATIVE_BYTE_NUL
+                return NATIVE_NEGATIVE_ONE if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                return NATIVE_NEGATIVE_ONE if result > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                result <- result * NATIVE_DECIMAL_BASE + digit
+                digits <- digits + NATIVE_ONE
+                cursor <- cursor + NATIVE_ONE
+            return NATIVE_NEGATIVE_ONE if digits == NATIVE_ZERO
+            return result
+
+
         def copy_environment(name: sview, destination: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             name_storage: mutable darray[u8] = []
             append_text(name_storage, name)
@@ -1278,7 +1321,7 @@ module ProfilerNative:
         
         def system_exit_code(status: i64) -> i64:
             return NATIVE_CHILD_FAILURE_STATUS if status < NATIVE_ZERO
-            return status / NATIVE_EXIT_STATUS_BASE if status % NATIVE_EXIT_STATUS_BASE == NATIVE_ZERO else NATIVE_SIGNAL_EXIT_BASE + (status % NATIVE_EXIT_STATUS_BASE)
+            return status / NATIVE_EXIT_STATUS_BASE if status % NATIVE_EXIT_STATUS_BASE == NATIVE_ZERO else NATIVE_SIGNAL_EXIT_BASE + (status % NATIVE_SIGNAL_STATUS_BASE)
         
         
         def append_detail_arrays(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
@@ -1405,14 +1448,16 @@ module ProfilerNative:
             return total
 
 
-        def append_speedscope_report(buffer: mutable darray[u8]&, source: darray[u8]&, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_speedscope_report(buffer: mutable darray[u8]&, source: darray[u8]&, records: darray[u8]&, location_timing: bool) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"$schema\":\"https://www.speedscope.app/file-format-schema.json\",\"name\":")
             append_json_string(buffer, source)
             append_text(buffer, ",\"activeProfileIndex\":0,\"exporter\":\"elisa-profiler-native\",\"shared\":{\"frames\":[")
             append_speedscope_frames(buffer, records)
             append_text(buffer, "]},\"profiles\":[{\"type\":\"sampled\",\"name\":")
             append_json_string(buffer, source)
-            append_text(buffer, ",\"unit\":\"nanoseconds\",\"startValue\":0,\"endValue\":")
+            append_text(buffer, ",\"unit\":\"")
+            append_text(buffer, "nanoseconds" if location_timing else "none")
+            append_text(buffer, "\",\"startValue\":0,\"endValue\":")
             append_i64(buffer, folded_total_weight(records))
             append_text(buffer, ",\"samples\":[")
             append_speedscope_samples(buffer, records)
@@ -1522,9 +1567,19 @@ module ProfilerNative:
 
         def json_hex_digit(byte: u8) -> i64:
             return (byte - NATIVE_BYTE_ASCII_ZERO).i64() if byte >= NATIVE_BYTE_ASCII_ZERO and byte <= NATIVE_BYTE_ASCII_NINE
-            return (byte - NATIVE_BYTE_ASCII_UPPER_A + NATIVE_HEX_BASE.u8()).i64() if byte >= NATIVE_BYTE_ASCII_UPPER_A and byte <= NATIVE_BYTE_ASCII_UPPER_F
-            return (byte - NATIVE_BYTE_ASCII_LOWER_A + NATIVE_HEX_BASE.u8()).i64() if byte >= NATIVE_BYTE_ASCII_LOWER_A and byte <= NATIVE_BYTE_ASCII_LOWER_F
+            return (byte - NATIVE_BYTE_ASCII_UPPER_A).i64() + NATIVE_HEX_DIGIT_ALPHA_VALUE if byte >= NATIVE_BYTE_ASCII_UPPER_A and byte <= NATIVE_BYTE_ASCII_UPPER_F
+            return (byte - NATIVE_BYTE_ASCII_LOWER_A).i64() + NATIVE_HEX_DIGIT_ALPHA_VALUE if byte >= NATIVE_BYTE_ASCII_LOWER_A and byte <= NATIVE_BYTE_ASCII_LOWER_F
             return NATIVE_NEGATIVE_ONE
+
+
+        def json_hex_quad(data: darray[u8]&, start: usize, stop: usize) -> i64:
+            return NATIVE_NEGATIVE_ONE if start + NATIVE_JSON_UNICODE_DIGITS > stop
+            first: i64 = json_hex_digit(data[start])
+            second: i64 = json_hex_digit(data[start + NATIVE_ONE.usize()])
+            third: i64 = json_hex_digit(data[start + NATIVE_TWO.usize()])
+            fourth: i64 = json_hex_digit(data[start + NATIVE_THREE.usize()])
+            return NATIVE_NEGATIVE_ONE if first < NATIVE_ZERO or second < NATIVE_ZERO or third < NATIVE_ZERO or fourth < NATIVE_ZERO
+            return (((first * NATIVE_HEX_BASE) + second) * NATIVE_HEX_BASE + third) * NATIVE_HEX_BASE + fourth
 
 
         def json_string_into(data: darray[u8]&, start: usize, stop: usize, destination: mutable darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate]:
@@ -1554,14 +1609,34 @@ module ProfilerNative:
                 elif escaped == NATIVE_BYTE_ESCAPE_TAB:
                     destination.push(NATIVE_BYTE_TAB)
                 elif escaped == NATIVE_BYTE_ESCAPE_UNICODE:
-                    return NATIVE_NEGATIVE_ONE if cursor + NATIVE_JSON_UNICODE_DIGITS >= stop
-                    high: i64 = json_hex_digit(data[cursor + NATIVE_ONE.usize()])
-                    high <- high * NATIVE_HEX_BASE + json_hex_digit(data[cursor + NATIVE_TWO.usize()]) if high >= NATIVE_ZERO
-                    low: i64 = json_hex_digit(data[cursor + NATIVE_THREE.usize()])
-                    low <- low * NATIVE_HEX_BASE + json_hex_digit(data[cursor + NATIVE_JSON_UNICODE_DIGITS]) if low >= NATIVE_ZERO
-                    return NATIVE_NEGATIVE_ONE if high != NATIVE_ZERO or low < NATIVE_ZERO
-                    destination.push(low.u8())
-                    cursor <- cursor + NATIVE_JSON_UNICODE_DIGITS
+                    codepoint: i64 = json_hex_quad(data, cursor + NATIVE_ONE.usize(), stop)
+                    return NATIVE_NEGATIVE_ONE if codepoint < NATIVE_ZERO
+                    if codepoint >= NATIVE_UNICODE_HIGH_SURROGATE_MIN and codepoint <= NATIVE_UNICODE_HIGH_SURROGATE_MAX:
+                        low_start: usize = cursor + NATIVE_JSON_UNICODE_DIGITS + NATIVE_THREE.usize()
+                        return NATIVE_NEGATIVE_ONE if cursor + NATIVE_JSON_UNICODE_DIGITS + NATIVE_THREE.usize() + NATIVE_JSON_UNICODE_DIGITS > stop
+                        return NATIVE_NEGATIVE_ONE if data[cursor + NATIVE_JSON_UNICODE_DIGITS + NATIVE_ONE.usize()] != NATIVE_BYTE_BACKSLASH or data[cursor + NATIVE_JSON_UNICODE_DIGITS + NATIVE_TWO.usize()] != NATIVE_BYTE_ESCAPE_UNICODE
+                        low: i64 = json_hex_quad(data, low_start, stop)
+                        return NATIVE_NEGATIVE_ONE if low < NATIVE_UNICODE_LOW_SURROGATE_MIN or low > NATIVE_UNICODE_LOW_SURROGATE_MAX
+                        codepoint <- NATIVE_UNICODE_SURROGATE_BASE + (codepoint - NATIVE_UNICODE_HIGH_SURROGATE_MIN) * NATIVE_UNICODE_SURROGATE_SHIFT + low - NATIVE_UNICODE_LOW_SURROGATE_MIN
+                        cursor <- cursor + NATIVE_JSON_UNICODE_DIGITS + NATIVE_TWO.usize() + NATIVE_JSON_UNICODE_DIGITS
+                    else:
+                        return NATIVE_NEGATIVE_ONE if codepoint >= NATIVE_UNICODE_LOW_SURROGATE_MIN and codepoint <= NATIVE_UNICODE_LOW_SURROGATE_MAX
+                        return NATIVE_NEGATIVE_ONE if codepoint > NATIVE_UNICODE_MAX
+                        cursor <- cursor + NATIVE_JSON_UNICODE_DIGITS
+                    if codepoint <= NATIVE_ASCII_MAX:
+                        destination.push(codepoint.u8())
+                    elif codepoint <= NATIVE_UTF8_TWO_BYTE_LIMIT:
+                        destination.push((NATIVE_UTF8_TWO_BYTE_BASE + codepoint / NATIVE_UTF8_TWO_BYTE_DIVISOR).u8())
+                        destination.push((NATIVE_UTF8_CONTINUATION_BASE + codepoint % NATIVE_UTF8_CONTINUATION_MODULUS).u8())
+                    elif codepoint <= NATIVE_UTF8_THREE_BYTE_LIMIT:
+                        destination.push((NATIVE_UTF8_THREE_BYTE_BASE + codepoint / NATIVE_UTF8_THREE_BYTE_DIVISOR).u8())
+                        destination.push((NATIVE_UTF8_CONTINUATION_BASE + (codepoint / NATIVE_UTF8_TWO_BYTE_DIVISOR) % NATIVE_UTF8_CONTINUATION_MODULUS).u8())
+                        destination.push((NATIVE_UTF8_CONTINUATION_BASE + codepoint % NATIVE_UTF8_CONTINUATION_MODULUS).u8())
+                    else:
+                        destination.push((NATIVE_UTF8_FOUR_BYTE_BASE + codepoint / NATIVE_UTF8_FOUR_BYTE_DIVISOR).u8())
+                        destination.push((NATIVE_UTF8_CONTINUATION_BASE + (codepoint / NATIVE_UTF8_THREE_BYTE_DIVISOR) % NATIVE_UTF8_CONTINUATION_MODULUS).u8())
+                        destination.push((NATIVE_UTF8_CONTINUATION_BASE + (codepoint / NATIVE_UTF8_TWO_BYTE_DIVISOR) % NATIVE_UTF8_CONTINUATION_MODULUS).u8())
+                        destination.push((NATIVE_UTF8_CONTINUATION_BASE + codepoint % NATIVE_UTF8_CONTINUATION_MODULUS).u8())
                 else:
                     return NATIVE_NEGATIVE_ONE
                 cursor <- cursor + NATIVE_ONE.usize()
@@ -1570,22 +1645,25 @@ module ProfilerNative:
 
         def json_number_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
             return NATIVE_NEGATIVE_ONE if start >= stop
-            negative: mutable bool = false
             cursor: mutable usize = start
-            if data[cursor] == NATIVE_BYTE_MINUS:
-                negative <- true
-                cursor <- cursor + NATIVE_ONE.usize()
-            return NATIVE_NEGATIVE_ONE if cursor >= stop
+            return NATIVE_NEGATIVE_ONE if data[cursor] == NATIVE_BYTE_MINUS
+            return NATIVE_NEGATIVE_ONE if data[cursor] < NATIVE_BYTE_ASCII_ZERO or data[cursor] > NATIVE_BYTE_ASCII_NINE
             value: mutable i64 = NATIVE_ZERO
             digits: mutable i64 = NATIVE_ZERO
             while cursor < stop |cursor, value, digits, data|:
                 byte: u8 = data[cursor]
                 break if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
-                value <- value * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                return NATIVE_NEGATIVE_ONE if value > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                value <- value * NATIVE_DECIMAL_BASE + digit
                 digits <- digits + NATIVE_ONE
                 cursor <- cursor + NATIVE_ONE.usize()
             return NATIVE_NEGATIVE_ONE if digits == NATIVE_ZERO
-            return -value if negative else value
+            return value if cursor >= stop
+            if data[cursor] != NATIVE_BYTE_SPACE and data[cursor] != NATIVE_BYTE_TAB and data[cursor] != NATIVE_BYTE_NEWLINE and data[cursor] != NATIVE_BYTE_CARRIAGE_RETURN and data[cursor] != NATIVE_BYTE_COMMA and data[cursor] != NATIVE_BYTE_RIGHT_BRACE and data[cursor] != NATIVE_BYTE_RIGHT_BRACKET:
+                return NATIVE_NEGATIVE_ONE
+            return NATIVE_NEGATIVE_ONE if digits > NATIVE_ONE and data[start] == NATIVE_BYTE_ASCII_ZERO
+            return value
 
 
         def json_millis_micros_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
@@ -1629,53 +1707,38 @@ module ProfilerNative:
             return false
 
 
-        def json_read_source(data: darray[u8]&, source: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
-            value_start: i64 = json_key_value_start(data, "source", NATIVE_ZERO.usize(), data.count)
-            return false if value_start < NATIVE_ZERO
-            return false if data[value_start.usize()] != NATIVE_BYTE_DOUBLE_QUOTE
-            cursor: mutable usize = value_start.usize() + NATIVE_ONE.usize()
-            while cursor < data.count |cursor, source, data|:
-                byte: u8 = data[cursor]
-                break if byte == NATIVE_BYTE_DOUBLE_QUOTE
-                if byte != NATIVE_BYTE_BACKSLASH:
-                    source.push(byte)
-                    cursor <- cursor + NATIVE_ONE.usize()
-                    continue
-                cursor <- cursor + NATIVE_ONE.usize()
-                return false if cursor >= data.count
-                escaped: u8 = data[cursor]
-                if escaped == NATIVE_BYTE_DOUBLE_QUOTE or escaped == NATIVE_BYTE_BACKSLASH or escaped == NATIVE_BYTE_SLASH:
-                    source.push(escaped)
-                elif escaped == NATIVE_BYTE_ESCAPE_NEWLINE:
-                    source.push(NATIVE_BYTE_NEWLINE)
-                elif escaped == NATIVE_BYTE_ESCAPE_CARRIAGE_RETURN:
-                    source.push(NATIVE_BYTE_CARRIAGE_RETURN)
-                elif escaped == NATIVE_BYTE_ESCAPE_TAB:
-                    source.push(NATIVE_BYTE_TAB)
-                elif escaped == NATIVE_BYTE_ESCAPE_UNICODE:
-                    return false if cursor + NATIVE_JSON_UNICODE_DIGITS >= data.count
-                    high: i64 = json_hex_digit(data[cursor + NATIVE_ONE.usize()])
-                    high <- high * NATIVE_HEX_BASE + json_hex_digit(data[cursor + NATIVE_TWO.usize()]) if high >= NATIVE_ZERO
-                    low: i64 = json_hex_digit(data[cursor + NATIVE_THREE.usize()])
-                    low <- low * NATIVE_HEX_BASE + json_hex_digit(data[cursor + NATIVE_JSON_UNICODE_DIGITS]) if low >= NATIVE_ZERO
-                    return false if high != NATIVE_ZERO or low < NATIVE_ZERO
-                    source.push(low.u8())
-                    cursor <- cursor + NATIVE_JSON_UNICODE_DIGITS
-                else:
-                    return false
-                cursor <- cursor + NATIVE_ONE.usize()
-            return cursor < data.count and data[cursor] == NATIVE_BYTE_DOUBLE_QUOTE
+        def json_source_value_start(data: darray[u8]&) -> i64 can[Abort.Panic]:
+            compiler_start: i64 = json_key_value_start(data, "compiler", NATIVE_ZERO.usize(), data.count)
+            return NATIVE_NEGATIVE_ONE if compiler_start < NATIVE_ZERO
+            compiler_stop: i64 = json_object_end(data, compiler_start.usize(), data.count)
+            return NATIVE_NEGATIVE_ONE if compiler_stop < NATIVE_ZERO
+            return json_key_value_start(data, "source", compiler_stop.usize(), data.count)
 
 
         def json_read_location_timing(data: darray[u8]&, timing: mutable bool&) -> bool can[Abort.Panic]:
-            value_start: i64 = json_key_value_start(data, "location_timing", NATIVE_ZERO.usize(), data.count)
+            run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
+            return false if run_start < NATIVE_ZERO
+            run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
+            return false if run_stop < NATIVE_ZERO
+            value_start: i64 = json_key_value_start(data, "location_timing", run_start.usize(), run_stop.usize())
             return false if value_start < NATIVE_ZERO
-            return json_bool_into(data, value_start.usize(), data.count, &timing)
+            return false if data[value_start.usize()] != NATIVE_BYTE_ASCII_TRUE_T and data[value_start.usize()] != NATIVE_BYTE_ASCII_FALSE_F
+            timing <- data[value_start.usize()] == NATIVE_BYTE_ASCII_TRUE_T
+            return true
 
 
         def json_read_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             return false if value_start < NATIVE_ZERO
+            value: i64 = json_number_at(data, value_start.usize(), stop)
+            return false if value < NATIVE_ZERO
+            result <- value
+            return true
+
+
+        def json_read_optional_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            return true if value_start < NATIVE_ZERO
             value: i64 = json_number_at(data, value_start.usize(), stop)
             return false if value < NATIVE_ZERO
             result <- value
@@ -1722,13 +1785,17 @@ module ProfilerNative:
             summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
             run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
             return false if compiler_stop < NATIVE_ZERO or summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
-            return false if not json_read_string_field(data, "source", NATIVE_ZERO.usize(), data.count, &capture.source)
+            source_start: i64 = json_key_value_start(data, "source", compiler_stop.usize(), data.count)
+            return false if source_start < NATIVE_ZERO
+            return false if json_string_into(data, source_start.usize(), data.count, &capture.source) < NATIVE_ZERO
             return false if not json_read_string_field(data, "branch", compiler_start.usize(), compiler_stop.usize(), &capture.compiler_branch)
             return false if not json_read_string_field(data, "commit", compiler_start.usize(), compiler_stop.usize(), &capture.compiler_commit)
             return false if not json_read_string_field(data, "opt_level", run_start.usize(), run_stop.usize(), &capture.opt_level)
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &capture.events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &capture.locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &capture.dropped)
+            return false if not json_read_optional_number_field(data, "dropped_call_edges", summary_start.usize(), summary_stop.usize(), &capture.dropped_call_edges)
+            return false if not json_read_optional_number_field(data, "dropped_stacks", summary_start.usize(), summary_stop.usize(), &capture.dropped_stacks)
             return false if not json_read_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &capture.stack_overflow_entries)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &capture.thread_count)
             return false if not json_read_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &capture.trace_events_omitted)
@@ -1761,7 +1828,7 @@ module ProfilerNative:
                 calls: i64 = json_number_at(data, calls_start.usize(), object_stop.usize())
                 self_ns: i64 = json_number_at(data, self_start.usize(), object_stop.usize())
                 return false if calls < NATIVE_ZERO or self_ns < NATIVE_ZERO
-                weight: i64 = self_ns if location_timing and self_ns > NATIVE_ZERO else calls
+                weight: i64 = self_ns if location_timing else calls
                 if weight > NATIVE_ZERO:
                     append_folded_separator(folded)
                     folded.extend(stack_value)
@@ -1775,23 +1842,29 @@ module ProfilerNative:
         def append_offline_folded_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             timing: mutable bool = false
             return false if not json_read_location_timing(data, &timing)
-            return json_read_stacks_to_folded(data, buffer, timing)
+            return false if not json_read_stacks_to_folded(data, buffer, timing)
+            buffer.push(NATIVE_BYTE_NEWLINE) if buffer.count > NATIVE_ZERO.usize()
+            return true
 
 
         def append_offline_speedscope_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             source: mutable darray[u8] = []
             timing: mutable bool = false
-            source_ok: bool = json_read_source(data, &source)
-            return false if not source_ok or not json_read_location_timing(data, &timing)
+            source_start: i64 = json_source_value_start(data)
+            return false if source_start < NATIVE_ZERO
+            return false if json_string_into(data, source_start.usize(), data.count, &source) < NATIVE_ZERO
+            return false if not json_read_location_timing(data, &timing)
             folded: mutable darray[u8] = []
             return false if not json_read_stacks_to_folded(data, &folded, timing)
-            append_speedscope_report(buffer, source, folded)
+            append_speedscope_report(buffer, source, folded, timing)
             return true
 
 
         def append_offline_html_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             source: mutable darray[u8] = []
-            return false if not json_read_source(data, &source)
+            source_start: i64 = json_source_value_start(data)
+            return false if source_start < NATIVE_ZERO
+            return false if json_string_into(data, source_start.usize(), data.count, &source) < NATIVE_ZERO
             summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
             run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
             return false if summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
@@ -1832,7 +1905,9 @@ module ProfilerNative:
 
         def append_offline_text_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             source: mutable darray[u8] = []
-            return false if not json_read_source(data, &source)
+            source_start: i64 = json_source_value_start(data)
+            return false if source_start < NATIVE_ZERO
+            return false if json_string_into(data, source_start.usize(), data.count, &source) < NATIVE_ZERO
             summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
             run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
             return false if summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
@@ -1902,7 +1977,7 @@ module ProfilerNative:
             compiler_mismatch: bool = not byte_arrays_equal(baseline.compiler_commit, candidate.compiler_commit)
             optimization_mismatch: bool = not byte_arrays_equal(baseline.opt_level, candidate.opt_level)
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
-            evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
+            evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
             if not format_json:
                 append_text(buffer, "Elisa profile comparison\n")
                 append_text(buffer, "baseline: ")
@@ -2054,7 +2129,9 @@ module ProfilerNative:
                     return report_error("--format requires text or json") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
                         format_json <- true
-                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") != NATIVE_ZERO:
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
+                        format_json <- false
+                    else:
                         return report_error("--format requires text or json")
                     index <- index + NATIVE_TWO
                     continue
@@ -2070,12 +2147,12 @@ module ProfilerNative:
             return report_error("candidate capture could not be read") if candidate_data.count == NATIVE_ZERO.usize()
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
-                dropped: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
+                dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
-                dropped: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
+                dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_data, &baseline)
@@ -2128,7 +2205,7 @@ module ProfilerNative:
             buffer: mutable darray[u8]&, source: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
             exit_code: i64, opt_level: i64, event_trace: bool, recent_path: bool, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
-            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ms: i64
+            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64
         ) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"schema_version\":")
             append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
@@ -2223,7 +2300,7 @@ module ProfilerNative:
             append_text(buffer, ",\"execution_ms_median\":")
             append_millis(buffer, execution_median_ns)
             append_text(buffer, ",\"execution_ms_stdev\":")
-            append_i64(buffer, execution_stdev_ms)
+            append_millis(buffer, execution_stdev_ns)
             append_text(buffer, ",\"cpu_user_ms\":null,\"cpu_system_ms\":null,\"cpu_ms\":null,\"peak_rss_bytes\":null,\"warmup_ms\":")
             append_millis(buffer, warmup_ns)
             append_text(buffer, ",\"warmup_repetitions\":")
@@ -2374,13 +2451,33 @@ module ProfilerNative:
                     return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
                         format_json <- true
+                        format_text <- false
+                        format_folded <- false
+                        format_speedscope <- false
+                        format_html <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
+                        format_json <- false
                         format_text <- true
+                        format_folded <- false
+                        format_speedscope <- false
+                        format_html <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- false
                         format_folded <- true
+                        format_speedscope <- false
+                        format_html <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "speedscope") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- false
+                        format_folded <- false
                         format_speedscope <- true
+                        format_html <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
+                        format_json <- false
+                        format_text <- false
+                        format_folded <- false
+                        format_speedscope <- false
                         format_html <- true
                     else:
                         return report_error("--format requires json, text, folded, speedscope, or html")
@@ -2451,15 +2548,36 @@ module ProfilerNative:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
                     return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
-                    if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
+                    if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
+                        format_text <- false
+                        format_folded <- false
+                        format_html <- false
+                        format_speedscope <- false
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
                         format_text <- true
+                        format_folded <- false
+                        format_html <- false
+                        format_speedscope <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "folded") == NATIVE_ZERO:
+                        format_text <- false
                         format_folded <- true
+                        format_html <- false
+                        format_speedscope <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
+                        format_text <- false
+                        format_folded <- false
                         format_html <- true
+                        format_speedscope <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "speedscope") == NATIVE_ZERO:
+                        format_text <- false
+                        format_folded <- false
+                        format_html <- false
                         format_speedscope <- true
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") != NATIVE_ZERO:
+                        format_text <- false
+                        format_folded <- false
+                        format_html <- false
+                        format_speedscope <- false
                         return report_error("--format requires json, text, folded, speedscope, or html")
                     index <- index + NATIVE_TWO
                     continue
@@ -2498,16 +2616,8 @@ module ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--repeat") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--warmup") == NATIVE_ZERO:
                     return report_error("--repeat/--warmup requires a positive integer") if index + NATIVE_ONE >= argc
                     count_text: cstr = slots[index + NATIVE_ONE].cast[cstr]
-                    count_bytes: u8& = count_text.cast[u8&] can Unsafe.PointerCast
-                    count: mutable i64 = NATIVE_ZERO
-                    count_cursor: mutable i64 = NATIVE_ZERO
-                    while true |count_bytes, count_cursor, count|:
-                        byte_ref: u8& = count_bytes + count_cursor
-                        byte: u8 = byte_ref
-                        break if byte == NATIVE_BYTE_NUL
-                        return report_error("--repeat/--warmup requires a non-negative integer") if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
-                        count <- count * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
-                        count_cursor <- count_cursor + NATIVE_ONE
+                    count: i64 = parse_nonnegative_cstr(count_text)
+                    return report_error("--repeat/--warmup requires a non-negative integer") if count < NATIVE_ZERO
                     if profiler_ffi_strcmp(argument, "--repeat") == NATIVE_ZERO:
                         return report_error("--repeat must be at least 1") if count < NATIVE_ONE
                         requested_repetitions <- count
@@ -2518,16 +2628,8 @@ module ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--max-event-trace-events") == NATIVE_ZERO:
                     return report_error("--max-event-trace-events requires a non-negative integer") if index + NATIVE_ONE >= argc
                     limit_text: cstr = slots[index + NATIVE_ONE].cast[cstr]
-                    limit_bytes: u8& = limit_text.cast[u8&] can Unsafe.PointerCast
-                    limit: mutable i64 = NATIVE_ZERO
-                    limit_cursor: mutable i64 = NATIVE_ZERO
-                    while true |limit_bytes, limit_cursor, limit|:
-                        byte_ref: u8& = limit_bytes + limit_cursor
-                        byte: u8 = byte_ref
-                        break if byte == NATIVE_BYTE_NUL
-                        return report_error("--max-event-trace-events requires a non-negative integer") if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
-                        limit <- limit * NATIVE_DECIMAL_BASE + (byte - NATIVE_BYTE_ASCII_ZERO).i64()
-                        limit_cursor <- limit_cursor + NATIVE_ONE
+                    limit: i64 = parse_nonnegative_cstr(limit_text)
+                    return report_error("--max-event-trace-events requires a non-negative integer") if limit < NATIVE_ZERO
                     trace_limit <- limit
                     index <- index + NATIVE_TWO
                     continue
@@ -2743,6 +2845,7 @@ module ProfilerNative:
                 run_result: TargetRunResult = run_target_direct(executable, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, event_trace, recent_path, trace_limit)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
+                return report_error("native target produced no collector capture") if capture.count == NATIVE_ZERO.usize()
                 current_summary: CaptureSummary = parse_capture(capture, source)
                 if current_summary.malformed:
                     cleanup_temp(temporary)
@@ -2775,15 +2878,17 @@ module ProfilerNative:
                 total_execution_ns <- total_execution_ns + metric_times[index]
             execution_min_ns: i64 = metric_times[0]
             execution_max_ns: i64 = metric_times[metric_times.count - 1.usize()]
-            execution_median_ns: i64 = metric_times[metric_times.count / 2.usize()]
+            execution_median_ns: mutable i64 = metric_times[metric_times.count / 2.usize()]
+            if metric_times.count % NATIVE_TWO.usize() == NATIVE_ZERO.usize():
+                execution_median_ns <- (metric_times[metric_times.count / NATIVE_TWO.usize() - NATIVE_ONE.usize()] + metric_times[metric_times.count / NATIVE_TWO.usize()]) / NATIVE_TWO
             execution_mean_ns: i64 = total_execution_ns / metric_times.count.i64()
-            mean_millis: i64 = execution_mean_ns / NATIVE_NANOS_PER_MILLISECOND
+            mean_micros: i64 = execution_mean_ns / NATIVE_NANOS_PER_MICROSECOND
             variance: mutable i64 = NATIVE_ZERO
-            for index in 0..<metric_times.count |index, metric_times, variance, mean_millis|:
-                difference: i64 = metric_times[index] / NATIVE_NANOS_PER_MILLISECOND - mean_millis
+            for index in 0..<metric_times.count |index, metric_times, variance, mean_micros|:
+                difference: i64 = metric_times[index] / NATIVE_NANOS_PER_MICROSECOND - mean_micros
                 variance <- variance + difference * difference
             variance <- variance / metric_times.count.i64()
-            execution_stdev_ms: i64 = integer_sqrt(variance)
+            execution_stdev_ns: i64 = integer_sqrt(variance) * NATIVE_NANOS_PER_MICROSECOND
             final_exit_code: i64 = system_exit_code(overall_status)
             report: mutable darray[u8] = []
             if format_text:
@@ -2791,15 +2896,15 @@ module ProfilerNative:
             elif format_folded:
                 append_folded_report(report, summary)
             elif format_speedscope:
-                append_speedscope_report(report, source, summary.folded_records)
+                append_speedscope_report(report, source, summary.folded_records, true)
             elif format_html:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ms)
+                append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns)
             cleanup_temp(temporary)
             if output.count > NATIVE_ZERO.usize():
-                return NATIVE_ZERO if write_file(output, report)
-                return report_error("could not write native profile report")
+                return report_error("could not write native profile report") if not write_file(output, report)
+                return final_exit_code
             _ = profiler_ffi_write(NATIVE_STANDARD_OUTPUT, &report[0], report.count) can Console
             return final_exit_code
 
