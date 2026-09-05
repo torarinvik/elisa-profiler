@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-f1219f8829dbb599fe64713bff8f4cad64012f90 fix: support nested module backend emission
+c11a42c267eb5852e867948c5bc99810db86fadf Merge codex/wasm-sdk qualified error recovery
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -18,9 +18,12 @@ storage fix from the main compiler checkout. The dedicated branch now includes
 the complete `codex/wasm-sdk` tip `88448c3f` through merge `095ca058`. The
 current tip also contains the qualified-`usize` cast-inference fix from
 `d58afa95` and its parity fixture through `ec2e7609`.
-The latest dedicated commit `f1219f88` adds recursive nested-module hoisting
-in backend declaration selection and corrects the default stage0 path used by
-the stage1 wrapper.
+The dedicated branch then adds recursive nested-module hoisting in backend
+declaration selection and corrects the default stage0 path used by the stage1
+wrapper in `f1219f88`. It imports the qualified error-recovery fix from
+`codex/wasm-sdk` (`09270840`) and preserves that branch tip through merge
+`c11a42c2`; the focused parity smoke passes when the optional stage0 compiler is
+available.
 That ancestry includes the packed-store activation, effect-identity lowering,
 qualified-owner error-call preservation, semantic-gate documentation, nested
 stage0 resolution, bounded self-host reproducibility probes, and gen2

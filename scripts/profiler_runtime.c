@@ -90,6 +90,7 @@ enum {
     PROFILE_TABLE_LOAD_NUMERATOR = 10,
     PROFILE_TABLE_LOAD_DENOMINATOR = 7,
     PROFILE_DECIMAL_DIGITS = 20,
+    PROFILE_EXIT_CODE_MASK = 0xff,
 };
 
 static const uint64_t PROFILE_FRAME_FNV_OFFSET = UINT64_C(14695981039346656037);
@@ -1817,7 +1818,11 @@ int main(int argc, char **argv) {
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main((int64_t)argc, argv);
     profile_dump();
-    return (int)(result & 0xff);
+    /* The native toolchain may link this collector without a CRT startup
+     * object, so returning from main would return into the dyld entry frame.
+     * Exit explicitly after the final dump to make the collector's ABI
+     * independent of the host linker's startup policy. */
+    _exit((int)(result & PROFILE_EXIT_CODE_MASK));
 }
 #endif
 

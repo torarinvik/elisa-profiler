@@ -338,6 +338,28 @@ extend ProfilerNative:
             append_text(destination, fallback)
 
 
+        def path_from_executable(argv_zero: cstr, suffix: sview, destination: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            executable: mutable darray[u8] = []
+            copy_cstr(executable, argv_zero)
+            separator: mutable usize = executable.count
+            while separator > NATIVE_ZERO.usize() |separator, executable|:
+                separator <- separator - NATIVE_ONE.usize()
+                break if executable[separator] == NATIVE_BYTE_SLASH
+            return false if separator == NATIVE_ZERO.usize()
+            destination <- []
+            for index in 0..<separator |destination, executable|:
+                destination.push(executable[index])
+            append_text(destination, suffix)
+            return true
+
+
+        def environment_or_executable(name: sview, fallback: sview, argv_zero: cstr, suffix: sview, destination: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            destination <- []
+            return if copy_environment(name, destination)
+            return if path_from_executable(argv_zero, suffix, destination)
+            append_text(destination, fallback)
+
+
         def trim_line_endings(value: mutable darray[u8]&) -> void:
             while value.count > NATIVE_ZERO.usize() |value|:
                 last: u8 = value[value.count - NATIVE_ONE.usize()]
@@ -1059,13 +1081,14 @@ extend ProfilerNative:
                     continue
                 return report_error("unknown doctor option")
             compiler_root: mutable darray[u8] = []
-            environment_or("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", compiler_root)
+            argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
+            environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
             stage1: mutable darray[u8] = []
-            environment_or("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", stage1)
+            environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", stage1)
             runtime: mutable darray[u8] = []
-            environment_or("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime)
+            environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime)
             collector: mutable darray[u8] = []
-            environment_or("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", collector)
+            environment_or_executable("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", argv_zero, "/../scripts/profiler_runtime.c", collector)
             manifest_path: darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
             compiler_ok: bool = readable_file(compiler_root)
             stage1_ok: bool = executable_available(stage1)
@@ -1553,11 +1576,12 @@ extend ProfilerNative:
             return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
         
             compiler_root: mutable darray[u8] = []
-            environment_or("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", compiler_root)
+            argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
+            environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
             compiler_binary: mutable darray[u8] = []
-            environment_or("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_binary)
+            environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_binary)
             runtime_object: mutable darray[u8] = []
-            environment_or("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
+            environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
             compiler_tool: mutable darray[u8] = []
             environment_or("ELISA_CLANG", "clang", compiler_tool)
             objcopy_tool: mutable darray[u8] = []
@@ -1565,7 +1589,7 @@ extend ProfilerNative:
             git_tool: mutable darray[u8] = []
             environment_or("ELISA_GIT", "git", git_tool)
             collector_source: mutable darray[u8] = []
-            environment_or("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", collector_source)
+            environment_or_executable("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", argv_zero, "/../scripts/profiler_runtime.c", collector_source)
         
             temporary: mutable darray[u8] = []
             append_text(temporary, "/tmp/elisa-profiler-native-")
