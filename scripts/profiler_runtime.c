@@ -1424,10 +1424,10 @@ static void profile_dump(void) {
 
 #ifndef ELISA_PROFILE_NO_MAIN
 /* The Elisa entry point may be the legacy no-argument form or the argv-aware
- * form. An empty parameter list deliberately leaves the C declaration open so
- * the wrapper can pass argc/argv without breaking legacy targets; both forms
- * use the same platform calling convention for the leading return value. */
-extern int64_t elisa_profile_target_main();
+ * form. The generated legacy entry ignores the extra platform arguments at
+ * this ABI boundary; the explicit prototype keeps the strict collector build
+ * warning-free while argv-aware targets receive the real values. */
+extern int64_t elisa_profile_target_main(int64_t argc, void *argv);
 
 static uint64_t profile_read_uint64_environment(const char *name) {
     const char *text = getenv(name);
