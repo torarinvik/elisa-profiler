@@ -181,8 +181,9 @@ def main():
         embedded_output = work / "embedded-source.json"
         run("profile", ROOT / "examples/hot_loop.elisa", "--embed-source", "--format", "json", "--output", embedded_output)
         embedded = json.loads(embedded_output.read_text(encoding="utf-8"))
-        assert embedded["source_snapshot"]["content"] == (ROOT / "examples/hot_loop.elisa").read_text(encoding="utf-8")
-        assert len(embedded["source_snapshot"]["sha256"]) == 64
+        embedded_source = (ROOT / "examples/hot_loop.elisa").read_bytes()
+        assert embedded["source_snapshot"]["content"] == embedded_source.decode("utf-8")
+        assert embedded["source_snapshot"]["sha256"] == hashlib.sha256(embedded_source).hexdigest()
         assert all(abs(item["cpu_ms"] - item["cpu_user_ms"] - item["cpu_system_ms"]) <= 0.002 for item in repetitions)
         assert all(item["peak_rss_bytes"] is not None and item["peak_rss_bytes"] >= 0 for item in repetitions)
         assert abs(measured["run"]["cpu_user_ms"] - sum(item["cpu_user_ms"] for item in repetitions)) <= 0.002
