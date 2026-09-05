@@ -187,7 +187,7 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
-            return false if not json_read_number_field(data, "exit_code", run_start.usize(), run_stop.usize(), &exit_code)
+            return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
             timing: mutable bool = false
             return false if not json_read_location_timing(data, &timing)
             folded: mutable darray[u8] = []
@@ -236,7 +236,7 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "function_events", summary_start.usize(), summary_stop.usize(), &function_events)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
-            return false if not json_read_number_field(data, "exit_code", run_start.usize(), run_stop.usize(), &exit_code)
+            return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
             append_text(buffer, "Elisa profiler\nsource: ")
             for index in 0..<source.count |buffer, source|:
                 buffer.push(source[index])
@@ -258,4 +258,3 @@ extend ProfilerNative:
             append_i64(buffer, dropped)
             append_text(buffer, "\n")
             return true
-
