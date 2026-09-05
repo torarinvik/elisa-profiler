@@ -68,7 +68,7 @@ tool overrides are never re-parsed by a shell.
 
 Native profiles currently support JSON, text, folded-stack, Speedscope sampled,
 and HTML output. The native `report` command preserves JSON captures and can
-regenerate folded-stack and Speedscope artifacts offline; HTML/text offline
+regenerate folded-stack, Speedscope, and HTML artifacts offline; text offline
 rendering and comparison remain tracked in the implementation plan.
 
 The native launcher also accepts `--cwd PATH`, `--stdin PATH`, and repeatable
