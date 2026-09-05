@@ -254,6 +254,8 @@ def main():
         assert len(threaded["thread_loss"]) >= 3
         assert all(record["events"] > 0 for record in threaded["thread_loss"])
         assert any(function["function"] == "worker" for function in threaded["functions"])
+        assert b"thread loss records: present" in run("report", threaded_output, "--format", "text")
+        assert b"Thread loss" in run("report", threaded_output, "--format", "html")
 
         functions_capture = work / "functions.json"
         values_capture = work / "values.json"

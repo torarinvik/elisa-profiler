@@ -210,6 +210,13 @@ extend ProfilerNative:
             functions: mutable darray[u8] = []
             for index in functions_start.usize()..<functions_stop.usize() |functions, data|:
                 functions.push(data[index])
+            thread_loss: mutable darray[u8] = []
+            thread_loss_start: i64 = json_key_value_start(data, "thread_loss", NATIVE_ZERO.usize(), data.count)
+            if thread_loss_start >= NATIVE_ZERO:
+                thread_loss_stop: i64 = json_array_end(data, thread_loss_start.usize(), data.count)
+                return false if thread_loss_stop < NATIVE_ZERO
+                for index in thread_loss_start.usize()..<thread_loss_stop.usize() |thread_loss, data|:
+                    thread_loss.push(data[index])
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa offline renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
@@ -224,6 +231,7 @@ extend ProfilerNative:
             append_i64(buffer, thread_count)
             append_text(buffer, "</dd></div></dl>")
             append_html_function_browser(buffer, functions)
+            append_html_section(buffer, "Thread loss", thread_loss)
             append_html_section(buffer, "Folded stacks", folded)
             append_text(buffer, "</main></body></html>\n")
             return true
@@ -275,5 +283,7 @@ extend ProfilerNative:
             append_i64(buffer, thread_count)
             append_text(buffer, "\ndropped: ")
             append_i64(buffer, dropped)
-            append_text(buffer, "\n")
+            thread_loss_start: i64 = json_key_value_start(data, "thread_loss", NATIVE_ZERO.usize(), data.count)
+            append_text(buffer, "\nthread loss records: ")
+            append_text(buffer, "present\n" if thread_loss_start >= NATIVE_ZERO else "none\n")
             return true

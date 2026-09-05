@@ -700,6 +700,7 @@ extend ProfilerNative:
             append_html_section(buffer, "Call edges", summary.call_edge_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
             append_html_section(buffer, "Locations", summary.location_records)
+            append_html_section(buffer, "Thread loss", summary.thread_loss_records)
             append_text(buffer, "</main></body></html>\n")
 
 
@@ -1022,6 +1023,9 @@ extend ProfilerNative:
             append_text(buffer, ", stacks ")
             append_i64(buffer, summary.stack_dropped)
             append_text(buffer, ")\n")
+            append_text(buffer, "thread loss records: ")
+            append_i64(buffer, summary.thread_loss_record_count)
+            append_text(buffer, "\n")
             append_text(buffer, "\nexecution: ")
             append_millis(buffer, execution_ns)
             append_text(buffer, " ms\ncompile: ")
