@@ -502,6 +502,14 @@ def parse_protocol_value(value: str, line: str, is_signed: bool) -> int:
     return parse_protocol_int(value, line) if is_signed else parse_protocol_uint(value, line)
 
 
+def process_signal(returncode: int) -> int | None:
+    if returncode < 0:
+        return -returncode
+    if 128 <= returncode <= 255:
+        return returncode - 128
+    return None
+
+
 def parse_profile(
     stderr: str, *, allow_missing: bool = False
 ) -> tuple[
@@ -514,6 +522,7 @@ def parse_profile(
     dict[str, Any] | None,
 ]:
     meta: dict[str, Any] | None = None
+    crash_signal: int | None = None
     locations: list[dict[str, Any]] = []
     call_edges: list[dict[str, Any]] = []
     stacks: list[dict[str, Any]] = []
@@ -532,12 +541,19 @@ def parse_profile(
         fields = line.split("\t")
         if len(fields) < 2 or fields[1] != "1":
             raise ProfilerError(f"unsupported profiler runtime protocol version: {line}")
+        if len(fields) == 4 and fields[2] == "crash":
+            crash_signal = parse_protocol_uint(fields[3], line)
+            if crash_signal < 1 or crash_signal > 128:
+                raise ProfilerError(f"invalid profiler crash signal: {line}")
+            continue
         if len(fields) in (6, 8, 9, 15) and fields[2] == "meta":
             meta = {
                 "events": parse_protocol_uint(fields[3], line),
                 "locations": parse_protocol_uint(fields[4], line),
                 "dropped": parse_protocol_uint(fields[5], line),
             }
+            if crash_signal is not None:
+                meta["crash_signal"] = crash_signal
             if len(fields) == 8:
                 meta["max_stack_depth"] = parse_protocol_uint(fields[6], line)
                 meta["stack_overflow_entries"] = parse_protocol_uint(fields[7], line)
@@ -669,6 +685,7 @@ def parse_profile(
                     "budget_exceeded": 0,
                     "call_edge_dropped": 0,
                     "stack_dropped": 0,
+                    "crash_signal": crash_signal,
                 },
                 [],
                 [],
@@ -682,6 +699,8 @@ def parse_profile(
     meta["trace_captured"] = trace_captured
     meta["trace_omitted"] = trace_omitted
     meta["trace_limit"] = trace_limit
+    if crash_signal is not None:
+        meta["crash_signal"] = crash_signal
     return (
         meta,
         locations,
@@ -732,6 +751,7 @@ def merge_profiles(
     budget_exceeded = 0
     call_edge_dropped = 0
     stack_dropped = 0
+    crash_signal: int | None = None
     recent_events: list[dict[str, Any]] = []
     active_stack: dict[str, Any] | None = None
     program_stderr: list[str] = []
@@ -751,6 +771,8 @@ def merge_profiles(
         budget_exceeded = max(budget_exceeded, meta.get("budget_exceeded", 0))
         call_edge_dropped += meta.get("call_edge_dropped", 0)
         stack_dropped += meta.get("stack_dropped", 0)
+        if meta.get("crash_signal") is not None:
+            crash_signal = meta["crash_signal"]
         if stderr:
             program_stderr.append(f"run {repetition}:\n{stderr.rstrip()}")
         if path:
@@ -849,6 +871,7 @@ def merge_profiles(
             "budget_exceeded": budget_exceeded,
             "call_edge_dropped": call_edge_dropped,
             "stack_dropped": stack_dropped,
+            "crash_signal": crash_signal,
         },
         locations,
         call_edges,
@@ -2910,6 +2933,43 @@ def build_report(
         "stacks": stacks,
         "locations": locations,
     }
+    quality_reasons: list[str] = []
+    if signal is not None:
+        quality_capture = "target_signal"
+        quality_reasons.append("signal_termination")
+    elif exit_code not in (None, 0):
+        quality_capture = "target_exit"
+        quality_reasons.append("target_exit")
+    else:
+        quality_capture = "complete"
+    if summary.get("crash_signal") is not None:
+        quality_reasons.append("crash_marker")
+    if summary.get("dropped", 0) > 0:
+        quality_reasons.append("dropped_locations")
+    if summary.get("dropped_call_edges", 0) > 0:
+        quality_reasons.append("dropped_call_edges")
+    if summary.get("dropped_stacks", 0) > 0:
+        quality_reasons.append("dropped_stacks")
+    if summary.get("stack_overflow_entries", 0) > 0:
+        quality_reasons.append("stack_overflow")
+    if summary.get("trace_events_omitted", 0) > 0:
+        quality_reasons.append("trace_omitted")
+    detail_loss = any(
+        reason in quality_reasons
+        for reason in (
+            "dropped_locations",
+            "dropped_call_edges",
+            "dropped_stacks",
+            "stack_overflow",
+            "trace_omitted",
+        )
+    )
+    report["quality"] = {
+        "capture": quality_capture,
+        "detail": "degraded" if detail_loss else "complete",
+        "event_counts": "exact",
+        "reasons": quality_reasons,
+    }
     if program_stderr:
         report["program_stderr"] = program_stderr
     if recent_events:
@@ -3307,6 +3367,7 @@ def profile(args: argparse.Namespace) -> int:
                 )
             else:
                 profile_stderr = target_stderr
+            observed_signal = process_signal(run_status)
             (
                 meta,
                 locations,
@@ -3317,7 +3378,7 @@ def profile(args: argparse.Namespace) -> int:
                 active_stack,
             ) = parse_profile(
                 profile_stderr,
-                allow_missing=run_status < 0 or run_timed_out,
+                allow_missing=observed_signal is not None or run_timed_out or run_status != 0,
             )
             program_stderr = target_stderr
             if parsed_profile_stderr:
@@ -3327,8 +3388,8 @@ def profile(args: argparse.Namespace) -> int:
             run_record = {
                 "repetition": repetition,
                 "requested_repetitions": args.repeat,
-                "exit_code": run_status if run_status >= 0 else None,
-                "signal": -run_status if run_status < 0 else None,
+                "exit_code": run_status if observed_signal is None else None,
+                "signal": observed_signal,
                 "execution_ms": execution_ms,
                 "timed_out": run_timed_out,
                 "cpu_user_ms": cpu_delta[0] if cpu_delta is not None else None,
@@ -3347,6 +3408,7 @@ def profile(args: argparse.Namespace) -> int:
                 "detail_budget_exceeded": bool(meta.get("budget_exceeded", 0)),
                 "dropped_call_edges": meta.get("call_edge_dropped", 0),
                 "dropped_stacks": meta.get("stack_dropped", 0),
+                "crash_signal": meta.get("crash_signal"),
                 "trace_events_captured": meta.get("trace_captured", 0),
                 "trace_events_omitted": meta.get("trace_omitted", 0),
                 "trace_event_limit": (

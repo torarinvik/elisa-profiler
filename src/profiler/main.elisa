@@ -175,6 +175,7 @@ module ProfilerNative:
         const NATIVE_FILE_MODE: i64 = 420
         const NATIVE_MONOTONIC_CLOCK: i64 = 6
         const NATIVE_REPORT_SCHEMA_VERSION: i64 = 1
+        const NATIVE_ARTIFACT_VERSION: i64 = 1
         const NATIVE_PROTOCOL_KIND_STATEMENT: i64 = 1
         const NATIVE_PROTOCOL_KIND_VALUE: i64 = 2
         const NATIVE_PROTOCOL_KIND_FUNCTION: i64 = 3
@@ -509,6 +510,38 @@ module ProfilerNative:
                     return false
                 written <- written + amount.usize()
             _ = profiler_ffi_close(fd)
+            return true
+
+
+        def append_profile_artifact(buffer: mutable darray[u8]&, capture: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"artifact_version\":")
+            append_i64(buffer, NATIVE_ARTIFACT_VERSION)
+            append_text(buffer, ",\"kind\":\"elisa-profile\",\"manifest\":{\"capture_format\":\"profile-json-v1\",\"compression\":\"none\",\"capture_bytes\":")
+            append_i64(buffer, capture.count.i64())
+            append_text(buffer, "},\"capture\":")
+            buffer.extend(capture)
+            append_text(buffer, "}\n")
+
+
+        def unwrap_profile_artifact(data: darray[u8]&, capture: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            artifact_start: i64 = json_key_value_start(data, "artifact_version", NATIVE_ZERO.usize(), data.count)
+            if artifact_start < NATIVE_ZERO:
+                capture.extend(data)
+                return true
+            version: i64 = json_number_at(data, artifact_start.usize(), data.count)
+            return false if version != NATIVE_ARTIFACT_VERSION
+            kind_start: i64 = json_key_value_start(data, "kind", NATIVE_ZERO.usize(), data.count)
+            return false if kind_start < NATIVE_ZERO
+            kind: mutable darray[u8] = []
+            return false if json_string_into(data, kind_start.usize(), data.count, &kind) < NATIVE_ZERO
+            return false if not protocol_field_is(kind, "elisa-profile")
+            capture_start: i64 = json_key_value_start(data, "capture", NATIVE_ZERO.usize(), data.count)
+            return false if capture_start < NATIVE_ZERO
+            capture_stop: i64 = json_object_end(data, capture_start.usize(), data.count)
+            return false if capture_stop < NATIVE_ZERO
+            for index in capture_start.usize()..<capture_stop.usize() |capture, data|:
+                capture.push(data[index])
+            capture.push(NATIVE_BYTE_NEWLINE)
             return true
 
 
@@ -2238,6 +2271,10 @@ module ProfilerNative:
             candidate_data: darray[u8] = read_file(candidate_path)
             return report_error("baseline capture could not be read") if baseline_data.count == NATIVE_ZERO.usize()
             return report_error("candidate capture could not be read") if candidate_data.count == NATIVE_ZERO.usize()
+            baseline_capture: mutable darray[u8] = []
+            candidate_capture: mutable darray[u8] = []
+            return report_error("baseline artifact is malformed or unsupported") if not unwrap_profile_artifact(baseline_data, &baseline_capture)
+            return report_error("candidate artifact is malformed or unsupported") if not unwrap_profile_artifact(candidate_data, &candidate_capture)
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
@@ -2248,8 +2285,8 @@ module ProfilerNative:
                 dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
-            return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_data, &baseline)
-            return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_data, &candidate)
+            return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
+            return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)
             rendered: mutable darray[u8] = []
             append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json)
             if output_path.count > NATIVE_ZERO.usize():
@@ -2600,17 +2637,19 @@ module ProfilerNative:
             return report_error("report requires --format json, text, folded, speedscope, or html") if not format_json and not format_text and not format_folded and not format_speedscope and not format_html
             report: darray[u8] = read_file(capture_path)
             return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
+            capture: mutable darray[u8] = []
+            return report_error("capture artifact is malformed or unsupported") if not unwrap_profile_artifact(report, &capture)
             rendered: mutable darray[u8] = []
             if format_text:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_text_report(&rendered, report)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_text_report(&rendered, capture)
             elif format_folded:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_folded_report(&rendered, report)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_folded_report(&rendered, capture)
             elif format_speedscope:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, report)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, capture)
             elif format_html:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_html_report(&rendered, report)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_html_report(&rendered, capture)
             else:
-                rendered.extend(report)
+                rendered.extend(capture)
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, rendered)
                 return report_error("could not write offline report")
@@ -2620,17 +2659,18 @@ module ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile SOURCE [--format json|text|folded|speedscope|html] [--output PATH] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json|text|folded|speedscope|html] [--output PATH] [--artifact-output PATH] or report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
-            return report_error("unknown command; use profile, report, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile SOURCE [--format json] [--output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("unknown command; use profile, record, report, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
+            artifact_output: mutable darray[u8] = []
             opt_level: mutable i64 = NATIVE_ZERO
             event_trace: mutable bool = false
             recent_path: mutable bool = false
@@ -2646,7 +2686,7 @@ module ProfilerNative:
             environment: mutable darray[u8] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, working_directory, stdin_path, environment, source_seen|:
+            while index < argc |index, slots, source, output, artifact_output, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, requested_repetitions, warmup_repetitions, trace_limit, working_directory, stdin_path, environment, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
                     return report_error("--format requires json, text, folded, speedscope, or html") if index + NATIVE_ONE >= argc
@@ -2686,6 +2726,11 @@ module ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
                     return report_error("--output requires a path") if index + NATIVE_ONE >= argc
                     copy_cstr(output, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--artifact-output") == NATIVE_ZERO:
+                    return report_error("--artifact-output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(artifact_output, slots[index + NATIVE_ONE].cast[cstr])
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--cwd") == NATIVE_ZERO:
@@ -2759,6 +2804,7 @@ module ProfilerNative:
                 index <- index + NATIVE_ONE
         
             return report_error("profile requires a source path") if not source_seen
+            return report_error("--artifact-output requires --format json") if artifact_output.count > NATIVE_ZERO.usize() and (format_text or format_folded or format_html or format_speedscope)
             source_check: darray[u8] = read_file(source)
             return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
         
@@ -3003,7 +3049,12 @@ module ProfilerNative:
                 append_html_report(report, source, summary, final_exit_code, total_execution_ns, compile_elapsed_ns)
             else:
                 append_report(report, source, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, final_exit_code, overall_status, opt_level, event_trace, recent_path, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns)
+            artifact: mutable darray[u8] = []
+            if artifact_output.count > NATIVE_ZERO.usize():
+                append_profile_artifact(&artifact, report)
             cleanup_temp(temporary)
+            if artifact_output.count > NATIVE_ZERO.usize():
+                return report_error("could not write profile artifact") if not write_file(artifact_output, artifact)
             if output.count > NATIVE_ZERO.usize():
                 return report_error("could not write native profile report") if not write_file(output, report)
                 return final_exit_code

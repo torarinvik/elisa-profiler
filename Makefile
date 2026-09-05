@@ -73,6 +73,14 @@ profiler-native-smoke: profiler-native
 		grep -Fq '"ok":true' "$$native_work/doctor.json"; \
 		"$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --event-trace --max-event-trace-events 10 --format json --output "$$native_work/report.json"; \
 		test -s "$$native_work/report.json"; \
+		"$(NATIVE_PROFILER_BIN)" record "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format json --output "$$native_work/record.json" --artifact-output "$$native_work/profile.elisaprof"; \
+		python3 "$(PROFILER_ROOT)/test/profile_artifact_smoke.py" "$$native_work/profile.elisaprof"; \
+		"$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-report.json"; \
+		cmp -s "$$native_work/record.json" "$$native_work/artifact-report.json"; \
+		"$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format folded --output "$$native_work/artifact.folded"; \
+		grep -Fq 'main' "$$native_work/artifact.folded"; \
+		"$(NATIVE_PROFILER_BIN)" compare "$$native_work/profile.elisaprof" "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-comparison.json"; \
+		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/comparison.schema.json" "$$native_work/artifact-comparison.json"; \
 		grep -Fq '"locations":[{' "$$native_work/report.json"; \
 		grep -Fq '"call_edges":[{' "$$native_work/report.json"; \
 		grep -Fq '"stacks":[{' "$$native_work/report.json"; \

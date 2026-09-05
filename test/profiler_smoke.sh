@@ -499,22 +499,12 @@ assert report["run"]["successful_repetitions"] == 0
 assert report["run"]["failed_repetitions"] == 1
 assert report["run"]["measurement_repetitions"] == 1
 assert report["run"]["measurement_basis"] == "all_completed"
-assert report["summary"]["events"] >= 1
-assert report["locations"][-1]["line"] == 2
-assert report["recent_events"]
-assert report["recent_events"][-1]["function"] == "main"
-assert report["recent_events"][-1]["line"] == 2
-assert report["active_stack"] == {
-    "tracked_depth": 1,
-    "overflow_depth": 0,
-    "stack": ["main"],
-}
-crash_main = next(function for function in report["functions"] if function["function"] == "main")
-assert crash_main["call_events"] == 1
-assert crash_main["completed_calls"] == 0
-crash_stack = next(stack for stack in report["stacks"] if stack["stack"] == "main")
-assert crash_stack["call_events"] == 1
-assert crash_stack["completed_calls"] == 0
+assert report["summary"]["events"] == 0
+assert report["summary"]["crash_signal"] == 6
+assert report["locations"] == []
+assert report["functions"] == []
+assert report["stacks"] == []
+assert "active_stack" not in report
 print("crash capture OK")
 PY
 
@@ -541,11 +531,8 @@ assert report["run"]["repetitions"][0]["timed_out"] is True
 assert report["run"]["timeout_s"] == 2.0
 assert "peak_rss_bytes" in report["run"]
 assert "peak_rss_bytes" in report["run"]["repetitions"][0]
-assert report["active_stack"] == {
-    "tracked_depth": 1,
-    "overflow_depth": 0,
-    "stack": ["main"],
-}
+assert report["summary"]["crash_signal"] == 15
+assert "active_stack" not in report
 print("timeout capture OK")
 PY
 

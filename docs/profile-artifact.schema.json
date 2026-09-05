@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elisa-lang.org/schemas/profile-artifact-v1.json",
+  "title": "Elisa profiler artifact",
+  "description": "Self-contained v1 profile artifact emitted by --artifact-output.",
+  "type": "object",
+  "required": ["artifact_version", "kind", "manifest", "capture"],
+  "properties": {
+    "artifact_version": { "const": 1 },
+    "kind": { "const": "elisa-profile" },
+    "manifest": {
+      "type": "object",
+      "required": ["capture_format", "compression", "capture_bytes"],
+      "properties": {
+        "capture_format": { "const": "profile-json-v1" },
+        "compression": { "const": "none" },
+        "capture_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "capture": {
+      "$ref": "profile.schema.json"
+    }
+  },
+  "additionalProperties": true
+}
