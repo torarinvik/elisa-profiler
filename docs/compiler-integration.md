@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-c11a42c267eb5852e867948c5bc99810db86fadf Merge codex/wasm-sdk qualified error recovery
+506e93c2ada4a1c039a53de63aa1b09889847f7c fix: resolve stage0 from nested worktrees
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -23,7 +23,9 @@ declaration selection and corrects the default stage0 path used by the stage1
 wrapper in `f1219f88`. It imports the qualified error-recovery fix from
 `codex/wasm-sdk` (`09270840`) and preserves that branch tip through merge
 `c11a42c2`; the focused parity smoke passes when the optional stage0 compiler is
-available.
+available. The latest dedicated commit `506e93c2` makes the stage0 fallback
+probe both top-level-checkout and nested-worktree safe; its seed attempt is
+bounded and retains the prior usable stage1 image if the host limit is hit.
 That ancestry includes the packed-store activation, effect-identity lowering,
 qualified-owner error-call preservation, semantic-gate documentation, nested
 stage0 resolution, bounded self-host reproducibility probes, and gen2
