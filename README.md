@@ -174,6 +174,12 @@ set `ELISA_PROFILE_MAX_LOCATIONS`, `ELISA_PROFILE_MAX_CALL_EDGES`, or
 preserve the configured limits, a `detail_budget_exceeded` quality flag, and
 the number of dropped edge/path records so consumers can distinguish a sparse
 profile from an intentionally bounded one.
+The collector also enforces a shared 64 MiB per-run capture-byte budget by
+default. Use `--max-capture-bytes N` (`0` means unlimited) to choose a different
+budget. Reports expose `capture_byte_limit`, `capture_bytes_used`, and
+`capture_bytes_dropped`; refused detail is reported with the
+`capture_byte_budget` quality reason while aggregate event counts remain
+available.
 
 Useful controls:
 
@@ -188,6 +194,7 @@ Useful controls:
     --recent-path          include the last 256 trace events in each measured run
     --event-trace          include every trace event in each measured JSON run
     --max-event-trace-events N  cap full-trace records per run (0 means unlimited)
+    --max-capture-bytes N  shared collector byte budget (0 means unlimited; default: 67108864)
     ELISA_PROFILE_MAX_LOCATIONS=N  cap distinct source-location records (0 means unlimited)
     ELISA_PROFILE_MAX_CALL_EDGES=N  cap distinct caller-to-callee records (0 means unlimited)
     ELISA_PROFILE_MAX_STACKS=N  cap distinct folded call-path records (0 means unlimited)
