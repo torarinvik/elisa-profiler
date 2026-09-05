@@ -64,9 +64,8 @@ the command-line interface, collection, and report formats.
 The canonical implementation is Elisa. The native executable is built with
 `make profiler-native` and exercised with `make profiler-native-smoke`; its
 `ProfilerNative` module exposes only a public `run` entry point and keeps
-implementation helpers private. `scripts/elisa-profiler` is now a native-only
-compatibility launcher that fails clearly when `bin/elisa-profiler` has not been
-built. The former Python implementation remains only at
+implementation helpers private. Invoke the built executable directly as
+`bin/elisa-profiler`. The former Python implementation remains only at
 `scripts/elisa-profiler-legacy.py` as a migration oracle for legacy fixture
 tests; no user-facing command dispatches to it. The launcher exports absolute
 defaults for the dedicated compiler worktree, runtime object, and collector
@@ -98,25 +97,25 @@ The profiler expects an Elisa source file with main() -> i64. It compiles with
 the local stage1 compiler using -ftrace -g, links a small host collector, runs
 the program, and reports function-entry, statement, and scalar-value events:
 
-    scripts/elisa-profiler profile examples/hot_loop.elisa
-    scripts/elisa-profiler profile examples/hot_loop.elisa --format json -o profiles/hot-loop.json
-    scripts/elisa-profiler profile examples/hot_loop.elisa --format folded \
+    bin/elisa-profiler profile examples/hot_loop.elisa
+    bin/elisa-profiler profile examples/hot_loop.elisa --format json -o profiles/hot-loop.json
+    bin/elisa-profiler profile examples/hot_loop.elisa --format folded \
         -o profiles/hot-loop.folded
-    scripts/elisa-profiler profile examples/hot_loop.elisa --format speedscope \
+    bin/elisa-profiler profile examples/hot_loop.elisa --format speedscope \
         -o profiles/hot-loop.speedscope.json
-    scripts/elisa-profiler profile examples/hot_loop.elisa --format html \
+    bin/elisa-profiler profile examples/hot_loop.elisa --format html \
         -o profiles/hot-loop.html
-    scripts/elisa-profiler profile examples/hot_loop.elisa --mode functions --format json \
+    bin/elisa-profiler profile examples/hot_loop.elisa --mode functions --format json \
         -o profiles/hot-loop-functions.json
-    scripts/elisa-profiler profile examples/hot_loop.elisa --mode diagnostic --format html \
+    bin/elisa-profiler profile examples/hot_loop.elisa --mode diagnostic --format html \
         -o profiles/hot-loop-diagnostic.html
-    scripts/elisa-profiler report profiles/hot-loop.json --format html \
+    bin/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
-    scripts/elisa-profiler recover profiles/hot-loop.json.manifest.json \
+    bin/elisa-profiler recover profiles/hot-loop.json.manifest.json \
         --format json -o profiles/hot-loop-recovered.json
-    scripts/elisa-profiler doctor
-    scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json
-    scripts/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
+    bin/elisa-profiler doctor
+    bin/elisa-profiler compare profiles/baseline.json profiles/candidate.json
+    bin/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
         --format html -o profiles/comparison.html
 
 The default `full` mode records function, statement, and scalar-value events.
@@ -277,7 +276,7 @@ The `compare` command accepts two JSON reports, shows compile/wall/CPU/RSS,
 trace-quality, function, caller-to-callee edge, call-stack path, and source-location timing deltas, and can
 return a failing status for regressions:
 
-    scripts/elisa-profiler compare baseline.json candidate.json \
+    bin/elisa-profiler compare baseline.json candidate.json \
         --threshold 10 --fail-on-regression
 
 Comparison JSON output follows
