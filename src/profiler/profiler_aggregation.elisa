@@ -39,6 +39,10 @@ extend ProfilerNative:
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO,
+                active_stack_available: false,
+                active_stack_tracked_depth: NATIVE_ZERO,
+                active_stack_overflow_depth: NATIVE_ZERO,
+                active_stack_path: [],
                 capture_started: false,
                 capture_complete: true,
                 location_records: [],
@@ -86,6 +90,11 @@ extend ProfilerNative:
             destination.call_edge_dropped <- native_saturating_add(destination.call_edge_dropped, incoming.call_edge_dropped)
             destination.stack_dropped <- native_saturating_add(destination.stack_dropped, incoming.stack_dropped)
             destination.crash_signal <- incoming.crash_signal if incoming.crash_signal > NATIVE_ZERO
+            if incoming.active_stack_available:
+                destination.active_stack_available <- true
+                destination.active_stack_tracked_depth <- incoming.active_stack_tracked_depth
+                destination.active_stack_overflow_depth <- incoming.active_stack_overflow_depth
+                destination.active_stack_path <- incoming.active_stack_path
             destination.capture_started <- true if incoming.capture_started
             destination.capture_complete <- false if incoming.capture_started and not incoming.capture_complete
             append_record_separator(destination.location_records)

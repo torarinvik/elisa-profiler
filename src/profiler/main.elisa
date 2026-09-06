@@ -286,6 +286,31 @@ extend ProfilerNative:
             append_text(buffer, "\":")
 
 
+        def append_active_stack(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            return if not summary.active_stack_available
+            append_text(buffer, ",\"active_stack\":{\"tracked_depth\":")
+            append_i64(buffer, summary.active_stack_tracked_depth)
+            append_text(buffer, ",\"overflow_depth\":")
+            append_i64(buffer, summary.active_stack_overflow_depth)
+            append_text(buffer, ",\"stack\":[")
+            first: mutable bool = true
+            segment: mutable darray[u8] = []
+            for index in 0..<summary.active_stack_path.count |buffer, summary, first, segment|:
+                byte: u8 = summary.active_stack_path[index]
+                if byte == NATIVE_BYTE_SEMICOLON:
+                    if segment.count > NATIVE_ZERO.usize():
+                        append_text(buffer, "," if not first else "")
+                        append_json_string(buffer, segment)
+                        first <- false
+                    segment <- []
+                else:
+                    segment.push(byte)
+            if segment.count > NATIVE_ZERO.usize() and not (segment.count == NATIVE_ONE.usize() and segment[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS):
+                append_text(buffer, "," if not first else "")
+                append_json_string(buffer, segment)
+            append_text(buffer, "]}")
+
+
         def append_json_f64(buffer: mutable darray[u8]&, value: f64) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             scratch: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_HOST_FLOAT_BUFFER_BYTES]
             written: i64 = profiler_ffi_snprintf(&scratch[0], scratch.count, NATIVE_HOST_LOAD_FORMAT, value)
@@ -730,7 +755,8 @@ extend ProfilerNative:
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
-            detail_degraded: bool = summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
+            capture_incomplete: bool = recovered or status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
+            detail_degraded: bool = capture_incomplete or summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
             append_text(buffer, "\"quality\":{\"capture\":\"")
             if recovered:
                 append_text(buffer, "recovered")
@@ -748,7 +774,6 @@ extend ProfilerNative:
             append_text(buffer, "degraded" if detail_degraded else "complete")
             append_text(buffer, "\",\"event_counts\":\"")
             append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO else "exact")
-            capture_incomplete: bool = recovered or status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
             append_text(buffer, "\",\"completeness\":{\"events\":\"")
             append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
             append_text(buffer, "\",\"locations\":\"")
@@ -1131,7 +1156,9 @@ extend ProfilerNative:
                 append_text(buffer, "null")
             else:
                 append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
-            append_text(buffer, "},")
+            append_text(buffer, "}")
+            append_active_stack(buffer, summary)
+            append_text(buffer, ",")
             append_quality(buffer, summary, status, event_trace, timed_out, recovered)
             append_text(buffer, ",\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
             append_i64(buffer, NATIVE_ZERO)

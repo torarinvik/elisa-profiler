@@ -314,7 +314,26 @@ def main():
         assert crash_report["run"]["signal"] == 6
         assert crash_report["summary"]["crash_signal"] == 6
         assert crash_report["quality"]["capture"] == "target_signal"
+        assert crash_report["quality"]["detail"] == "degraded"
         assert "crash_marker" in crash_report["quality"]["reasons"]
+        assert crash_report["active_stack"]["tracked_depth"] >= 1
+        assert crash_report["active_stack"]["overflow_depth"] == 0
+        assert crash_report["active_stack"]["stack"][-1] == "main"
+
+        interrupted_output = work / "interrupted-stack.json"
+        run("profile", ROOT / "examples/interrupted_stack.elisa", "--format", "json", "--output", interrupted_output, expected=134)
+        interrupted = json.loads(interrupted_output.read_text(encoding="utf-8"))
+        assert interrupted["run"]["outcome"] == "target_signal"
+        assert interrupted["run"]["signal"] == 6
+        assert interrupted["summary"]["capture_complete"] is False
+        assert interrupted["quality"]["capture"] == "target_signal"
+        assert interrupted["quality"]["detail"] == "degraded"
+        assert "crash_marker" in interrupted["quality"]["reasons"]
+        assert interrupted["active_stack"]["tracked_depth"] >= 1
+        assert interrupted["active_stack"]["overflow_depth"] == 0
+        assert interrupted["active_stack"]["stack"][0] == "main"
+        assert all(frame == "descend" for frame in interrupted["active_stack"]["stack"][1:])
+
         run("profile", ROOT / "examples/hot_loop.elisa", "--repeat", "2",
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)

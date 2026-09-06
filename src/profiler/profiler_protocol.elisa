@@ -526,6 +526,10 @@ extend ProfilerNative:
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO,
+                active_stack_available: false,
+                active_stack_tracked_depth: NATIVE_ZERO,
+                active_stack_overflow_depth: NATIVE_ZERO,
+                active_stack_path: [],
                 capture_started: false,
                 capture_complete: false,
                 location_records: [],
@@ -598,9 +602,14 @@ extend ProfilerNative:
                             truncated_tail: bool = allow_partial_tail and line_stop == data.count and line_stop > line_start
                             if truncated_tail:
                                 break
-                            summary.malformed <- true
-                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
-                    elif framed_capture and not line_prefix(data, line_start, line_stop, crash_prefix):
+                            next_line_start: usize = line_stop + NATIVE_ONE.usize()
+                            next_line_stop: mutable usize = next_line_start
+                            while next_line_stop < data.count and data[next_line_stop] != NATIVE_BYTE_NEWLINE |next_line_stop, data|:
+                                next_line_stop <- next_line_stop + NATIVE_ONE.usize()
+                            if not (framed_capture and next_line_start < data.count and line_prefix(data, next_line_start, next_line_stop, crash_prefix)):
+                                summary.malformed <- true
+                                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
+                    elif framed_capture and line_start != line_stop and not line_prefix(data, line_start, line_stop, crash_prefix):
                         frame_valid <- false
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_FRAME
@@ -667,10 +676,16 @@ extend ProfilerNative:
                     elif frame_valid and line_prefix(data, record_start, line_stop, crash_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(crash_prefix)
                         summary.crash_signal <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.active_stack_tracked_depth <- parse_protocol_number(data, &cursor, line_stop)
+                            summary.active_stack_overflow_depth <- parse_protocol_number(data, &cursor, line_stop)
+                            summary.active_stack_path <- []
+                            cursor <- protocol_field_into(data, cursor, line_stop, &summary.active_stack_path)
+                            summary.active_stack_available <- summary.active_stack_tracked_depth >= NATIVE_ZERO and summary.active_stack_overflow_depth >= NATIVE_ZERO and summary.active_stack_path.count > NATIVE_ZERO.usize()
                         if cursor != line_stop:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                        if summary.crash_signal < NATIVE_ZERO:
+                        if summary.crash_signal < NATIVE_ZERO or (summary.active_stack_available == false and cursor != record_start + profiler_ffi_sview_len(crash_prefix)):
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):

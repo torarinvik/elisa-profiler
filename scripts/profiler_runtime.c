@@ -94,7 +94,7 @@ enum {
     PROFILE_COUNTER_INCREMENT = 1,
     PROFILE_NANOS_PER_SECOND = 1000000000,
     PROFILE_HASH_NULL_MARKER = 255,
-    PROFILE_SIGNAL_MARKER_BUFFER_BYTES = 128,
+    PROFILE_SIGNAL_MARKER_BUFFER_BYTES = 64 * 1024,
     PROFILE_SIGNAL_EXIT_BASE = 128,
     PROFILE_EXIT_CODE_MASK = 0xff,
 };
@@ -180,6 +180,8 @@ static int profile_thread_records_enabled;
 static char profile_frame_buffer[PROFILE_FRAME_BUFFER_BYTES];
 static size_t profile_frame_length;
 static int profile_frame_overflowed;
+static char profile_signal_marker_buffer[PROFILE_SIGNAL_MARKER_BUFFER_BYTES];
+static volatile sig_atomic_t profile_frame_write_in_progress;
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
 
@@ -328,11 +330,14 @@ static void profile_record_emit(void) {
         return;
     }
     if (!profile_framing_enabled) {
+        profile_frame_write_in_progress = 1;
         (void)profile_write_all(profile_frame_buffer, profile_frame_length);
         static const char newline[] = "\n";
         (void)profile_write_all(newline, sizeof(newline) - 1);
+        profile_frame_write_in_progress = 0;
         return;
     }
+    profile_frame_write_in_progress = 1;
     char header[PROFILE_FRAME_HEADER_BYTES];
     int header_length = snprintf(
         header, sizeof(header), "ELISA_PROFILE\t1\tframe\t%" PRIu64 "\t%zu\t%" PRIu64 "\t",
@@ -342,6 +347,7 @@ static void profile_record_emit(void) {
         profile_frame_dropped_count =
             profile_saturating_increment_u64(profile_frame_dropped_count);
         profile_budget_exceeded = 1;
+        profile_frame_write_in_progress = 0;
         return;
     }
     int header_written = profile_write_all(header, (size_t)header_length);
@@ -357,6 +363,7 @@ static void profile_record_emit(void) {
     }
     profile_frame_sequence =
         profile_saturating_increment_u64(profile_frame_sequence);
+    profile_frame_write_in_progress = 0;
 }
 
 static void profile_record_begin(void) {
@@ -1725,14 +1732,55 @@ static size_t profile_signal_append_uint(char *buffer, size_t offset,
     return offset;
 }
 
+static size_t profile_signal_append_field(char *buffer, size_t offset,
+                                           size_t capacity, const char *value) {
+    if (value == NULL) {
+        return profile_signal_append_literal(buffer, offset, capacity, "-");
+    }
+    while (*value != '\0' && offset < capacity) {
+        char output = (*value == '\t' || *value == '\n' || *value == '\r')
+                          ? '_'
+                          : *value;
+        buffer[offset++] = output;
+        ++value;
+    }
+    return offset;
+}
+
+static size_t profile_signal_append_active_stack(char *buffer, size_t offset,
+                                                 size_t capacity) {
+    offset = profile_signal_append_literal(buffer, offset, capacity, "\t");
+    offset = profile_signal_append_uint(buffer, offset, capacity,
+                                        (unsigned int)profile_call_depth);
+    offset = profile_signal_append_literal(buffer, offset, capacity, "\t");
+    offset = profile_signal_append_uint(buffer, offset, capacity,
+                                        (unsigned int)profile_call_overflow_depth);
+    offset = profile_signal_append_literal(buffer, offset, capacity, "\t");
+    if (profile_call_depth == 0) {
+        return profile_signal_append_literal(buffer, offset, capacity, "-");
+    }
+    for (size_t index = 0; index < profile_call_depth; ++index) {
+        if (index != 0) {
+            offset = profile_signal_append_literal(buffer, offset, capacity, ";");
+        }
+        offset = profile_signal_append_field(
+            buffer, offset, capacity, profile_call_stack[index].function_name);
+    }
+    return offset;
+}
+
 static void profile_write_crash_marker(int signal_number) {
-    char buffer[PROFILE_SIGNAL_MARKER_BUFFER_BYTES];
+    char *buffer = profile_signal_marker_buffer;
     size_t offset = 0;
+    if (profile_frame_write_in_progress) {
+        offset = profile_signal_append_literal(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, "\n");
+    }
     offset = profile_signal_append_literal(
-        buffer, offset, sizeof(buffer), "ELISA_PROFILE\t1\tcrash\t");
+        buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, "ELISA_PROFILE\t1\tcrash\t");
     offset = profile_signal_append_uint(
-        buffer, offset, sizeof(buffer), (unsigned int)signal_number);
-    offset = profile_signal_append_literal(buffer, offset, sizeof(buffer), "\n");
+        buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, (unsigned int)signal_number);
+    offset = profile_signal_append_active_stack(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES);
+    offset = profile_signal_append_literal(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, "\n");
     (void)write(profile_output_fd, buffer, offset);
 }
 

@@ -1,0 +1,9 @@
+# Deliberately terminate below the entry point so the profiler must preserve
+# observed frames without fabricating exits for the interrupted stack.
+def descend(depth: i64) -> i64 can[Abort.Panic]:
+    panic("intentional interrupted-stack crash") if depth <= 0
+    return descend(depth - 1)
+
+def main() -> i64 can[Abort.Panic]:
+    descend(4)
+    return 0

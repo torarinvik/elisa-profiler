@@ -171,6 +171,12 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
   function summaries intentionally aggregate the readable function key.
   Readable names are not stable cross-build identities; source and compiler
   identity metadata must be used before comparing same-named functions.
+- A crash or externally delivered termination signal may interrupt active
+  calls before their exit callbacks run. The signal-safe collector preserves a
+  bounded `active_stack` snapshot with tracked and overflow depths; it is
+  diagnostic evidence of the interrupted path, not completed-call evidence.
+  Reports containing this snapshot are always marked with degraded detail and
+  partial function/call-edge/stack/timing completeness.
 - Tail-call elimination and inlining are compiler transformations. The
   instrumentation report only claims what the emitted callbacks observe; it
   does not infer removed frames.
@@ -205,9 +211,11 @@ The top-level `quality` object is orthogonal to the target's exit code:
 - `profiler_failure` means the launcher could not wait or otherwise could not
   establish a valid child result.
 - `quality.detail = degraded` means bounded detail was lost or stack recovery
-  was incomplete. `quality.event_counts = partial` is reserved for dropped
+  was incomplete, including a signal/timeout capture that may have interrupted
+  active callbacks. `quality.event_counts = partial` is reserved for dropped
   location records; dropped edges/stacks and omitted event-trace records are
-  separately named reasons.
+  separately named reasons. An `active_stack` snapshot identifies the last
+  observed call path without upgrading any completion count.
 
 The `reasons` array is additive. A report can therefore say that the target
 failed and that its detail budget was exceeded without pretending either fact
