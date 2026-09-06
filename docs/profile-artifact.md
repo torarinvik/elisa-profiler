@@ -60,6 +60,16 @@ they increase report size.
 The quality object inside the embedded capture is authoritative about target
 termination and bounded-detail loss.
 
+When `--cache-dir PATH` is supplied, the native profiler uses a content-addressed
+instrumented executable cache. The report's `build_cache` object records the
+validated key, `miss`/`hit`/`bypass` status, and a human-readable explanation.
+Each entry is an atomically published executable plus JSON metadata describing
+the source dependency digest, compiler provenance, runtime and collector
+digests, tool identities, optimization level, host, and fixed link flags.
+Cache lookup is conservative: missing, malformed, permission-invalid, or
+unavailable entries are rebuilt, and a dependency change produces a new key.
+The cache is opt-in; `--no-cache` makes that policy explicit.
+
 If a `running`, `finalizing`, or `partial` manifest remains beside a capture,
 `elisa-profiler recover MANIFEST --format json` reconstructs a v2 report from
 the checksum-validated framed records. Recovery verifies the source digest and

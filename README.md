@@ -119,6 +119,8 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/sampling.speedscope.json
     bin/elisa-profiler profile examples/hot_loop.elisa --progress profiles/hot-loop.progress.json \
         --format json -o profiles/hot-loop.json
+    bin/elisa-profiler profile examples/hot_loop.elisa --cache-dir .cache/elisa-profiler \
+        --format json -o profiles/hot-loop-cached.json
     bin/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
     bin/elisa-profiler recover profiles/hot-loop.json.manifest.json \
@@ -249,6 +251,8 @@ Useful controls:
     --event-trace          include every trace event in each measured JSON run
     --max-event-trace-events N  cap full-trace records per run (0 means unlimited)
     --max-capture-bytes N  shared collector byte budget (0 means unlimited; default: 67108864)
+    --cache-dir PATH        reuse validated instrumented executables in PATH (opt-in)
+    --no-cache              explicitly disable build-cache lookup for this capture
     ELISA_PROFILE_MAX_LOCATIONS=N  cap distinct source-location records (0 means unlimited)
     ELISA_PROFILE_MAX_CALL_EDGES=N  cap distinct caller-to-callee records (0 means unlimited)
     ELISA_PROFILE_MAX_STACKS=N  cap distinct folded call-path records (0 means unlimited)

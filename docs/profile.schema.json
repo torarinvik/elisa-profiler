@@ -62,6 +62,17 @@
       },
       "additionalProperties": true
     },
+    "build_cache": {
+      "type": "object",
+      "required": ["enabled", "status", "key", "explanation"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["disabled", "bypass", "miss", "hit"] },
+        "key": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "explanation": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "host": {
       "type": ["object", "null"],
       "properties": {

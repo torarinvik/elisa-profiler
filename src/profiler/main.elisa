@@ -62,6 +62,8 @@ extern profiler_ffi_strcmp(left: cstr, right: cstr) -> i64
 extern profiler_ffi_getpid() -> i64
 @link_name("access")
 extern profiler_ffi_access(path: cstr, mode: i64) -> i64
+@link_name("chmod")
+extern profiler_ffi_chmod(path: cstr, mode: i64) -> i64
 @link_name("setenv")
 extern profiler_ffi_setenv(name: cstr, value: cstr, overwrite: i64) -> i64
 @link_name("unsetenv")
@@ -108,6 +110,7 @@ include "./profiler_json.elisa"
 include "./profiler_comparison.elisa"
 include "./profiler_rendering.elisa"
 include "./profiler_execution.elisa"
+include "./profiler_cache.elisa"
 include "./profiler_aggregation.elisa"
 include "./profiler_capabilities.elisa"
 
@@ -1138,8 +1141,23 @@ extend ProfilerNative:
             append_text(buffer, "],\"reproducibility\":{\"random_seed\":null,\"random_seed_source\":\"not_controlled\",\"environment_values\":\"redacted\",\"inputs_hashed\":true}}")
 
 
+        def append_build_cache(buffer: mutable darray[u8]&, cache: NativeBuildCache) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, ",\"build_cache\":{\"enabled\":")
+            append_text(buffer, "true" if cache.enabled else "false")
+            append_text(buffer, ",\"status\":")
+            append_json_string(buffer, cache.status)
+            append_text(buffer, ",\"key\":")
+            if cache.key.count == NATIVE_ZERO.usize():
+                append_text(buffer, "null")
+            else:
+                append_json_string(buffer, cache.key)
+            append_text(buffer, ",\"explanation\":")
+            append_json_string(buffer, cache.explanation)
+            append_text(buffer, "}")
+
+
         def append_report(
-            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary,
+            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, build_cache: NativeBuildCache, host: NativeHostMetadata, summary: CaptureSummary,
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64, execution_ci95_low_ns: i64, execution_ci95_high_ns: i64, execution_ci95_available: bool,
@@ -1165,6 +1183,7 @@ extend ProfilerNative:
             append_text(buffer, ",\"runtime_object\":")
             append_json_string(buffer, runtime_object)
             append_text(buffer, "}")
+            append_build_cache(buffer, build_cache)
             append_json_host(buffer, host)
             append_json_workload(buffer, source_bytes, dependency_digest, working_directory, stdin_path, environment, target_arguments)
             if embed_source:
@@ -1562,6 +1581,7 @@ extend ProfilerNative:
             compiler_branch: mutable darray[u8] = []
             compiler_commit: mutable darray[u8] = []
             runtime_object: mutable darray[u8] = []
+            empty_build_cache: NativeBuildCache = empty_native_build_cache()
             append_text(compiler_root, "unavailable-recovery")
             append_text(compiler_branch, "unavailable-recovery")
             append_text(compiler_commit, "unavailable-recovery")
@@ -1587,7 +1607,7 @@ extend ProfilerNative:
             append_repetition_record(&repetition_records, NATIVE_ONE, NATIVE_ONE, recovery_result, summary, false, false)
             append_report(
                 buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit,
-                true, runtime_object, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
+                true, runtime_object, empty_build_cache, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
                 NATIVE_ZERO, empty_program_stdout, false, empty_program_stderr, false, NATIVE_ZERO, NATIVE_ZERO, repetition_records,
                 NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO,
                 NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO,
@@ -1805,7 +1825,7 @@ extend ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO, --cache-dir PATH, or --no-cache] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
@@ -1813,7 +1833,7 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -1842,9 +1862,12 @@ extend ProfilerNative:
             stdin_path: mutable darray[u8] = []
             environment: mutable darray[u8] = []
             target_arguments: mutable darray[darray[u8]] = []
+            cache_directory: mutable darray[u8] = []
+            cache_requested: mutable bool = false
+            cache_disabled: mutable bool = false
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, cache_directory, cache_requested, cache_disabled, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1923,6 +1946,20 @@ extend ProfilerNative:
                     continue
                 if profiler_ffi_strcmp(argument, "--embed-source") == NATIVE_ZERO:
                     embed_source <- true
+                    index <- index + NATIVE_ONE
+                    continue
+                if profiler_ffi_strcmp(argument, "--cache-dir") == NATIVE_ZERO:
+                    return report_error("--cache-dir requires a path") if index + NATIVE_ONE >= argc
+                    return report_error("--cache-dir cannot be combined with --no-cache") if cache_disabled
+                    return report_error("--cache-dir may be specified only once") if cache_requested
+                    copy_cstr(cache_directory, slots[index + NATIVE_ONE].cast[cstr])
+                    cache_requested <- true
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--no-cache") == NATIVE_ZERO:
+                    return report_error("--no-cache cannot be combined with --cache-dir") if cache_requested
+                    return report_error("--no-cache may be specified only once") if cache_disabled
+                    cache_disabled <- true
                     index <- index + NATIVE_ONE
                     continue
                 if profiler_ffi_strcmp(argument, "--mode") == NATIVE_ZERO:
@@ -2046,6 +2083,8 @@ extend ProfilerNative:
             environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
             compiler_binary: mutable darray[u8] = []
             environment_or_executable("ELISA_COMPILER_SCRIPT", "../elisa-compiler-worktrees/profiler/scripts/elisac_stage1.sh", argv_zero, "/../../elisa-compiler-worktrees/profiler/scripts/elisac_stage1.sh", compiler_binary)
+            compiler_stage1: mutable darray[u8] = []
+            environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_stage1)
             runtime_object: mutable darray[u8] = []
             environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
             compiler_tool: mutable darray[u8] = []
@@ -2106,127 +2145,6 @@ extend ProfilerNative:
                 write_stderr(diagnostics)
                 cleanup_temp(temporary)
                 return report_error("could not determine source dependencies")
-            command_arguments: mutable darray[darray[u8]] = []
-            append_command_argument(command_arguments, "-g")
-            append_command_argument(command_arguments, "-ftrace")
-            append_command_i64_argument(command_arguments, "-O", opt_level)
-            append_command_argument(command_arguments, "-o")
-            append_command_path_argument(command_arguments, target_object)
-            append_command_path_argument(command_arguments, source)
-            compile_status: i64 = run_tool_direct(compiler_binary, command_arguments, compile_output_path, compile_error_path)
-            if compile_status != NATIVE_ZERO:
-                diagnostics: darray[u8] = read_file(compile_error_path)
-                write_stderr(diagnostics)
-                cleanup_temp(temporary)
-                return report_error("native target compilation failed")
-            source_after_compile: darray[u8] = read_file(source)
-            if not byte_arrays_equal(source_check, source_after_compile):
-                cleanup_temp(temporary)
-                return report_error("source changed while the target was compiling; retry with a stable source file")
-            dependency_after_compile: darray[u8] = collect_dependency_digest(compiler_binary, source, dependency_path, compile_output_path, compile_error_path)
-            if dependency_after_compile.count == NATIVE_ZERO.usize() or not byte_arrays_equal(dependency_digest, dependency_after_compile):
-                cleanup_temp(temporary)
-                return report_error("source dependency tree changed while the target was compiling; retry with stable sources")
-        
-            command_arguments <- []
-            append_command_argument(command_arguments, "--redefine-sym")
-            append_command_argument(command_arguments, "_main=_elisa_profile_target_main")
-            append_command_path_argument(command_arguments, target_object)
-            append_command_path_argument(command_arguments, renamed_object)
-            rename_status: mutable i64 = run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
-            if rename_status != NATIVE_ZERO:
-                command_arguments <- []
-                append_command_argument(command_arguments, "--redefine-sym")
-                append_command_argument(command_arguments, "main=elisa_profile_target_main")
-                append_command_path_argument(command_arguments, target_object)
-                append_command_path_argument(command_arguments, renamed_object)
-                rename_status <- run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
-            if rename_status != NATIVE_ZERO:
-                cleanup_temp(temporary)
-                return report_error("could not rename target main for collection")
-
-            # The Elisa runtime owns the trace callback implementations. Make a
-            # private link copy and localize those callbacks so the C collector can
-            # provide the externally-visible definitions without duplicate symbols.
-            runtime_bytes: darray[u8] = read_file(runtime_object)
-            if runtime_bytes.count == NATIVE_ZERO.usize():
-                cleanup_temp(temporary)
-                return report_error("runtime object could not be read")
-            runtime_copy_ok: bool = write_file(runtime_collector_object, runtime_bytes)
-            if not runtime_copy_ok:
-                cleanup_temp(temporary)
-                return report_error("could not copy runtime object for collection")
-            command_arguments <- []
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_record")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_record")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_record_value")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_record_value")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_function_entry")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_function_entry")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_function_exit")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_function_exit")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_record_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_record_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_record_value_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_record_value_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_function_entry_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_function_entry_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_function_exit_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_function_exit_id")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "_elisa_trace_install_fault_handler")
-            append_command_argument(command_arguments, "--localize-symbol")
-            append_command_argument(command_arguments, "elisa_trace_install_fault_handler")
-            append_command_path_argument(command_arguments, runtime_collector_object)
-            localize_status: i64 = run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
-            if localize_status != NATIVE_ZERO:
-                cleanup_temp(temporary)
-                return report_error("could not localize runtime trace callbacks")
-            command_arguments <- []
-            append_command_argument(command_arguments, "-std=c11")
-            append_command_argument(command_arguments, "-O2")
-            append_command_argument(command_arguments, "-DELISA_PROFILE_TIMING=1")
-            append_command_argument(command_arguments, "-fno-builtin")
-            append_command_argument(command_arguments, "-pthread")
-            append_command_argument(command_arguments, "-c")
-            append_command_argument(command_arguments, "-o")
-            append_command_path_argument(command_arguments, collector_object)
-            append_command_path_argument(command_arguments, collector_source)
-            collector_status: i64 = run_tool_direct(compiler_tool, command_arguments, compile_output_path, compile_error_path)
-            if collector_status != NATIVE_ZERO:
-                cleanup_temp(temporary)
-                return report_error("could not compile native collector")
-        
-            command_arguments <- []
-            append_command_argument(command_arguments, "-Wl,-dead_strip")
-            append_command_argument(command_arguments, "-pthread")
-            append_command_argument(command_arguments, "-o")
-            append_command_path_argument(command_arguments, executable)
-            append_command_path_argument(command_arguments, renamed_object)
-            append_command_path_argument(command_arguments, runtime_collector_object)
-            append_command_path_argument(command_arguments, collector_object)
-            if run_tool_direct(compiler_tool, command_arguments, compile_output_path, link_error_path) != NATIVE_ZERO:
-                diagnostics: darray[u8] = read_file(link_error_path)
-                write_stderr(diagnostics)
-                cleanup_temp(temporary)
-                return report_error("could not link instrumented target")
-            compile_elapsed_ns: i64 = elapsed_nanoseconds(build_start, read_monotonic())
             compiler_branch: mutable darray[u8] = read_git_metadata(compiler_root, "branch", compiler_branch_path, compiler_metadata_error_path, git_tool)
             if compiler_branch.count == NATIVE_ZERO.usize():
                 append_text(compiler_branch, "unknown")
@@ -2235,6 +2153,25 @@ extend ProfilerNative:
                 append_text(compiler_commit, "unknown")
             dirty_metadata: darray[u8] = read_git_metadata(compiler_root, "dirty", compiler_dirty_path, compiler_metadata_error_path, git_tool)
             compiler_dirty: bool = dirty_metadata.count > NATIVE_ZERO.usize()
+            build_cache: mutable NativeBuildCache = empty_native_build_cache()
+            build_ok: bool = build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host)
+            if not build_ok:
+                build_diagnostics: mutable darray[u8] = read_file(compile_error_path)
+                write_stderr(build_diagnostics)
+                build_diagnostics <- read_file(link_error_path)
+                write_stderr(build_diagnostics)
+                cleanup_temp(temporary)
+                return report_error("could not build instrumented target")
+            source_after_compile: darray[u8] = read_file(source)
+            if not byte_arrays_equal(source_check, source_after_compile):
+                cleanup_temp(temporary)
+                return report_error("source changed while the target was being built; retry with a stable source file")
+            dependency_after_compile: darray[u8] = collect_dependency_digest(compiler_binary, source, dependency_path, compile_output_path, compile_error_path)
+            if dependency_after_compile.count == NATIVE_ZERO.usize() or not byte_arrays_equal(dependency_digest, dependency_after_compile):
+                cleanup_temp(temporary)
+                return report_error("source dependency tree changed while the target was being built; retry with stable sources")
+            publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host)
+            compile_elapsed_ns: i64 = elapsed_nanoseconds(build_start, read_monotonic())
             summary: mutable CaptureSummary = empty_capture_summary()
             return report_error("could not write profiler progress") if not write_progress(progress_path, "compile_complete", NATIVE_ZERO, requested_repetitions, compile_elapsed_ns, summary)
             repetition_records: mutable darray[u8] = []
@@ -2418,7 +2355,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, display_source, source_check, dependency_digest, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments)
             else:
-                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, build_cache, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

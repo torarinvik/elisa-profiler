@@ -1,0 +1,479 @@
+# Content-addressed instrumented-target cache.
+#
+# The cache is deliberately an Elisa module: key construction, validation,
+# atomic publication, and executable materialization all stay on the native
+# profiler side of the boundary. A cache is an optimization only; any
+# unavailable, malformed, or stale entry becomes an explicit miss/bypass.
+extend ProfilerNative:
+    private:
+        const NATIVE_CACHE_SCHEMA_VERSION: i64 = 1
+        const NATIVE_CACHE_BUILD_FLAGS: cstr = "-g,-ftrace,-pthread,-Wl,-dead_strip"
+        const NATIVE_CACHE_PROGRAM_SUFFIX: cstr = ".program"
+        const NATIVE_CACHE_METADATA_SUFFIX: cstr = ".json"
+
+        def cache_copy_sview(destination: mutable darray[u8]&, value: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<profiler_ffi_sview_len(value) |destination, value|:
+                destination.push(profiler_ffi_sview_at(value, index))
+
+
+        def cache_copy_text(destination: mutable darray[u8]&, value: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            destination <- []
+            cache_copy_sview(destination, value)
+
+
+        def cache_append_cstr(destination: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            bytes: u8& = value.cast[u8&] can Unsafe.PointerCast
+            cursor: mutable i64 = NATIVE_ZERO
+            while true |destination, cursor, bytes|:
+                byte_ref: u8& = bytes + cursor
+                byte: u8 = byte_ref
+                break if byte == NATIVE_BYTE_NUL
+                destination.push(byte)
+                cursor <- cursor + NATIVE_ONE
+
+
+        def cache_append_i64(buffer: mutable darray[u8]&, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            if value == NATIVE_I64_MIN:
+                cache_copy_sview(buffer, NATIVE_I64_MIN_TEXT)
+                return
+            if value == NATIVE_ZERO:
+                buffer.push(NATIVE_BYTE_ASCII_ZERO)
+                return
+            negative: bool = value < NATIVE_ZERO
+            magnitude: mutable i64 = -value if negative else value
+            buffer.push(NATIVE_BYTE_MINUS) if negative
+            digits: mutable darray[u8] = []
+            while magnitude > NATIVE_ZERO |digits, magnitude|:
+                digits.push((NATIVE_BYTE_ASCII_ZERO.i64() + (magnitude % NATIVE_DECIMAL_BASE)).u8())
+                magnitude <- magnitude / NATIVE_DECIMAL_BASE
+            for index in 0..<digits.count |buffer, digits|:
+                buffer.push(digits[digits.count - NATIVE_ONE.usize() - index])
+
+
+        def cache_append_json_string(buffer: mutable darray[u8]&, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            buffer.push(NATIVE_BYTE_DOUBLE_QUOTE)
+            for index in 0..<value.count |buffer, value|:
+                byte: u8 = value[index]
+                if byte == NATIVE_BYTE_DOUBLE_QUOTE:
+                    cache_copy_sview(buffer, "\\\"")
+                elif byte == NATIVE_BYTE_BACKSLASH:
+                    cache_copy_sview(buffer, "\\\\")
+                elif byte == NATIVE_BYTE_NEWLINE:
+                    cache_copy_sview(buffer, "\\n")
+                elif byte == NATIVE_BYTE_CARRIAGE_RETURN:
+                    cache_copy_sview(buffer, "\\r")
+                elif byte == NATIVE_BYTE_TAB:
+                    cache_copy_sview(buffer, "\\t")
+                elif byte < NATIVE_BYTE_CONTROL_LIMIT:
+                    cache_copy_sview(buffer, "\\u00")
+                    high: u8 = (byte / NATIVE_HEX_BASE.u8()).u8()
+                    low: u8 = (byte % NATIVE_HEX_BASE.u8()).u8()
+                    buffer.push(NATIVE_BYTE_ASCII_ZERO + high if high < NATIVE_DECIMAL_BASE.u8() else NATIVE_HEX_LETTER_OFFSET + high)
+                    buffer.push(NATIVE_BYTE_ASCII_ZERO + low if low < NATIVE_DECIMAL_BASE.u8() else NATIVE_HEX_LETTER_OFFSET + low)
+                else:
+                    buffer.push(byte)
+            buffer.push(NATIVE_BYTE_DOUBLE_QUOTE)
+
+
+        def cache_append_key_field(material: mutable darray[u8]&, name: sview, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            cache_copy_sview(material, name)
+            material.push(NATIVE_BYTE_EQUALS)
+            material.extend(value)
+            material.push(NATIVE_BYTE_NEWLINE)
+
+
+        def cache_append_key_i64(material: mutable darray[u8]&, name: sview, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            cache_copy_sview(material, name)
+            material.push(NATIVE_BYTE_EQUALS)
+            cache_append_i64(material, value)
+            material.push(NATIVE_BYTE_NEWLINE)
+
+
+        def cache_append_key_bool(material: mutable darray[u8]&, name: sview, value: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            cache_copy_sview(material, name)
+            material.push(NATIVE_BYTE_EQUALS)
+            cache_copy_sview(material, "true" if value else "false")
+            material.push(NATIVE_BYTE_NEWLINE)
+
+
+        def cache_file_digest(path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            bytes: darray[u8] = read_file(path)
+            return [] if bytes.count == NATIVE_ZERO.usize()
+            return sha256_hex(bytes)
+
+
+        def cache_path_identity(path: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            material: mutable darray[u8] = []
+            cache_copy_sview(material, "elisa-profiler-tool-path\n")
+            material.extend(path)
+            return sha256_hex(material)
+
+
+        def cache_write_all(fd: i64, data: darray[u8]&) -> bool can[Abort.Panic, Console]:
+            written: mutable usize = NATIVE_ZERO.usize()
+            while written < data.count |written, data, fd|:
+                amount: i64 = profiler_ffi_write(fd, &data[written], data.count - written) can Console
+                return false if amount <= NATIVE_ZERO
+                written <- written + amount.usize()
+            return true
+
+
+        def cache_write_file(path: darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return false if data.count == NATIVE_ZERO.usize()
+            temporary: mutable darray[u8] = []
+            temporary.extend(path)
+            cache_copy_sview(temporary, ".elisa-profiler-cache.tmp.")
+            cache_append_i64(temporary, profiler_ffi_getpid())
+            temporary.push(NATIVE_BYTE_NUL)
+            temporary_cstr: cstr = (&temporary[0]).cast[cstr] can Unsafe.PointerCast
+            fd: i64 = profiler_ffi_open(temporary_cstr, NATIVE_O_WRONLY + NATIVE_O_CREAT + NATIVE_O_TRUNC, NATIVE_FILE_MODE)
+            return false if fd < NATIVE_ZERO
+            if not cache_write_all(fd, data) can Console:
+                _ = profiler_ffi_close(fd)
+                _ = profiler_ffi_unlink(temporary_cstr)
+                return false
+            _ = profiler_ffi_close(fd)
+            destination: mutable darray[u8] = []
+            destination.extend(path)
+            destination.push(NATIVE_BYTE_NUL)
+            destination_cstr: cstr = (&destination[0]).cast[cstr] can Unsafe.PointerCast
+            if profiler_ffi_rename(temporary_cstr, destination_cstr) != NATIVE_ZERO:
+                _ = profiler_ffi_unlink(temporary_cstr)
+                return false
+            return true
+
+
+        def cache_set_status(cache: mutable NativeBuildCache&, status: sview, explanation: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            cache_copy_text(cache.status, status)
+            cache_copy_text(cache.explanation, explanation)
+
+
+        def cache_directory_ready(directory: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            copy: mutable darray[u8] = []
+            copy.extend(directory)
+            copy.push(NATIVE_BYTE_NUL)
+            path: cstr = (&copy[0]).cast[cstr] can Unsafe.PointerCast
+            return true if profiler_ffi_mkdir(path, NATIVE_DIRECTORY_MODE) == NATIVE_ZERO
+            return readable_file(directory)
+
+
+        def cache_metadata(
+            source: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, stage1_digest: darray[u8]&, wrapper_digest: darray[u8]&, runtime_digest: darray[u8]&, collector_digest: darray[u8]&, compiler_tool_digest: darray[u8]&, objcopy_tool_digest: darray[u8]&, opt_level: i64, host: NativeHostMetadata, key: darray[u8]&, program_digest: darray[u8]&
+        ) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            dirty_digest: darray[u8] = sha256_hex(compiler_dirty_metadata)
+            result: mutable darray[u8] = []
+            cache_copy_sview(result, "{\"cache_schema_version\":")
+            cache_append_i64(result, NATIVE_CACHE_SCHEMA_VERSION)
+            cache_copy_sview(result, ",\"kind\":\"elisa-instrumented-executable\",\"key\":")
+            cache_append_json_string(result, key)
+            cache_copy_sview(result, ",\"program_sha256\":")
+            cache_append_json_string(result, program_digest)
+            cache_copy_sview(result, ",\"source\":")
+            cache_append_json_string(result, source)
+            cache_copy_sview(result, ",\"dependency_sha256\":")
+            cache_append_json_string(result, dependency_digest)
+            cache_copy_sview(result, ",\"compiler_root\":")
+            cache_append_json_string(result, compiler_root)
+            cache_copy_sview(result, ",\"compiler_branch\":")
+            cache_append_json_string(result, compiler_branch)
+            cache_copy_sview(result, ",\"compiler_commit\":")
+            cache_append_json_string(result, compiler_commit)
+            cache_copy_sview(result, ",\"compiler_dirty\":")
+            cache_copy_sview(result, "true" if compiler_dirty else "false")
+            cache_copy_sview(result, ",\"compiler_dirty_status_sha256\":")
+            cache_append_json_string(result, dirty_digest)
+            cache_copy_sview(result, ",\"stage1_path_identity\":")
+            cache_append_json_string(result, stage1_digest)
+            cache_copy_sview(result, ",\"wrapper_sha256\":")
+            cache_append_json_string(result, wrapper_digest)
+            cache_copy_sview(result, ",\"runtime_sha256\":")
+            cache_append_json_string(result, runtime_digest)
+            cache_copy_sview(result, ",\"collector_sha256\":")
+            cache_append_json_string(result, collector_digest)
+            cache_copy_sview(result, ",\"compiler_tool_path_identity\":")
+            cache_append_json_string(result, compiler_tool_digest)
+            cache_copy_sview(result, ",\"objcopy_tool_path_identity\":")
+            cache_append_json_string(result, objcopy_tool_digest)
+            cache_copy_sview(result, ",\"opt_level\":")
+            cache_append_i64(result, opt_level)
+            cache_copy_sview(result, ",\"host\":")
+            if not host.available:
+                cache_copy_sview(result, "null")
+            else:
+                cache_copy_sview(result, "{\"os\":")
+                cache_append_json_string(result, host.os)
+                cache_copy_sview(result, ",\"architecture\":")
+                cache_append_json_string(result, host.architecture)
+                cache_copy_sview(result, "}")
+            cache_copy_sview(result, ",\"build_flags\":\"")
+            cache_append_cstr(result, NATIVE_CACHE_BUILD_FLAGS)
+            cache_copy_sview(result, "\"}\n")
+            return result
+
+
+        def cache_key(
+            source: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, stage1_digest: darray[u8]&, wrapper_digest: darray[u8]&, runtime_digest: darray[u8]&, collector_digest: darray[u8]&, compiler_tool_digest: darray[u8]&, objcopy_tool_digest: darray[u8]&, opt_level: i64, host: NativeHostMetadata
+        ) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            material: mutable darray[u8] = []
+            cache_copy_sview(material, "elisa-profiler-build-cache\n")
+            cache_append_key_i64(material, "schema_version", NATIVE_CACHE_SCHEMA_VERSION)
+            cache_append_key_field(material, "source", source)
+            cache_append_key_field(material, "dependency_sha256", dependency_digest)
+            cache_append_key_field(material, "compiler_root", compiler_root)
+            cache_append_key_field(material, "compiler_branch", compiler_branch)
+            cache_append_key_field(material, "compiler_commit", compiler_commit)
+            cache_append_key_bool(material, "compiler_dirty", compiler_dirty)
+            cache_append_key_field(material, "compiler_dirty_status", compiler_dirty_metadata)
+            cache_append_key_field(material, "stage1_path_identity", stage1_digest)
+            cache_append_key_field(material, "wrapper_sha256", wrapper_digest)
+            cache_append_key_field(material, "runtime_sha256", runtime_digest)
+            cache_append_key_field(material, "collector_sha256", collector_digest)
+            cache_append_key_field(material, "compiler_tool_path_identity", compiler_tool_digest)
+            cache_append_key_field(material, "objcopy_tool_path_identity", objcopy_tool_digest)
+            cache_append_key_i64(material, "opt_level", opt_level)
+            cache_append_key_field(material, "host_os", host.os)
+            cache_append_key_field(material, "host_architecture", host.architecture)
+            cache_copy_sview(material, "build_flags=")
+            cache_append_cstr(material, NATIVE_CACHE_BUILD_FLAGS)
+            material.push(NATIVE_BYTE_NEWLINE)
+            return sha256_hex(material)
+
+
+        def prepare_native_build_cache(
+            cache: mutable NativeBuildCache&, requested: bool, directory: darray[u8]&, source: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, stage1_binary: darray[u8]&, compiler_wrapper: darray[u8]&, runtime_object: darray[u8]&, collector_source: darray[u8]&, compiler_tool: darray[u8]&, objcopy_tool: darray[u8]&, opt_level: i64, host: NativeHostMetadata
+        ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            cache <- empty_native_build_cache()
+            if not requested:
+                cache_set_status(&cache, "disabled", "disabled; pass --cache-dir PATH to enable")
+                return
+            cache.enabled <- true
+            cache.key <- []
+            stage1_digest: darray[u8] = cache_path_identity(stage1_binary)
+            wrapper_digest: darray[u8] = cache_file_digest(compiler_wrapper)
+            runtime_digest: darray[u8] = cache_file_digest(runtime_object)
+            collector_digest: darray[u8] = cache_file_digest(collector_source)
+            compiler_tool_digest: darray[u8] = cache_path_identity(compiler_tool)
+            objcopy_tool_digest: darray[u8] = cache_path_identity(objcopy_tool)
+            if stage1_digest.count == NATIVE_ZERO.usize() or wrapper_digest.count == NATIVE_ZERO.usize() or runtime_digest.count == NATIVE_ZERO.usize() or collector_digest.count == NATIVE_ZERO.usize() or compiler_tool_digest.count == NATIVE_ZERO.usize() or objcopy_tool_digest.count == NATIVE_ZERO.usize():
+                cache_set_status(&cache, "bypass", "bypass; a build input could not be hashed")
+                return
+            computed_key: darray[u8] = cache_key(source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_dirty_metadata, stage1_digest, wrapper_digest, runtime_digest, collector_digest, compiler_tool_digest, objcopy_tool_digest, opt_level, host)
+            cache.key <- []
+            cache.key.extend(computed_key)
+            if cache.key.count == NATIVE_ZERO.usize():
+                cache_set_status(&cache, "bypass", "bypass; cache key could not be computed")
+                return
+            if not cache_directory_ready(directory):
+                cache_set_status(&cache, "bypass", "bypass; cache directory is unavailable")
+                return
+            cache_copy_text(cache.status, "miss")
+            cache_copy_text(cache.explanation, "miss; no validated cache entry")
+
+
+        def cache_metadata_contains_field(metadata: darray[u8]&, field: sview, value: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            marker: mutable darray[u8] = []
+            cache_copy_sview(marker, "\"")
+            cache_copy_sview(marker, field)
+            cache_copy_sview(marker, "\":\"")
+            marker.extend(value)
+            marker.push(NATIVE_BYTE_DOUBLE_QUOTE)
+            return false if metadata.count < marker.count
+            for start in 0..<(metadata.count - marker.count + NATIVE_ONE.usize()) |metadata, marker|:
+                matches: mutable bool = true
+                for index in 0..<marker.count |metadata, marker, start, matches|:
+                    matches <- false if metadata[start + index] != marker[index]
+                return true if matches
+            return false
+
+
+        def try_native_build_cache(cache: mutable NativeBuildCache&, directory: darray[u8]&, executable: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return false if not cache.enabled or cache.key.count == NATIVE_ZERO.usize() or cache.status.count == NATIVE_ZERO.usize()
+            return false if not protocol_field_is(cache.status, "miss")
+            cached_program: mutable darray[u8] = []
+            cached_metadata: mutable darray[u8] = []
+            cached_program.extend(directory)
+            cached_program.push(NATIVE_BYTE_SLASH) if cached_program.count == NATIVE_ZERO.usize() or cached_program[cached_program.count - NATIVE_ONE.usize()] != NATIVE_BYTE_SLASH
+            cached_program.extend(cache.key)
+            cache_append_cstr(cached_program, NATIVE_CACHE_PROGRAM_SUFFIX)
+            cached_metadata.extend(directory)
+            cached_metadata.push(NATIVE_BYTE_SLASH) if cached_metadata.count == NATIVE_ZERO.usize() or cached_metadata[cached_metadata.count - NATIVE_ONE.usize()] != NATIVE_BYTE_SLASH
+            cached_metadata.extend(cache.key)
+            cache_append_cstr(cached_metadata, NATIVE_CACHE_METADATA_SUFFIX)
+            metadata: darray[u8] = read_file(cached_metadata)
+            return false if metadata.count == NATIVE_ZERO.usize() or not cache_metadata_contains_field(metadata, "key", cache.key)
+            return false if not executable_available(cached_program)
+            program: darray[u8] = read_file(cached_program)
+            return false if program.count == NATIVE_ZERO.usize()
+            program_digest: darray[u8] = sha256_hex(program)
+            return false if program_digest.count == NATIVE_ZERO.usize() or not cache_metadata_contains_field(metadata, "program_sha256", program_digest)
+            return false if not cache_write_file(executable, program)
+            executable_copy: mutable darray[u8] = []
+            executable_copy.extend(executable)
+            executable_copy.push(NATIVE_BYTE_NUL)
+            executable_cstr: cstr = (&executable_copy[0]).cast[cstr] can Unsafe.PointerCast
+            return false if profiler_ffi_chmod(executable_cstr, NATIVE_EXECUTABLE_FILE_MODE) != NATIVE_ZERO
+            cache.hit <- true
+            cache_copy_text(cache.status, "hit")
+            cache_copy_text(cache.explanation, "hit; metadata key and executable validated")
+            return true
+
+
+        def publish_native_build_cache(
+            cache: mutable NativeBuildCache&, directory: darray[u8]&, executable: darray[u8]&, source: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, stage1_binary: darray[u8]&, compiler_wrapper: darray[u8]&, runtime_object: darray[u8]&, collector_source: darray[u8]&, compiler_tool: darray[u8]&, objcopy_tool: darray[u8]&, opt_level: i64, host: NativeHostMetadata
+        ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return if not cache.enabled or cache.key.count == NATIVE_ZERO.usize() or cache.hit
+            program: darray[u8] = read_file(executable)
+            if program.count == NATIVE_ZERO.usize():
+                cache_copy_text(cache.status, "bypass")
+                cache_copy_text(cache.explanation, "bypass; built executable could not be read for publication")
+                return
+            cached_program: mutable darray[u8] = []
+            cached_program.extend(directory)
+            cached_program.push(NATIVE_BYTE_SLASH) if cached_program.count == NATIVE_ZERO.usize() or cached_program[cached_program.count - NATIVE_ONE.usize()] != NATIVE_BYTE_SLASH
+            cached_program.extend(cache.key)
+            cache_append_cstr(cached_program, NATIVE_CACHE_PROGRAM_SUFFIX)
+            if not cache_write_file(cached_program, program):
+                cache_copy_text(cache.status, "bypass")
+                cache_copy_text(cache.explanation, "bypass; cache executable publication failed")
+                return
+            cached_copy: mutable darray[u8] = []
+            cached_copy.extend(cached_program)
+            cached_copy.push(NATIVE_BYTE_NUL)
+            cached_cstr: cstr = (&cached_copy[0]).cast[cstr] can Unsafe.PointerCast
+            if profiler_ffi_chmod(cached_cstr, NATIVE_EXECUTABLE_FILE_MODE) != NATIVE_ZERO:
+                cache_copy_text(cache.status, "bypass")
+                cache_copy_text(cache.explanation, "bypass; cache executable permissions could not be set")
+                return
+            cached_metadata: mutable darray[u8] = []
+            cached_metadata.extend(directory)
+            cached_metadata.push(NATIVE_BYTE_SLASH) if cached_metadata.count == NATIVE_ZERO.usize() or cached_metadata[cached_metadata.count - NATIVE_ONE.usize()] != NATIVE_BYTE_SLASH
+            cached_metadata.extend(cache.key)
+            cache_append_cstr(cached_metadata, NATIVE_CACHE_METADATA_SUFFIX)
+            stage1_digest: darray[u8] = cache_path_identity(stage1_binary)
+            wrapper_digest: darray[u8] = cache_file_digest(compiler_wrapper)
+            runtime_digest: darray[u8] = cache_file_digest(runtime_object)
+            collector_digest: darray[u8] = cache_file_digest(collector_source)
+            compiler_tool_digest: darray[u8] = cache_path_identity(compiler_tool)
+            objcopy_tool_digest: darray[u8] = cache_path_identity(objcopy_tool)
+            program_digest: darray[u8] = sha256_hex(program)
+            metadata: darray[u8] = cache_metadata(source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_dirty_metadata, stage1_digest, wrapper_digest, runtime_digest, collector_digest, compiler_tool_digest, objcopy_tool_digest, opt_level, host, cache.key, program_digest)
+            if not cache_write_file(cached_metadata, metadata):
+                cache_copy_text(cache.status, "bypass")
+                cache_copy_text(cache.explanation, "bypass; cache metadata publication failed")
+                return
+            cache_copy_text(cache.status, "miss")
+            cache_copy_text(cache.explanation, "miss; built and published a validated cache entry")
+
+
+        def cache_append_argument[@r](arguments: mutable darray[darray[u8]]& @r, value: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            cache_copy_sview(argument, value)
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
+
+
+        def cache_append_path_argument[@r](arguments: mutable darray[darray[u8]]& @r, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            argument.extend(value)
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
+
+
+        def build_instrumented_executable(
+            cache: mutable NativeBuildCache&, cache_requested: bool, cache_directory: darray[u8]&, source: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, compiler_stage1: darray[u8]&, compiler_binary: darray[u8]&, compiler_tool: darray[u8]&, objcopy_tool: darray[u8]&, collector_source: darray[u8]&, runtime_object: darray[u8]&, target_object: darray[u8]&, renamed_object: darray[u8]&, runtime_collector_object: darray[u8]&, collector_object: darray[u8]&, executable: darray[u8]&, compile_output_path: darray[u8]&, compile_error_path: darray[u8]&, link_error_path: darray[u8]&, opt_level: i64, host: NativeHostMetadata
+        ) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            prepare_native_build_cache(cache, cache_requested, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host)
+            return true if try_native_build_cache(cache, cache_directory, executable)
+
+            command_arguments: mutable darray[darray[u8]] = []
+            cache_append_argument(command_arguments, "-g")
+            cache_append_argument(command_arguments, "-ftrace")
+            cache_append_argument(command_arguments, "-O0") if opt_level == NATIVE_ZERO
+            cache_append_argument(command_arguments, "-O1") if opt_level == NATIVE_ONE
+            cache_append_argument(command_arguments, "-O2") if opt_level == NATIVE_TWO
+            cache_append_argument(command_arguments, "-O3") if opt_level == NATIVE_THREE
+            cache_append_argument(command_arguments, "-o")
+            cache_append_path_argument(command_arguments, target_object)
+            cache_append_path_argument(command_arguments, source)
+            return false if run_tool_direct(compiler_binary, command_arguments, compile_output_path, compile_error_path) != NATIVE_ZERO
+
+            command_arguments <- []
+            cache_append_argument(command_arguments, "--redefine-sym")
+            cache_append_argument(command_arguments, "_main=_elisa_profile_target_main")
+            cache_append_path_argument(command_arguments, target_object)
+            cache_append_path_argument(command_arguments, renamed_object)
+            rename_status: mutable i64 = run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
+            if rename_status != NATIVE_ZERO:
+                command_arguments <- []
+                cache_append_argument(command_arguments, "--redefine-sym")
+                cache_append_argument(command_arguments, "main=elisa_profile_target_main")
+                cache_append_path_argument(command_arguments, target_object)
+                cache_append_path_argument(command_arguments, renamed_object)
+                rename_status <- run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
+            return false if rename_status != NATIVE_ZERO
+
+            runtime_bytes: darray[u8] = read_file(runtime_object)
+            return false if runtime_bytes.count == NATIVE_ZERO.usize()
+            return false if not cache_write_file(runtime_collector_object, runtime_bytes)
+            command_arguments <- []
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_record")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_record")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_record_value")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_record_value")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_function_entry")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_function_entry")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_function_exit")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_function_exit")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_record_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_record_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_record_value_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_record_value_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_function_entry_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_function_entry_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_function_exit_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_function_exit_id")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "_elisa_trace_install_fault_handler")
+            cache_append_argument(command_arguments, "--localize-symbol")
+            cache_append_argument(command_arguments, "elisa_trace_install_fault_handler")
+            cache_append_path_argument(command_arguments, runtime_collector_object)
+            return false if run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path) != NATIVE_ZERO
+
+            command_arguments <- []
+            cache_append_argument(command_arguments, "-std=c11")
+            cache_append_argument(command_arguments, "-O2")
+            cache_append_argument(command_arguments, "-DELISA_PROFILE_TIMING=1")
+            cache_append_argument(command_arguments, "-fno-builtin")
+            cache_append_argument(command_arguments, "-pthread")
+            cache_append_argument(command_arguments, "-c")
+            cache_append_argument(command_arguments, "-o")
+            cache_append_path_argument(command_arguments, collector_object)
+            cache_append_path_argument(command_arguments, collector_source)
+            return false if run_tool_direct(compiler_tool, command_arguments, compile_output_path, compile_error_path) != NATIVE_ZERO
+
+            command_arguments <- []
+            cache_append_argument(command_arguments, "-Wl,-dead_strip")
+            cache_append_argument(command_arguments, "-pthread")
+            cache_append_argument(command_arguments, "-o")
+            cache_append_path_argument(command_arguments, executable)
+            cache_append_path_argument(command_arguments, renamed_object)
+            cache_append_path_argument(command_arguments, runtime_collector_object)
+            cache_append_path_argument(command_arguments, collector_object)
+            return false if run_tool_direct(compiler_tool, command_arguments, compile_output_path, link_error_path) != NATIVE_ZERO
+            return true
