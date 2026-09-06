@@ -271,6 +271,10 @@
             "recent_path": { "type": "string", "enum": ["last_256", "disabled"] },
             "timing": { "type": "string", "enum": ["wall"] },
             "sampling": { "type": "string", "enum": ["unsupported"] },
+            "sampling_detail": { "$ref": "#/$defs/capability_detail" },
+            "allocation": { "$ref": "#/$defs/capability_detail" },
+            "tasks": { "$ref": "#/$defs/capability_detail" },
+            "identity": { "$ref": "#/$defs/capability_detail" },
             "detail_limits": {
               "type": "object",
               "required": ["locations", "call_edges", "stacks", "capture_bytes"],
@@ -395,6 +399,16 @@
     "artifacts": { "type": "object", "additionalProperties": true }
   },
   "$defs": {
+    "capability_detail": {
+      "type": "object",
+      "required": ["status", "reason", "scope"],
+      "properties": {
+        "status": { "type": "string", "enum": ["unsupported", "source_name_fallback"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "enum": ["none", "capture"] }
+      },
+      "additionalProperties": false
+    },
     "repetition": {
       "type": "object",
       "required": [

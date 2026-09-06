@@ -109,6 +109,7 @@ include "./profiler_comparison.elisa"
 include "./profiler_rendering.elisa"
 include "./profiler_execution.elisa"
 include "./profiler_aggregation.elisa"
+include "./profiler_capabilities.elisa"
 
 extend ProfilerNative:
     private:
@@ -148,8 +149,6 @@ extend ProfilerNative:
                 magnitude <- magnitude / NATIVE_DECIMAL_BASE
             for index in 0..<digits.count |buffer, digits|:
                 buffer.push(digits[digits.count - 1.usize() - index])
-
-
         def append_millis(buffer: mutable darray[u8]&, nanoseconds: i64) -> void can[Abort.Panic, Memory.Allocate]:
             whole: i64 = nanoseconds / NATIVE_NANOS_PER_MILLISECOND
             fraction: i64 = (nanoseconds % NATIVE_NANOS_PER_MILLISECOND) / NATIVE_NANOS_PER_MICROSECOND
@@ -1047,32 +1046,6 @@ extend ProfilerNative:
                 append_text(buffer, "," if argument_index > NATIVE_ZERO.usize() else "")
                 append_json_string(buffer, target_arguments[argument_index])
             append_text(buffer, "],\"reproducibility\":{\"random_seed\":null,\"random_seed_source\":\"not_controlled\",\"environment_values\":\"redacted\",\"inputs_hashed\":true}}")
-
-
-        def append_collection_capabilities(buffer: mutable darray[u8]&, mode: darray[u8]&, event_trace: bool, recent_path: bool, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
-            append_text(buffer, ",\"capabilities\":{\"event_classes\":[")
-            if protocol_field_is(mode, "functions"):
-                append_text(buffer, "\"function\"")
-            elif protocol_field_is(mode, "statements"):
-                append_text(buffer, "\"function\",\"statement\"")
-            elif protocol_field_is(mode, "values"):
-                append_text(buffer, "\"function\",\"value\"")
-            else:
-                append_text(buffer, "\"function\",\"statement\",\"value\"")
-            append_text(buffer, "],\"trace\":")
-            append_text(buffer, "\"full\"" if event_trace else "\"disabled\"")
-            append_text(buffer, ",\"transport\":{\"framing\":\"record\",\"checksum\":\"fnv1a64\",\"sequence\":\"strict\"}")
-            append_text(buffer, ",\"recent_path\":")
-            append_text(buffer, "\"last_256\"" if recent_path else "\"disabled\"")
-            append_text(buffer, ",\"timing\":\"wall\",\"sampling\":\"unsupported\",\"detail_limits\":{\"locations\":")
-            append_i64(buffer, summary.location_limit)
-            append_text(buffer, ",\"call_edges\":")
-            append_i64(buffer, summary.call_edge_limit)
-            append_text(buffer, ",\"stacks\":")
-            append_i64(buffer, summary.stack_limit)
-            append_text(buffer, ",\"capture_bytes\":")
-            append_i64(buffer, summary.capture_byte_limit)
-            append_text(buffer, "}}")
 
 
         def append_report(

@@ -1,0 +1,37 @@
+# Explicit feature claims for a capture.
+#
+# The profiler must never make a missing runtime hook look like a zero-valued
+# measurement. This module is deliberately small and private: it owns the
+# capability vocabulary emitted into reports, while the collector and compiler
+# remain responsible for producing the evidence named here.
+extend ProfilerNative:
+    private:
+        def append_collection_capabilities(buffer: mutable darray[u8]&, mode: darray[u8]&, event_trace: bool, recent_path: bool, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, ",\"capabilities\":{\"event_classes\":[")
+            if protocol_field_is(mode, "functions"):
+                append_text(buffer, "\"function\"")
+            elif protocol_field_is(mode, "statements"):
+                append_text(buffer, "\"function\",\"statement\"")
+            elif protocol_field_is(mode, "values"):
+                append_text(buffer, "\"function\",\"value\"")
+            else:
+                append_text(buffer, "\"function\",\"statement\",\"value\"")
+            append_text(buffer, "],\"trace\":")
+            append_text(buffer, "\"full\"" if event_trace else "\"disabled\"")
+            append_text(buffer, ",\"transport\":{\"framing\":\"record\",\"checksum\":\"fnv1a64\",\"sequence\":\"strict\"}")
+            append_text(buffer, ",\"recent_path\":")
+            append_text(buffer, "\"last_256\"" if recent_path else "\"disabled\"")
+            append_text(buffer, ",\"timing\":\"wall\",\"sampling\":\"unsupported\"")
+            append_text(buffer, ",\"sampling_detail\":{\"status\":\"unsupported\",\"reason\":\"no_native_sampler_backend\",\"scope\":\"none\"}")
+            append_text(buffer, ",\"allocation\":{\"status\":\"unsupported\",\"reason\":\"allocator_lifecycle_hooks_unavailable\",\"scope\":\"none\"}")
+            append_text(buffer, ",\"tasks\":{\"status\":\"unsupported\",\"reason\":\"task_lifecycle_hooks_unavailable\",\"scope\":\"none\"}")
+            append_text(buffer, ",\"identity\":{\"status\":\"source_name_fallback\",\"reason\":\"compiler_stable_ids_unavailable\",\"scope\":\"capture\"}")
+            append_text(buffer, ",\"detail_limits\":{\"locations\":")
+            append_i64(buffer, summary.location_limit)
+            append_text(buffer, ",\"call_edges\":")
+            append_i64(buffer, summary.call_edge_limit)
+            append_text(buffer, ",\"stacks\":")
+            append_i64(buffer, summary.stack_limit)
+            append_text(buffer, ",\"capture_bytes\":")
+            append_i64(buffer, summary.capture_byte_limit)
+            append_text(buffer, "}}")

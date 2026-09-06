@@ -42,6 +42,13 @@ request is rejected instead of being mislabeled as an instrumented capture.
 The mode is a report identity field and must be considered when comparing
 captures or interpreting missing event classes.
 
+Every report also carries an explicit capability matrix. In the current build,
+`sampling_detail`, `allocation`, and `tasks` are marked unsupported with stable
+reasons because the compiler/runtime exposes instrumentation callbacks but no
+native sampler, allocator-lifecycle stream, or task scheduler lifecycle stream.
+`identity` is marked `source_name_fallback` until compiler-issued stable IDs are
+available. These fields are declarations of evidence coverage, not estimates.
+
 Native collector streams begin with a capture marker and finish with a
 completion marker. Successful target runs require both markers; timeout and
 signal captures may intentionally be partial and expose

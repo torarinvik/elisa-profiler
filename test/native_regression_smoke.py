@@ -360,6 +360,18 @@ def main():
         assert measured["run"]["collection_mode"] == "full"
         assert measured["run"]["capabilities"]["event_classes"] == ["function", "statement", "value"]
         assert measured["run"]["capabilities"]["sampling"] == "unsupported"
+        assert measured["run"]["capabilities"]["sampling_detail"] == {
+            "status": "unsupported", "reason": "no_native_sampler_backend", "scope": "none"
+        }
+        assert measured["run"]["capabilities"]["allocation"] == {
+            "status": "unsupported", "reason": "allocator_lifecycle_hooks_unavailable", "scope": "none"
+        }
+        assert measured["run"]["capabilities"]["tasks"] == {
+            "status": "unsupported", "reason": "task_lifecycle_hooks_unavailable", "scope": "none"
+        }
+        assert measured["run"]["capabilities"]["identity"] == {
+            "status": "source_name_fallback", "reason": "compiler_stable_ids_unavailable", "scope": "capture"
+        }
         assert measured["capture"] == {
             "process": {"scope": "single_profiled_child", "lifetime": "launch_to_wait"},
             "threads": {
