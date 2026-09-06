@@ -1996,7 +1996,12 @@ extend ProfilerNative:
             environment_or_executable("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", argv_zero, "/../scripts/profiler_runtime.c", collector_source)
         
             temporary: mutable darray[u8] = []
-            append_text(temporary, "/tmp/elisa-profiler-native-")
+            temporary_root: mutable darray[u8] = []
+            _ = copy_environment("TMPDIR", temporary_root)
+            append_cstr(temporary_root, NATIVE_DEFAULT_TEMPORARY_DIRECTORY) if temporary_root.count == NATIVE_ZERO.usize()
+            temporary.extend(temporary_root)
+            temporary.push(NATIVE_BYTE_SLASH) if temporary[temporary.count - NATIVE_ONE.usize()] != NATIVE_BYTE_SLASH
+            append_text(temporary, "elisa-profiler-native-")
             append_i64(temporary, profiler_ffi_getpid())
             nonce: ProfilerNativeTimespec = read_monotonic()
             append_text(temporary, "-")

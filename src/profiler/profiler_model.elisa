@@ -95,6 +95,7 @@ module ProfilerNative:
         const NATIVE_MAX_JSON_NESTING_DEPTH: i64 = 128
         const NATIVE_DEFAULT_TRACE_LIMIT: i64 = 1000000
         const NATIVE_DEFAULT_CAPTURE_BYTES: i64 = 67108864
+        const NATIVE_DEFAULT_TEMPORARY_DIRECTORY: cstr = "/tmp"
         const NATIVE_DIRECTORY_MODE: i64 = 448
         const NATIVE_COMMAND_ARGUMENT_INDEX: i64 = 1
         const NATIVE_FIRST_OPTION_INDEX: i64 = 2
