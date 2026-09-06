@@ -1926,7 +1926,7 @@ extend ProfilerNative:
             argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
             environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
             compiler_binary: mutable darray[u8] = []
-            environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_binary)
+            environment_or_executable("ELISA_COMPILER_SCRIPT", "../elisa-compiler-worktrees/profiler/scripts/elisac_stage1.sh", argv_zero, "/../../elisa-compiler-worktrees/profiler/scripts/elisac_stage1.sh", compiler_binary)
             runtime_object: mutable darray[u8] = []
             environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
             compiler_tool: mutable darray[u8] = []
@@ -2063,7 +2063,6 @@ extend ProfilerNative:
             if localize_status != NATIVE_ZERO:
                 cleanup_temp(temporary)
                 return report_error("could not localize runtime trace callbacks")
-        
             command_arguments <- []
             append_command_argument(command_arguments, "-std=c11")
             append_command_argument(command_arguments, "-O2")
