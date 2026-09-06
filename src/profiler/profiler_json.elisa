@@ -232,6 +232,40 @@ extend ProfilerNative:
             return data[cursor] == NATIVE_BYTE_SPACE or data[cursor] == NATIVE_BYTE_TAB or data[cursor] == NATIVE_BYTE_NEWLINE or data[cursor] == NATIVE_BYTE_CARRIAGE_RETURN or data[cursor] == NATIVE_BYTE_COMMA or data[cursor] == NATIVE_BYTE_RIGHT_BRACE or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
 
 
+        def json_signed_number_into(data: darray[u8]&, start: usize, stop: usize, result: mutable i64&) -> bool:
+            return false if start >= stop
+            cursor: mutable usize = start
+            negative: mutable bool = false
+            magnitude_start: mutable usize = start
+            if data[cursor] == NATIVE_BYTE_MINUS:
+                negative <- true
+                cursor <- cursor + NATIVE_ONE.usize()
+                magnitude_start <- cursor
+            return false if cursor >= stop
+            value: mutable i64 = NATIVE_ZERO
+            digits: mutable i64 = NATIVE_ZERO
+            while cursor < stop |cursor, value, digits, data, negative|:
+                byte: u8 = data[cursor]
+                break if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                permits_signed_minimum: bool = negative and cursor + NATIVE_ONE.usize() == stop and value == NATIVE_I64_MAX / NATIVE_DECIMAL_BASE and digit == NATIVE_ONE + NATIVE_I64_MAX % NATIVE_DECIMAL_BASE
+                return false if value > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE and not permits_signed_minimum
+                if permits_signed_minimum:
+                    value <- NATIVE_I64_MIN
+                else:
+                    value <- value * NATIVE_DECIMAL_BASE + digit
+                digits <- digits + NATIVE_ONE
+                cursor <- cursor + NATIVE_ONE.usize()
+            return false if digits == NATIVE_ZERO
+            return false if cursor < stop and not json_token_terminated(data, cursor, stop)
+            return false if digits > NATIVE_ONE and data[magnitude_start] == NATIVE_BYTE_ASCII_ZERO
+            if negative and value != NATIVE_I64_MIN:
+                result <- -value
+            else:
+                result <- value
+            return true
+
+
         def json_millis_micros_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
             return NATIVE_NEGATIVE_ONE if start >= stop
             cursor: mutable usize = start
@@ -418,6 +452,26 @@ extend ProfilerNative:
             return json_bool_into(data, value_start.usize(), stop, &result)
 
 
+        def json_validate_value_statistics(data: darray[u8]&, start: usize, stop: usize) -> bool can[Abort.Panic]:
+            sum_start: i64 = json_key_value_start(data, "sum", start, stop)
+            overflow_start: i64 = json_key_value_start(data, "sum_overflow", start, stop)
+            return true if sum_start < NATIVE_ZERO and overflow_start < NATIVE_ZERO
+            overflowed: mutable bool = false
+            if overflow_start >= NATIVE_ZERO:
+                return false if not json_bool_into(data, overflow_start.usize(), stop, &overflowed)
+            sum_available: mutable bool = false
+            if sum_start >= NATIVE_ZERO:
+                sum_index: usize = sum_start.usize()
+                if json_null_value_at(data, sum_index, stop) != NATIVE_ONE:
+                    sum_value: mutable i64 = NATIVE_ZERO
+                    return false if not json_signed_number_into(data, sum_index, stop, &sum_value)
+                    sum_available <- true
+                return false if not overflowed and not sum_available
+            return false if overflowed and (sum_start < NATIVE_ZERO or sum_available)
+            return false if sum_start >= NATIVE_ZERO and not sum_available and not overflowed
+            return true
+
+
         def json_read_optional_object_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             return true if value_start < NATIVE_ZERO
@@ -495,6 +549,8 @@ extend ProfilerNative:
                     return false if not json_read_number_field(data, "interval_ns", cursor, object_stop.usize(), &interval_ns)
                     return false if not json_read_number_field(data, "max_interval_ns", cursor, object_stop.usize(), &max_interval_ns)
                     return false if max_interval_ns > interval_ns
+                    if protocol_field_is(location_kind, "value"):
+                        return false if not json_validate_value_statistics(data, cursor, object_stop.usize())
                     if protocol_field_is(location_kind, "function"):
                         inclusive_ns: mutable i64 = NATIVE_ZERO
                         self_ns: mutable i64 = NATIVE_ZERO
@@ -653,6 +709,8 @@ extend ProfilerNative:
                 return false if not json_read_number_field(data, "interval_ns", cursor, object_stop.usize(), &record.interval_ns)
                 return false if not json_read_number_field(data, "max_interval_ns", cursor, object_stop.usize(), &record.max_interval_ns)
                 return false if record.max_interval_ns > record.interval_ns
+                if protocol_field_is(record.kind, "value"):
+                    return false if not json_validate_value_statistics(data, cursor, object_stop.usize())
                 records.push(record)
                 record_count <- record_count + NATIVE_ONE
                 cursor <- object_stop.usize()

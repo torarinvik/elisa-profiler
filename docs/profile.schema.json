@@ -530,6 +530,7 @@
         "minimum": { "type": "integer" },
         "maximum": { "type": "integer" },
         "sum": { "type": ["integer", "null"] },
+        "sum_overflow": { "type": "boolean" },
         "last": { "type": "integer" },
         "inclusive_ns": { "type": "integer", "minimum": 0 },
         "self_ns": { "type": "integer", "minimum": 0 },

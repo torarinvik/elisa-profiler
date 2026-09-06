@@ -83,6 +83,24 @@ def main():
         assert comparison["baseline"]["source"] == report["source"]
         assert comparison["status"] == "ok"
         assert comparison["metrics"]["execution_ms_mean"]["baseline"] == 1.25
+        report["locations"] = [{
+            "kind": "value", "function": "main", "line": 1, "count": 1,
+            "interval_ns": 10, "max_interval_ns": 10, "compiler_line": 1,
+            "source": report["source"], "source_text": None, "variable": "x",
+            "signed": True, "minimum": -2, "maximum": 3, "sum": -1, "last": 2,
+        }]
+        capture.write_text(json.dumps(report), encoding="utf-8")
+        comparison = json.loads(run("compare", capture, capture, "--format", "json"))
+        assert comparison["status"] == "ok"
+        report["locations"][0]["sum"] = None
+        report["locations"][0]["sum_overflow"] = True
+        capture.write_text(json.dumps(report), encoding="utf-8")
+        comparison = json.loads(run("compare", capture, capture, "--format", "json"))
+        assert comparison["status"] == "ok"
+        report["locations"][0]["sum"] = -1
+        capture.write_text(json.dumps(report), encoding="utf-8")
+        run("compare", capture, capture, "--format", "json", ok=False)
+        del report["locations"][0]["sum_overflow"]
         report["summary"]["dropped_call_edges"] = 1
         capture.write_text(json.dumps(report))
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))
