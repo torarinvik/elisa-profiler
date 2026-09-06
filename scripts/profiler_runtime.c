@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #ifndef ELISA_PROFILE_TIMING
@@ -79,6 +80,7 @@ enum {
     PROFILE_MODE_STATEMENTS = 2,
     PROFILE_MODE_VALUES = 3,
     PROFILE_MODE_DIAGNOSTIC = 4,
+    PROFILE_MODE_SAMPLES = 5,
     PROFILE_RECENT_CAPACITY = 256,
     PROFILE_CALL_STACK_CAPACITY = 1024,
     PROFILE_DEFAULT_LOCATION_LIMIT = 32768,
@@ -101,6 +103,13 @@ enum {
     PROFILE_HASH_NULL_MARKER = 255,
     PROFILE_HASH_ID_MARKER = 254,
     PROFILE_SIGNAL_MARKER_BUFFER_BYTES = 64 * 1024,
+    PROFILE_SAMPLE_MARKER_BUFFER_BYTES = 64 * 1024,
+    PROFILE_SAMPLE_FRAME_HEADER_BYTES = 128,
+    PROFILE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS = 1000,
+    PROFILE_MIN_SAMPLE_PERIOD_MICROSECONDS = 100,
+    PROFILE_MAX_SAMPLE_PERIOD_MICROSECONDS = 1000000,
+    PROFILE_SAMPLE_SIGNAL = SIGPROF,
+    PROFILE_COLLECTOR_FAILURE_STATUS = 126,
     PROFILE_SIGNAL_EXIT_BASE = 128,
     PROFILE_EXIT_CODE_MASK = 0xff,
 };
@@ -114,6 +123,8 @@ static const char PROFILE_THREAD_RECORDS_ENVIRONMENT[] = "ELISA_PROFILE_THREAD_R
 static const char PROFILE_MODE_ENVIRONMENT[] = "ELISA_PROFILE_MODE";
 static const char PROFILE_EVENT_TRACE_ENVIRONMENT[] = "ELISA_PROFILE_EVENT_TRACE";
 static const char PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT[] = "ELISA_PROFILE_EVENT_TRACE_LIMIT";
+static const char PROFILE_SAMPLE_PERIOD_ENVIRONMENT[] = "ELISA_PROFILE_SAMPLE_PERIOD_US";
+static const char PROFILE_SAMPLE_MODE_PREFIX[] = "sample:";
 static const char PROFILE_MAX_LOCATIONS_ENVIRONMENT[] = "ELISA_PROFILE_MAX_LOCATIONS";
 static const char PROFILE_MAX_CALL_EDGES_ENVIRONMENT[] = "ELISA_PROFILE_MAX_CALL_EDGES";
 static const char PROFILE_MAX_STACKS_ENVIRONMENT[] = "ELISA_PROFILE_MAX_STACKS";
@@ -126,6 +137,7 @@ static const char *const PROFILE_INTERNAL_ENVIRONMENTS[] = {
     PROFILE_MODE_ENVIRONMENT,
     PROFILE_EVENT_TRACE_ENVIRONMENT,
     PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT,
+    PROFILE_SAMPLE_PERIOD_ENVIRONMENT,
     PROFILE_MAX_LOCATIONS_ENVIRONMENT,
     PROFILE_MAX_CALL_EDGES_ENVIRONMENT,
     PROFILE_MAX_STACKS_ENVIRONMENT,
@@ -189,6 +201,14 @@ static size_t profile_frame_length;
 static int profile_frame_overflowed;
 static char profile_signal_marker_buffer[PROFILE_SIGNAL_MARKER_BUFFER_BYTES];
 static volatile sig_atomic_t profile_frame_write_in_progress;
+static volatile sig_atomic_t profile_sampling_enabled;
+static volatile sig_atomic_t profile_sample_count;
+static volatile sig_atomic_t profile_sample_missed;
+static volatile sig_atomic_t profile_sample_sequence;
+static uint64_t profile_sample_period_microseconds;
+static int profile_sampling_setup_failed;
+static char profile_sample_marker_buffer[PROFILE_SAMPLE_MARKER_BUFFER_BYTES];
+static char profile_sample_frame_header[PROFILE_SAMPLE_FRAME_HEADER_BYTES];
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
 
@@ -1204,6 +1224,8 @@ static uint64_t profile_event_trace_bytes(const char *function_name,
 
 static int profile_mode_allows_kind(uint8_t kind) {
     switch (profile_mode) {
+    case PROFILE_MODE_SAMPLES:
+        return 0;
     case PROFILE_MODE_FUNCTIONS:
         return kind == PROFILE_KIND_FUNCTION;
     case PROFILE_MODE_STATEMENTS:
@@ -1403,6 +1425,23 @@ static int profile_function_matches(const char *expected_name, uint64_t expected
 
 static void profile_record_function_entry(const char *function_name, uint32_t line,
                                            uint64_t function_id) {
+    if (profile_mode == PROFILE_MODE_SAMPLES) {
+        pthread_mutex_lock(&profile_lock);
+        (void)profile_get_thread_locked();
+        pthread_mutex_unlock(&profile_lock);
+        if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
+            profile_call_stack[profile_call_depth] = (profile_call_frame){
+                .function_name = function_name,
+                .function_id = function_id,
+            };
+            profile_call_depth = profile_saturating_increment_size(profile_call_depth);
+        } else {
+            profile_call_overflow_depth =
+                profile_saturating_increment_size(profile_call_overflow_depth);
+            profile_push_overflow_frame(function_name, line, function_id);
+        }
+        return;
+    }
     const char *caller_name = NULL;
     uint64_t caller_id = PROFILE_ID_UNSET;
     profile_call_path *caller_path = NULL;
@@ -1593,6 +1632,39 @@ static void profile_record_untimed_function_exit(const char *function_name, uint
 
 static void profile_record_function_exit(const char *function_name, uint32_t line,
                                           uint64_t function_id) {
+    if (profile_mode == PROFILE_MODE_SAMPLES) {
+        if (profile_call_overflow_depth > 0) {
+            --profile_call_overflow_depth;
+            if (profile_call_overflow_untracked_depth > 0) {
+                --profile_call_overflow_untracked_depth;
+                return;
+            }
+            profile_overflow_frame *overflow_frame = profile_pop_overflow_frame();
+            if (overflow_frame == NULL ||
+                !profile_function_matches(overflow_frame->function_name,
+                                          overflow_frame->function_id,
+                                          function_name, function_id)) {
+                free(overflow_frame);
+                profile_call_depth = 0;
+                profile_clear_overflow_frames();
+                return;
+            }
+            free(overflow_frame);
+            return;
+        }
+        if (profile_call_depth == 0) {
+            return;
+        }
+        profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
+        if (!profile_function_matches(frame->function_name, frame->function_id,
+                                      function_name, function_id)) {
+            profile_call_depth = 0;
+            profile_call_overflow_depth = 0;
+            return;
+        }
+        --profile_call_depth;
+        return;
+    }
 #if ELISA_PROFILE_TIMING
     profile_record_timed_function_exit(function_name, line, function_id);
 #else
@@ -1852,6 +1924,14 @@ static void profile_dump_metadata(size_t location_count) {
         profile_record_append_char('\t');
         profile_record_append_uint64(profile_frame_dropped_count);
     }
+    profile_record_append_char('\t');
+    profile_record_append_uint64((uint64_t)profile_sample_count);
+    profile_record_append_char('\t');
+    profile_record_append_uint64((uint64_t)profile_sample_missed);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_sample_period_microseconds);
+    profile_record_append_char('\t');
+    profile_record_append_uint64((uint64_t)profile_sampling_setup_failed);
     profile_record_emit();
 }
 
@@ -1921,7 +2001,7 @@ static size_t profile_signal_append_literal(char *buffer, size_t offset,
 }
 
 static size_t profile_signal_append_uint(char *buffer, size_t offset,
-                                         size_t capacity, unsigned int value) {
+                                         size_t capacity, uint64_t value) {
     char digits[PROFILE_DECIMAL_DIGITS];
     size_t count = 0;
     do {
@@ -1971,6 +2051,143 @@ static size_t profile_signal_append_active_stack(char *buffer, size_t offset,
     return offset;
 }
 
+static void profile_signal_increment(volatile sig_atomic_t *value) {
+    if (*value < SIG_ATOMIC_MAX) {
+        ++*value;
+    }
+}
+
+static int profile_signal_write_all(const char *buffer, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        ssize_t written = write(profile_output_fd, buffer + offset, length - offset);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return 0;
+        }
+        if (written == 0) {
+            return 0;
+        }
+        offset += (size_t)written;
+    }
+    return 1;
+}
+
+static void profile_write_sample_marker(void) {
+    if (!profile_sampling_enabled || profile_frame_write_in_progress) {
+        profile_signal_increment(&profile_sample_missed);
+        return;
+    }
+    char *buffer = profile_sample_marker_buffer;
+    size_t payload_offset = 0;
+    payload_offset = profile_signal_append_literal(
+        buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES,
+        "ELISA_PROFILE\t1\tsample\t");
+    payload_offset = profile_signal_append_uint(
+        buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES,
+        (unsigned int)profile_sample_sequence);
+    payload_offset = profile_signal_append_literal(
+        buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES, "\t");
+    const profile_thread_state *thread = profile_current_thread;
+    if (thread == NULL) {
+        payload_offset = profile_signal_append_literal(
+            buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES, "-");
+    } else {
+        payload_offset = profile_signal_append_uint(
+            buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES,
+            (unsigned int)thread->thread_id);
+    }
+    payload_offset = profile_signal_append_active_stack(
+        buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES);
+    if (payload_offset == 0 || payload_offset >= PROFILE_SAMPLE_MARKER_BUFFER_BYTES) {
+        profile_signal_increment(&profile_sample_missed);
+        return;
+    }
+    uint64_t checksum = PROFILE_FNV_OFFSET_BASIS;
+    for (size_t index = 0; index < payload_offset; ++index) {
+        checksum = (checksum ^ (unsigned char)buffer[index]) * PROFILE_FNV_PRIME;
+    }
+    size_t header_offset = 0;
+    header_offset = profile_signal_append_literal(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, "ELISA_PROFILE\t1\tframe\t");
+    header_offset = profile_signal_append_uint(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, profile_frame_sequence);
+    header_offset = profile_signal_append_literal(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, "\t");
+    header_offset = profile_signal_append_uint(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, (uint64_t)payload_offset);
+    header_offset = profile_signal_append_literal(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, "\t");
+    header_offset = profile_signal_append_uint(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, checksum);
+    header_offset = profile_signal_append_literal(
+        profile_sample_frame_header, header_offset,
+        PROFILE_SAMPLE_FRAME_HEADER_BYTES, "\t");
+    if (header_offset == 0 || header_offset >= PROFILE_SAMPLE_FRAME_HEADER_BYTES ||
+        !profile_signal_write_all(profile_sample_frame_header, header_offset) ||
+        !profile_signal_write_all(buffer, payload_offset) ||
+        !profile_signal_write_all("\n", 1)) {
+        profile_signal_increment(&profile_sample_missed);
+        return;
+    }
+    profile_signal_increment(&profile_sample_count);
+    profile_signal_increment(&profile_sample_sequence);
+    profile_frame_sequence = profile_saturating_increment_u64(profile_frame_sequence);
+}
+
+static void profile_sampling_handler(int signal_number) {
+    (void)signal_number;
+    profile_write_sample_marker();
+}
+
+static int profile_start_sampling(uint64_t period_microseconds) {
+#if defined(__APPLE__) || defined(__linux__)
+    if (period_microseconds < PROFILE_MIN_SAMPLE_PERIOD_MICROSECONDS ||
+        period_microseconds > PROFILE_MAX_SAMPLE_PERIOD_MICROSECONDS) {
+        profile_sampling_setup_failed = 1;
+        return 0;
+    }
+    if (signal(PROFILE_SAMPLE_SIGNAL, profile_sampling_handler) == SIG_ERR) {
+        profile_sampling_setup_failed = 1;
+        return 0;
+    }
+    struct itimerval timer = {0};
+    timer.it_value.tv_sec = (time_t)(period_microseconds / 1000000);
+    timer.it_value.tv_usec = (suseconds_t)(period_microseconds % 1000000);
+    timer.it_interval = timer.it_value;
+    profile_sample_period_microseconds = period_microseconds;
+    profile_sampling_enabled = 1;
+    if (setitimer(ITIMER_PROF, &timer, NULL) != 0) {
+        profile_sampling_enabled = 0;
+        profile_sampling_setup_failed = 1;
+        return 0;
+    }
+    return 1;
+#else
+    (void)period_microseconds;
+    profile_sampling_setup_failed = 1;
+    return 0;
+#endif
+}
+
+static void profile_stop_sampling(void) {
+#if defined(__APPLE__) || defined(__linux__)
+    if (profile_sampling_enabled) {
+        struct itimerval timer = {0};
+        (void)setitimer(ITIMER_PROF, &timer, NULL);
+    }
+#endif
+    profile_sampling_enabled = 0;
+}
+
 static void profile_write_crash_marker(int signal_number) {
     char *buffer = profile_signal_marker_buffer;
     size_t offset = 0;
@@ -1983,7 +2200,7 @@ static void profile_write_crash_marker(int signal_number) {
         buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, (unsigned int)signal_number);
     offset = profile_signal_append_active_stack(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES);
     offset = profile_signal_append_literal(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, "\n");
-    (void)write(profile_output_fd, buffer, offset);
+    (void)profile_signal_write_all(buffer, offset);
 }
 
 static void profile_crash_handler(int signal_number) {
@@ -2203,6 +2420,7 @@ static void profile_dump_body(void) {
 }
 
 static void profile_dump(void) {
+    profile_stop_sampling();
     pthread_mutex_lock(&profile_lock);
     profile_dump_body();
     pthread_mutex_unlock(&profile_lock);
@@ -2224,6 +2442,28 @@ static uint64_t profile_read_uint64_environment(const char *name) {
     char *end = NULL;
     unsigned long long value = strtoull(text, &end, 10);
     if (errno == ERANGE || end == text || *end != '\0' || value > UINT64_MAX) {
+        return 0;
+    }
+    return (uint64_t)value;
+}
+
+static uint64_t profile_read_sample_period_from_mode(const char *mode) {
+    const size_t prefix_length = sizeof(PROFILE_SAMPLE_MODE_PREFIX) - 1;
+    if (mode == NULL || strncmp(mode, PROFILE_SAMPLE_MODE_PREFIX, prefix_length) != 0) {
+        return 0;
+    }
+    const char *text = mode + prefix_length;
+    if (*text == '\0') {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    unsigned long long value = strtoull(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0' || value > UINT64_MAX) {
+        return 0;
+    }
+    if (value < PROFILE_MIN_SAMPLE_PERIOD_MICROSECONDS ||
+        value > PROFILE_MAX_SAMPLE_PERIOD_MICROSECONDS) {
         return 0;
     }
     return (uint64_t)value;
@@ -2261,6 +2501,9 @@ int main(int argc, char **argv) {
             profile_mode = PROFILE_MODE_VALUES;
         } else if (strcmp(mode, "diagnostic") == 0) {
             profile_mode = PROFILE_MODE_DIAGNOSTIC;
+        } else if (strcmp(mode, "sample") == 0 || strcmp(mode, "sampling") == 0 ||
+                   strncmp(mode, PROFILE_SAMPLE_MODE_PREFIX, sizeof(PROFILE_SAMPLE_MODE_PREFIX) - 1) == 0) {
+            profile_mode = PROFILE_MODE_SAMPLES;
         }
     }
     const char *event_trace = getenv(PROFILE_EVENT_TRACE_ENVIRONMENT);
@@ -2279,9 +2522,24 @@ int main(int argc, char **argv) {
         PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT, PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT);
     (void)profile_output();
     profile_install_crash_handlers();
+    if (profile_mode == PROFILE_MODE_SAMPLES) {
+        uint64_t sample_period = profile_read_limit_environment(
+            PROFILE_SAMPLE_PERIOD_ENVIRONMENT,
+            PROFILE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS);
+        uint64_t mode_sample_period = profile_read_sample_period_from_mode(mode);
+        if (mode_sample_period != 0) {
+            sample_period = mode_sample_period;
+        }
+        if (!profile_start_sampling(sample_period)) {
+            profile_sampling_setup_failed = 1;
+        }
+    }
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main((int64_t)argc, argv);
     profile_dump();
+    if (profile_sampling_setup_failed) {
+        result = PROFILE_COLLECTOR_FAILURE_STATUS;
+    }
     /* The native toolchain may link this collector without a CRT startup
      * object, so returning from main would return into the dyld entry frame.
      * Exit explicitly after the final dump to make the collector's ABI

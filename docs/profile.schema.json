@@ -122,6 +122,10 @@
         "capture_complete": { "type": "boolean" }
         ,"trace_events_captured": { "type": "integer", "minimum": 0 }
         ,"trace_events_omitted": { "type": "integer", "minimum": 0 }
+        ,"sample_count": { "type": "integer", "minimum": 0 }
+        ,"sample_missed": { "type": "integer", "minimum": 0 }
+        ,"sample_period_microseconds": { "type": "integer", "minimum": 0 }
+        ,"sampling_setup_failed": { "type": "integer", "minimum": 0, "maximum": 1 }
         ,"trace_event_limit": { "type": ["integer", "null"], "minimum": 0 }
         ,"trace_complete": { "type": ["boolean", "null"] }
       },
@@ -262,13 +266,13 @@
         "compile_ms"
       ],
       "properties": {
-        "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "diagnostic"] },
+        "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "sample", "diagnostic"] },
         "outcome": { "type": "string", "enum": ["success", "target_exit", "target_signal", "timeout", "profiler_failure", "incomplete_capture", "incomplete_artifact"] },
         "capabilities": {
           "type": "object",
           "required": ["event_classes", "trace", "recent_path", "timing", "sampling", "detail_limits"],
           "properties": {
-            "event_classes": { "type": "array", "items": { "type": "string", "enum": ["function", "statement", "value"] }, "minItems": 1, "uniqueItems": true },
+            "event_classes": { "type": "array", "items": { "type": "string", "enum": ["function", "statement", "value", "sample"] }, "minItems": 1, "uniqueItems": true },
             "trace": { "type": "string", "enum": ["full", "disabled"] },
             "transport": {
               "type": "object",
@@ -282,7 +286,7 @@
             },
             "recent_path": { "type": "string", "enum": ["last_256", "disabled"] },
             "timing": { "type": "string", "enum": ["wall"] },
-            "sampling": { "type": "string", "enum": ["unsupported"] },
+            "sampling": { "type": "string", "enum": ["disabled", "instrumented_cpu"] },
             "sampling_detail": { "$ref": "#/$defs/capability_detail" },
             "allocation": { "$ref": "#/$defs/capability_detail" },
             "tasks": { "$ref": "#/$defs/capability_detail" },
@@ -358,6 +362,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/location" }
     },
+    "samples": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sample" }
+    },
     "thread_loss": {
       "type": "array",
       "items": { "$ref": "#/$defs/thread_loss" }
@@ -416,11 +424,11 @@
       "type": "object",
       "required": ["status", "reason", "scope"],
       "properties": {
-        "status": { "type": "string", "enum": ["unsupported", "source_name_fallback", "compiler_stable_ids"] },
+        "status": { "type": "string", "enum": ["active", "disabled", "unsupported", "source_name_fallback", "compiler_stable_ids"] },
         "reason": { "type": "string", "minLength": 1 },
         "namespace": { "type": ["string", "null"], "minLength": 1 },
         "version": { "type": ["integer", "null"], "minimum": 1 },
-        "scope": { "type": "string", "enum": ["none", "capture"] }
+        "scope": { "type": "string", "enum": ["none", "capture", "instrumented_call_stack"] }
       },
       "additionalProperties": false
     },
@@ -681,6 +689,19 @@
         }
       },
       "additionalProperties": true
+    },
+    "sample": {
+      "type": "object",
+      "required": ["sequence", "thread_id", "depth", "overflow_depth", "stack", "repetition"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "thread_id": { "type": ["integer", "null"], "minimum": 0 },
+        "depth": { "type": "integer", "minimum": 0 },
+        "overflow_depth": { "type": "integer", "minimum": 0 },
+        "stack": { "type": "string", "minLength": 1 },
+        "repetition": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": true

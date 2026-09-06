@@ -459,7 +459,7 @@ def main():
         interrupted_text = interrupted_text_output.read_bytes()
         assert b"active stack (tracked depth" in interrupted_text
         assert b"main;descend" in interrupted_text
-        assert b"capability boundary: sampling unsupported" in interrupted_text
+        assert b"capability boundary: sampling disabled" in interrupted_text
         interrupted_html_output = work / "interrupted-stack.html"
         run("profile", ROOT / "examples/interrupted_stack.elisa", "--format", "html", "--output", interrupted_html_output, expected=134)
         interrupted_html = interrupted_html_output.read_bytes()
@@ -491,9 +491,9 @@ def main():
         assert isinstance(host["load_average_1m"], float), host
         assert measured["run"]["collection_mode"] == "full"
         assert measured["run"]["capabilities"]["event_classes"] == ["function", "statement", "value"]
-        assert measured["run"]["capabilities"]["sampling"] == "unsupported"
+        assert measured["run"]["capabilities"]["sampling"] == "disabled"
         assert measured["run"]["capabilities"]["sampling_detail"] == {
-            "status": "unsupported", "reason": "no_native_sampler_backend", "scope": "none"
+            "status": "disabled", "reason": "mode_not_selected", "scope": "none"
         }
         assert measured["run"]["capabilities"]["allocation"] == {
             "status": "unsupported", "reason": "allocator_lifecycle_hooks_unavailable", "scope": "none"
@@ -681,7 +681,10 @@ def main():
         assert mode_comparison["collection_mode_match"] is False
         assert any("different collection modes" in warning for warning in mode_comparison["warnings"])
         run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "sampling",
-            "--format", "json", "--output", output, ok=False)
+            "--sample-period-us", "2000", "--format", "json", "--output", output)
+        sampling_alias_report = json.loads(output.read_text())
+        assert sampling_alias_report["run"]["collection_mode"] == "sample"
+        assert sampling_alias_report["summary"]["sample_period_microseconds"] == 2000
     print("native regression smoke OK")
 
 

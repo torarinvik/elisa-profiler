@@ -684,6 +684,14 @@ extend ProfilerNative:
             append_text(manifest, "true" if summary.capture_started and summary.capture_complete else "false")
             append_text(manifest, ",\"frame_dropped\":")
             append_i64(manifest, summary.frame_dropped)
+            append_text(manifest, ",\"sample_count\":")
+            append_i64(manifest, summary.sample_count)
+            append_text(manifest, ",\"sample_missed\":")
+            append_i64(manifest, summary.sample_missed)
+            append_text(manifest, ",\"sample_period_microseconds\":")
+            append_i64(manifest, summary.sample_period_microseconds)
+            append_text(manifest, ",\"sampling_setup_failed\":")
+            append_i64(manifest, summary.sampling_setup_failed)
             append_text(manifest, ",\"capture_index\":{\"format\":\"record-framed-v1\",\"bytes\":")
             append_i64(manifest, capture_bytes)
             append_text(manifest, ",\"valid_frames\":")
@@ -720,6 +728,14 @@ extend ProfilerNative:
             append_text(progress, "true" if summary.capture_started else "false")
             append_text(progress, ",\"capture_complete\":")
             append_text(progress, "true" if summary.capture_complete else "false")
+            append_text(progress, ",\"sample_count\":")
+            append_i64(progress, summary.sample_count)
+            append_text(progress, ",\"sample_missed\":")
+            append_i64(progress, summary.sample_missed)
+            append_text(progress, ",\"sample_period_microseconds\":")
+            append_i64(progress, summary.sample_period_microseconds)
+            append_text(progress, ",\"sampling_setup_failed\":")
+            append_i64(progress, summary.sampling_setup_failed)
             append_text(progress, "}\n")
             return write_file(path, progress)
 
@@ -810,7 +826,7 @@ extend ProfilerNative:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
             capture_incomplete: bool = recovered or status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
-            detail_degraded: bool = capture_incomplete or summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
+            detail_degraded: bool = capture_incomplete or summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or summary.sample_missed > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
             append_text(buffer, "\"quality\":{\"capture\":\"")
             if recovered:
                 append_text(buffer, "recovered")
@@ -879,6 +895,10 @@ extend ProfilerNative:
             if summary.frame_dropped > NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
                 append_text(buffer, "\"framed_transport_loss\"")
+                first_reason <- false
+            if summary.sample_missed > NATIVE_ZERO:
+                append_text(buffer, "," if not first_reason else "")
+                append_text(buffer, "\"sampling_signal_loss\"")
                 first_reason <- false
             if summary.stack_overflow_entries > NATIVE_ZERO:
                 append_text(buffer, "," if not first_reason else "")
@@ -1024,7 +1044,15 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div><div><dt>Collection mode</dt><dd>")
             append_html_escaped(buffer, mode)
             append_text(buffer, "</dd></div>")
-            append_capability_html_summary(buffer, summary)
+            if protocol_field_is(mode, "sample"):
+                append_text(buffer, "<div><dt>CPU samples</dt><dd>")
+                append_i64(buffer, summary.sample_count)
+                append_text(buffer, " captured; ")
+                append_i64(buffer, summary.sample_missed)
+                append_text(buffer, " missed; ")
+                append_i64(buffer, summary.sample_period_microseconds)
+                append_text(buffer, " μs period</dd></div>")
+            append_capability_html_summary(buffer, mode, summary)
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
             append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments)
@@ -1044,6 +1072,7 @@ extend ProfilerNative:
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
             append_html_flame_graph(buffer, summary.folded_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
+            append_html_section(buffer, "CPU samples", summary.sample_records) if protocol_field_is(mode, "sample")
             append_html_section(buffer, "Thread loss", summary.thread_loss_records)
             append_html_view_state(buffer)
             append_html_function_explorer_rebind(buffer)
@@ -1200,6 +1229,14 @@ extend ProfilerNative:
             append_i64(buffer, summary.trace_captured)
             append_text(buffer, ",\"trace_events_omitted\":")
             append_i64(buffer, summary.trace_omitted)
+            append_text(buffer, ",\"sample_count\":")
+            append_i64(buffer, summary.sample_count)
+            append_text(buffer, ",\"sample_missed\":")
+            append_i64(buffer, summary.sample_missed)
+            append_text(buffer, ",\"sample_period_microseconds\":")
+            append_i64(buffer, summary.sample_period_microseconds)
+            append_text(buffer, ",\"sampling_setup_failed\":")
+            append_i64(buffer, summary.sampling_setup_failed)
             append_text(buffer, ",\"trace_event_limit\":")
             if not event_trace:
                 append_text(buffer, "null")
@@ -1229,7 +1266,10 @@ extend ProfilerNative:
             append_observed_exit_code(buffer, status, summary)
             append_text(buffer, ",\"signal\":")
             append_observed_signal(buffer, status, summary)
-            append_text(buffer, ",\"location_timing\":true,\"timing_clock\":\"wall\",\"event_trace_enabled\":")
+            append_text(buffer, ",\"location_timing\":")
+            append_text(buffer, "false" if protocol_field_is(mode, "sample") else "true")
+            append_text(buffer, ",\"timing_clock\":\"cpu\"" if protocol_field_is(mode, "sample") else ",\"timing_clock\":\"wall\"")
+            append_text(buffer, ",\"event_trace_enabled\":")
             append_text(buffer, "true" if event_trace else "false")
             append_text(buffer, ",\"trace_events_captured\":")
             append_i64(buffer, summary.trace_captured)
@@ -1342,7 +1382,7 @@ extend ProfilerNative:
             for index in 0..<mode.count |buffer, mode|:
                 buffer.push(mode[index])
             append_text(buffer, "\n")
-            append_capability_text_summary(buffer, summary)
+            append_capability_text_summary(buffer, mode, summary)
             append_text(buffer, "signal: ")
             append_observed_signal(buffer, status, summary)
             append_text(buffer, "\ntimeout: ")
@@ -1369,6 +1409,14 @@ extend ProfilerNative:
             append_i64(buffer, summary.value_events)
             append_text(buffer, "\nfunction events: ")
             append_i64(buffer, summary.function_events)
+            if protocol_field_is(mode, "sample"):
+                append_text(buffer, "\nsamples: ")
+                append_i64(buffer, summary.sample_count)
+                append_text(buffer, " captured, ")
+                append_i64(buffer, summary.sample_missed)
+                append_text(buffer, " missed at ")
+                append_i64(buffer, summary.sample_period_microseconds)
+                append_text(buffer, " microseconds\n")
             append_text(buffer, "\nthreads: ")
             append_i64(buffer, summary.thread_count)
             append_text(buffer, "\ndropped: ")
@@ -1765,7 +1813,7 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -1787,6 +1835,7 @@ extend ProfilerNative:
             requested_repetitions: mutable i64 = NATIVE_ONE
             warmup_repetitions: mutable i64 = NATIVE_ZERO
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
+            sample_period_microseconds: mutable i64 = NATIVE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS
             capture_byte_limit: mutable i64 = NATIVE_DEFAULT_CAPTURE_BYTES
             timeout_ns: mutable i64 = NATIVE_ZERO
             working_directory: mutable darray[u8] = []
@@ -1795,7 +1844,7 @@ extend ProfilerNative:
             target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1877,12 +1926,14 @@ extend ProfilerNative:
                     index <- index + NATIVE_ONE
                     continue
                 if profiler_ffi_strcmp(argument, "--mode") == NATIVE_ZERO:
-                    return report_error("--mode requires full, functions, statements, values, or diagnostic") if index + NATIVE_ONE >= argc or mode_seen
+                    return report_error("--mode requires full, functions, statements, values, sample, or diagnostic") if index + NATIVE_ONE >= argc or mode_seen
                     selected_mode: cstr = slots[index + NATIVE_ONE].cast[cstr]
-                    return report_error("sampling mode is not available in this build; use functions, statements, values, full, or diagnostic") if profiler_ffi_strcmp(selected_mode, "sample") == NATIVE_ZERO or profiler_ffi_strcmp(selected_mode, "sampling") == NATIVE_ZERO
-                    return report_error("--mode requires full, functions, statements, values, or diagnostic") if profiler_ffi_strcmp(selected_mode, "full") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "functions") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "statements") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "values") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "diagnostic") != NATIVE_ZERO
+                    return report_error("--mode requires full, functions, statements, values, sample, or diagnostic") if profiler_ffi_strcmp(selected_mode, "full") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "functions") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "statements") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "values") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "sample") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "sampling") != NATIVE_ZERO and profiler_ffi_strcmp(selected_mode, "diagnostic") != NATIVE_ZERO
                     mode <- []
-                    copy_cstr(mode, selected_mode)
+                    if profiler_ffi_strcmp(selected_mode, "sampling") == NATIVE_ZERO:
+                        append_text(mode, "sample")
+                    else:
+                        copy_cstr(mode, selected_mode)
                     mode_seen <- true
                     diagnostic_mode <- profiler_ffi_strcmp(selected_mode, "diagnostic") == NATIVE_ZERO
                     index <- index + NATIVE_TWO
@@ -1933,6 +1984,13 @@ extend ProfilerNative:
                     limit: i64 = parse_nonnegative_cstr(limit_text)
                     return report_error("--max-event-trace-events requires a non-negative integer") if limit < NATIVE_ZERO
                     trace_limit <- limit
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--sample-period-us") == NATIVE_ZERO:
+                    return report_error("--sample-period-us requires a positive integer") if index + NATIVE_ONE >= argc
+                    sample_period: i64 = parse_nonnegative_cstr(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--sample-period-us must be between 100 and 1000000 microseconds") if sample_period < NATIVE_MIN_SAMPLE_PERIOD_MICROSECONDS or sample_period > NATIVE_MAX_SAMPLE_PERIOD_MICROSECONDS
+                    sample_period_microseconds <- sample_period
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--max-capture-bytes") == NATIVE_ZERO:
@@ -2201,7 +2259,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
+                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, sample_period_microseconds, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 warmup_ns <- native_saturating_add(warmup_ns, warmup_result.elapsed_ns)
                 if warmup_result.status != NATIVE_ZERO:
@@ -2230,7 +2288,7 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
-                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
+                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, sample_period_microseconds, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
                 capture: darray[u8] = read_file(capture_path)
                 current_summary: mutable CaptureSummary = empty_capture_summary()
@@ -2356,7 +2414,7 @@ extend ProfilerNative:
             elif format_folded:
                 append_folded_report(report, summary)
             elif format_speedscope:
-                append_speedscope_report(report, display_source, summary.folded_records, true)
+                append_speedscope_report(report, display_source, summary.folded_records, not protocol_field_is(mode, "sample"), protocol_field_is(mode, "sample"))
             elif format_html:
                 append_html_report(report, display_source, source_check, dependency_digest, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments)
             else:

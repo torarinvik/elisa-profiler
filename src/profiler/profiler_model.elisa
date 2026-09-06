@@ -34,6 +34,7 @@ module ProfilerNative:
         const NATIVE_PROFILE_MODE_ENVIRONMENT: cstr = "ELISA_PROFILE_MODE"
         const NATIVE_PROFILE_EVENT_TRACE_ENVIRONMENT: cstr = "ELISA_PROFILE_EVENT_TRACE"
         const NATIVE_PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT: cstr = "ELISA_PROFILE_EVENT_TRACE_LIMIT"
+        const NATIVE_PROFILE_SAMPLE_PERIOD_ENVIRONMENT: cstr = "ELISA_PROFILE_SAMPLE_PERIOD_US"
         const NATIVE_PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT: cstr = "ELISA_PROFILE_MAX_CAPTURE_BYTES"
         const NATIVE_PROFILE_RECENT_PATH_ENVIRONMENT: cstr = "ELISA_PROFILE_RECENT_PATH"
         const NATIVE_ACCESS_EXECUTE: i64 = 1
@@ -75,6 +76,7 @@ module ProfilerNative:
         const NATIVE_MAX_PROTOCOL_FRAMES: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_DETAIL_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_EVENT_RECORDS: i64 = 1000000
+        const NATIVE_MAX_PROTOCOL_SAMPLE_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_THREAD_RECORDS: i64 = 1000000
         const NATIVE_MAX_DEPENDENCY_FILES: i64 = 100000
         const NATIVE_UNAME_BUFFER_BYTES: usize = 4096
@@ -94,6 +96,9 @@ module ProfilerNative:
         const NATIVE_SHA256_WORD_BITS: u32 = 32
         const NATIVE_MAX_JSON_NESTING_DEPTH: i64 = 128
         const NATIVE_DEFAULT_TRACE_LIMIT: i64 = 1000000
+        const NATIVE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS: i64 = 1000
+        const NATIVE_MIN_SAMPLE_PERIOD_MICROSECONDS: i64 = 100
+        const NATIVE_MAX_SAMPLE_PERIOD_MICROSECONDS: i64 = 1000000
         const NATIVE_DEFAULT_CAPTURE_BYTES: i64 = 67108864
         const NATIVE_DEFAULT_TEMPORARY_DIRECTORY: cstr = "/tmp"
         const NATIVE_DIRECTORY_MODE: i64 = 448
@@ -211,6 +216,7 @@ module ProfilerNative:
         const NATIVE_PROTOCOL_ERROR_META: i64 = 5
         const NATIVE_PROTOCOL_ERROR_FRAME: i64 = 6
         const NATIVE_PROTOCOL_ERROR_THREAD: i64 = 7
+        const NATIVE_PROTOCOL_ERROR_SAMPLE: i64 = 8
         const NATIVE_FRAME_FNV_OFFSET: u64 = 14695981039346656037
         const NATIVE_FRAME_FNV_PRIME: u64 = 1099511628211
         const NATIVE_TRACE_ID_VERSION: i64 = 2
@@ -295,6 +301,10 @@ module ProfilerNative:
             capture_bytes_dropped: mutable i64
             stack_overflow_entries: mutable i64
             trace_omitted: mutable i64
+            sample_count: mutable i64
+            sample_missed: mutable i64
+            sample_period_microseconds: mutable i64
+            sampling_setup_failed: mutable i64
             crash_signal: mutable i64
             crash_signal_available: mutable bool
             capture_complete: mutable bool
@@ -315,6 +325,7 @@ module ProfilerNative:
             location_records: mutable darray[u8]
             thread_loss: mutable darray[u8]
             folded_records: mutable darray[u8]
+            sample_records: mutable darray[u8]
 
         def empty_native_offline_profile() -> NativeOfflineProfile:
             return NativeOfflineProfile{
@@ -325,6 +336,8 @@ module ProfilerNative:
                 thread_count: NATIVE_ZERO, call_edge_dropped: NATIVE_ZERO, stack_dropped: NATIVE_ZERO,
                 frame_dropped: NATIVE_ZERO, capture_bytes_dropped: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO, trace_omitted: NATIVE_ZERO,
+                sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO,
+                sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO, crash_signal_available: false,
                 capture_complete: false, capture_complete_available: false,
                 execution_mean_micros: NATIVE_ZERO, execution_mean_available: false,
@@ -333,7 +346,7 @@ module ProfilerNative:
                 completed_repetitions: NATIVE_ZERO, successful_repetitions: NATIVE_ZERO,
                 host: NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false},
                 location_timing: false, functions: [], call_edges: [], stacks: [],
-                location_records: [], thread_loss: [], folded_records: [],
+                location_records: [], thread_loss: [], folded_records: [], sample_records: [],
             }
 
         struct NativePathMap:
@@ -352,6 +365,7 @@ module ProfilerNative:
             stack_record_count: mutable i64
             event_record_count: mutable i64
             thread_loss_record_count: mutable i64
+            sample_record_count: mutable i64
             dropped: mutable i64
             max_stack_depth: mutable i64
             stack_overflow_entries: mutable i64
@@ -360,6 +374,10 @@ module ProfilerNative:
             trace_captured: mutable i64
             trace_omitted: mutable i64
             trace_limit: mutable i64
+            sample_count: mutable i64
+            sample_missed: mutable i64
+            sample_period_microseconds: mutable i64
+            sampling_setup_failed: mutable i64
             location_limit: mutable i64
             call_edge_limit: mutable i64
             stack_limit: mutable i64
@@ -387,6 +405,7 @@ module ProfilerNative:
             folded_records: mutable darray[u8]
             event_records: mutable darray[u8]
             thread_loss_records: mutable darray[u8]
+            sample_records: mutable darray[u8]
             malformed: mutable bool
             malformed_code: mutable i64
 
@@ -447,6 +466,10 @@ module ProfilerNative:
             stack_overflow_entries: mutable i64
             thread_count: mutable i64
             trace_events_omitted: mutable i64
+            sample_count: mutable i64
+            sample_missed: mutable i64
+            sample_period_microseconds: mutable i64
+            sampling_setup_failed: mutable i64
             execution_mean_micros: mutable i64
             compile_micros: mutable i64
             cpu_micros: mutable i64

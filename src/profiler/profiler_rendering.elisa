@@ -13,6 +13,8 @@ extend ProfilerNative:
             buffer.extend(summary.stack_records)
             append_text(buffer, "],\"locations\":[")
             buffer.extend(summary.location_records)
+            append_text(buffer, "],\"samples\":[")
+            buffer.extend(summary.sample_records)
             append_text(buffer, "]")
 
 
@@ -128,7 +130,7 @@ extend ProfilerNative:
             return total
 
 
-        def append_speedscope_report(buffer: mutable darray[u8]&, source: darray[u8]&, records: darray[u8]&, location_timing: bool) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_speedscope_report(buffer: mutable darray[u8]&, source: darray[u8]&, records: darray[u8]&, location_timing: bool, sampled: bool) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"$schema\":\"https://www.speedscope.app/file-format-schema.json\",\"name\":")
             append_json_string(buffer, source)
             append_text(buffer, ",\"activeProfileIndex\":0,\"exporter\":\"elisa-profiler-native\",\"shared\":{\"frames\":[")
@@ -136,7 +138,7 @@ extend ProfilerNative:
             append_text(buffer, "]},\"profiles\":[{\"type\":\"sampled\",\"name\":")
             append_json_string(buffer, source)
             append_text(buffer, ",\"unit\":\"")
-            append_text(buffer, "nanoseconds" if location_timing else "none")
+            append_text(buffer, "samples" if sampled else "nanoseconds" if location_timing else "none")
             append_text(buffer, "\",\"startValue\":0,\"endValue\":")
             append_i64(buffer, folded_total_weight(records))
             append_text(buffer, ",\"samples\":[")
@@ -151,7 +153,7 @@ extend ProfilerNative:
             buffer.push(NATIVE_BYTE_NEWLINE) if buffer.count > NATIVE_ZERO.usize()
             return true
         def append_offline_speedscope_report(buffer: mutable darray[u8]&, profile: NativeOfflineProfile) -> bool can[Abort.Panic, Memory.Allocate]:
-            append_speedscope_report(buffer, profile.source, profile.folded_records, profile.location_timing)
+            append_speedscope_report(buffer, profile.source, profile.folded_records, profile.location_timing, profile.sample_count > NATIVE_ZERO)
             return true
 
 
@@ -337,6 +339,14 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
             append_i64(buffer, profile.thread_count)
             append_text(buffer, "</dd></div>")
+            if profile.sample_count > NATIVE_ZERO:
+                append_text(buffer, "<div><dt>CPU samples</dt><dd>")
+                append_i64(buffer, profile.sample_count)
+                append_text(buffer, " captured; ")
+                append_i64(buffer, profile.sample_missed)
+                append_text(buffer, " missed; ")
+                append_i64(buffer, profile.sample_period_microseconds)
+                append_text(buffer, " μs period</dd></div>")
             append_html_host_summary(buffer, profile.host)
             append_text(buffer, "</dl>")
             append_html_workload_object(buffer, profile.workload) if profile.workload.count > NATIVE_ZERO.usize()
@@ -347,6 +357,7 @@ extend ProfilerNative:
             append_html_detail_browsers(buffer, profile.call_edges, profile.location_records)
             append_html_flame_graph(buffer, profile.folded_records)
             append_html_section(buffer, "Thread loss", profile.thread_loss)
+            append_html_section(buffer, "CPU samples", profile.sample_records) if profile.sample_records.count > NATIVE_ZERO.usize()
             append_html_section(buffer, "Folded stacks", profile.folded_records)
             append_html_view_state(buffer)
             append_html_function_explorer_rebind(buffer)
@@ -374,6 +385,14 @@ extend ProfilerNative:
             append_i64(buffer, profile.value_events)
             append_text(buffer, "\nfunction events: ")
             append_i64(buffer, profile.function_events)
+            if profile.sample_count > NATIVE_ZERO:
+                append_text(buffer, "\nsamples: ")
+                append_i64(buffer, profile.sample_count)
+                append_text(buffer, " captured, ")
+                append_i64(buffer, profile.sample_missed)
+                append_text(buffer, " missed at ")
+                append_i64(buffer, profile.sample_period_microseconds)
+                append_text(buffer, " microseconds\n")
             append_text(buffer, "\nthreads: ")
             append_i64(buffer, profile.thread_count)
             append_text(buffer, "\ndropped: ")

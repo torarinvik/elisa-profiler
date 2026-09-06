@@ -1,0 +1,26 @@
+# CPU-sampling workload used by the native profiler smoke test.
+# The loop is intentionally long enough for several CPU timer ticks while the
+# call stack remains entirely in instrumented Elisa functions.
+const SAMPLE_WORK_ITERATIONS: i64 = 50000000
+const SAMPLE_INNER_ROUNDS: i64 = 4
+const SAMPLE_MODULUS: i64 = 1000000007
+
+def sample_inner(seed: i64) -> i64:
+    value: mutable i64 = seed
+    round: mutable i64 = 0
+    while round < SAMPLE_INNER_ROUNDS |value, round|:
+        value <- (value * 1664525 + 1013904223) % SAMPLE_MODULUS
+        round <- round + 1
+    return value
+
+def sample_work(limit: i64) -> i64:
+    total: mutable i64 = 0
+    index: mutable i64 = 0
+    while index < limit |total, index|:
+        total <- total + sample_inner(index)
+        index <- index + 1
+    return total
+
+def main() -> i64:
+    result: i64 = sample_work(SAMPLE_WORK_ITERATIONS)
+    return result - result

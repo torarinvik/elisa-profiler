@@ -2,8 +2,8 @@
 
 This note defines the meanings of the native report fields, including the
 version-1 record contract carried by the current version-2 envelope. The
-report is an instrumented event capture, not a statistical CPU sample. A
-renderer must preserve that distinction in labels and comparisons.
+report can contain instrumented events or CPU samples; renderers must preserve
+the distinction in labels, units, and comparisons.
 
 The optional `workload` object identifies the inputs that make a capture
 reproducible: source size, launch directory, stdin path when used, environment
@@ -37,11 +37,37 @@ measurement of a cool or unconstrained machine.
 - `statements` retains statement and function records, without scalar values.
 - `values` retains scalar-value and function records, without statement records.
 - `diagnostic` retains full instrumentation and enables the bounded event trace.
+- `sample` records launch-mode CPU samples at the requested timer period and
+  retains the active instrumented Elisa call stack for each sample.
 
-These are instrumented event modes, not statistical sampling modes. A sampling
-request is rejected instead of being mislabeled as an instrumented capture.
-The mode is a report identity field and must be considered when comparing
-captures or interpreting missing event classes.
+The first five modes are instrumented event modes. `sample` is a statistical
+CPU-occupancy mode and is not interchangeable with event instrumentation. The
+mode is a report identity field and must be considered when comparing captures
+or interpreting missing event classes.
+
+### CPU sampling semantics
+
+The current native backend uses the process CPU timer and `SIGPROF`. Sampling
+starts only after the collector transport and signal handler are ready, and it
+stops before the completion metadata is emitted. The configured period is
+validated in the inclusive range 100–1,000,000 microseconds. The effective
+sample count is the number of checksum-valid `sample` records accepted by the
+Elisa protocol reader; `summary.sample_count` is the collector's signal-side
+count and should reconcile with the retained record count for a complete
+capture. `summary.sample_missed` records timer expirations that could not be
+represented because a prior signal was still pending or the sample write
+failed. `sampling_setup_failed` is 1 when the timer or handler could not be
+installed.
+
+Each sample has a strict transport sequence, optional thread ID, tracked stack
+depth, overflow depth, and a semicolon-separated stack of instrumented Elisa
+function names. The current collector intentionally does not unwind or
+symbolize native runtime, foreign-library, inline, or optimized-away frames;
+those frames are outside the declared `instrumented_call_stack` scope. Sample
+records are observations of stack occupancy. Aggregated folded weights and
+Speedscope output are useful for hotspot ranking, but must not be presented as
+a chronological timeline or exact invocation counts. Sample-mode Speedscope
+exports use the `samples` unit and one unit of weight per retained sample.
 
 ## Callback overhead benchmark
 
@@ -64,9 +90,11 @@ observations, not independent statistical samples of a workload, and should be
 compared on the same host with the same compiler and build options.
 
 Every report also carries an explicit capability matrix. In the current build,
-`sampling_detail`, `allocation`, and `tasks` are marked unsupported with stable
-reasons because the compiler/runtime exposes instrumentation callbacks but no
-native sampler, allocator-lifecycle stream, or task scheduler lifecycle stream.
+`sampling_detail` is active only for `sample` captures and declares the
+`instrumented_call_stack` scope; it is disabled for event modes. Allocation and
+task capabilities remain unsupported with stable reasons because the
+compiler/runtime exposes no allocator-lifecycle stream or task scheduler
+lifecycle stream.
 `identity` is `compiler_stable_ids` when compiler-issued function and location
 identity callbacks are observed, and `source_name_fallback` for legacy
 compiler/collector streams. Stable-ID captures also declare the
@@ -89,7 +117,8 @@ signal captures may intentionally be partial and expose
 
 Native JSON captures also expose `run.capabilities`. Its event-class list is
 the authoritative retained detail set; `trace`, `recent_path`, `timing`, and
-`sampling` describe the active policies; and `detail_limits` records the
+`sampling` describe the active policies; `sampling_detail` states the scope and
+reason; and `detail_limits` records the
 collector's configured location, edge, stack, and byte limits. A zero limit
 means unlimited, matching the collector configuration.
 Progress manifests additionally expose a `capture_index` for the framed

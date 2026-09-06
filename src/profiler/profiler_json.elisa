@@ -801,6 +801,44 @@ extend ProfilerNative:
             return true
 
 
+        def json_validate_sample_array(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            array_start: i64 = json_key_value_start(data, "samples", NATIVE_ZERO.usize(), data.count)
+            return true if array_start < NATIVE_ZERO
+            return false if data[array_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            array_stop: i64 = json_array_end(data, array_start.usize(), data.count)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
+            content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            record_count: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, content_stop, data, record_count|:
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                break if cursor >= content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if record_count >= NATIVE_MAX_PROTOCOL_SAMPLE_RECORDS or data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, content_stop)
+                return false if object_stop < NATIVE_ZERO
+                sequence: mutable i64 = NATIVE_ZERO
+                thread_id: mutable i64 = NATIVE_ZERO
+                thread_available: mutable bool = false
+                depth: mutable i64 = NATIVE_ZERO
+                overflow_depth: mutable i64 = NATIVE_ZERO
+                stack_value: mutable darray[u8] = []
+                repetition: mutable i64 = NATIVE_ZERO
+                return false if not json_read_number_field(data, "sequence", cursor, object_stop.usize(), &sequence)
+                return false if not json_read_nullable_number_field(data, "thread_id", cursor, object_stop.usize(), &thread_id, &thread_available)
+                return false if not json_read_number_field(data, "depth", cursor, object_stop.usize(), &depth)
+                return false if not json_read_number_field(data, "overflow_depth", cursor, object_stop.usize(), &overflow_depth)
+                return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &stack_value) or stack_value.count == NATIVE_ZERO.usize()
+                return false if not json_read_optional_number_field(data, "repetition", cursor, object_stop.usize(), &repetition)
+                return false if depth < NATIVE_ZERO or overflow_depth < NATIVE_ZERO or thread_available and thread_id < NATIVE_ZERO or repetition < NATIVE_ZERO
+                record_count <- record_count + NATIVE_ONE
+                cursor <- object_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
+            return true
+
+
         def json_read_millis_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&) -> bool can[Abort.Panic]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             return false if value_start < NATIVE_ZERO
@@ -869,6 +907,7 @@ extend ProfilerNative:
             return false if not json_validate_report_envelope(data, schema_version, "profile")
             return false if not json_validate_source_snapshot(data)
             return false if not json_validate_detail_arrays(data)
+            return false if not json_validate_sample_array(data)
 
             profile.source <- []
             profile.source_snapshot <- []
@@ -881,6 +920,7 @@ extend ProfilerNative:
             profile.location_records <- []
             profile.thread_loss <- []
             profile.folded_records <- []
+            profile.sample_records <- []
             profile.source_digest_available <- false
             profile.crash_signal_available <- false
             profile.capture_complete_available <- false
@@ -921,6 +961,10 @@ extend ProfilerNative:
             return false if not json_read_optional_number_field(data, "capture_bytes_dropped", summary_start.usize(), summary_stop.usize(), &profile.capture_bytes_dropped)
             return false if not json_read_optional_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &profile.stack_overflow_entries)
             return false if not json_read_optional_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &profile.trace_omitted)
+            return false if not json_read_optional_number_field(data, "sample_count", summary_start.usize(), summary_stop.usize(), &profile.sample_count)
+            return false if not json_read_optional_number_field(data, "sample_missed", summary_start.usize(), summary_stop.usize(), &profile.sample_missed)
+            return false if not json_read_optional_number_field(data, "sample_period_microseconds", summary_start.usize(), summary_stop.usize(), &profile.sample_period_microseconds)
+            return false if not json_read_optional_number_field(data, "sampling_setup_failed", summary_start.usize(), summary_stop.usize(), &profile.sampling_setup_failed)
             return false if not json_read_nullable_number_field(data, "crash_signal", summary_start.usize(), summary_stop.usize(), &profile.crash_signal, &profile.crash_signal_available)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &profile.exit_code)
 
@@ -976,6 +1020,7 @@ extend ProfilerNative:
                 return false if not json_read_number_field(data, "successful_repetitions", run_start.usize(), run_stop.usize(), &profile.successful_repetitions)
             return false if not json_read_location_timing(data, &profile.location_timing)
             return false if not json_read_stacks_to_folded(data, &profile.folded_records, profile.location_timing)
+            return false if not json_read_samples_to_folded(data, &profile.folded_records)
 
             functions_start: i64 = json_key_value_start(data, "functions", NATIVE_ZERO.usize(), data.count)
             return false if functions_start < NATIVE_ZERO or data[functions_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
@@ -1017,6 +1062,13 @@ extend ProfilerNative:
                 profile.thread_loss <- []
                 for index in thread_start.usize()..<thread_stop.usize() |index, data, profile|:
                     profile.thread_loss.push(data[index])
+            sample_start: i64 = json_key_value_start(data, "samples", NATIVE_ZERO.usize(), data.count)
+            if sample_start >= NATIVE_ZERO:
+                sample_stop: i64 = json_array_end(data, sample_start.usize(), data.count)
+                return false if sample_stop < NATIVE_ZERO
+                profile.sample_records <- []
+                for index in sample_start.usize()..<sample_stop.usize() |index, data, profile|:
+                    profile.sample_records.push(data[index])
             return true
 
 
@@ -1099,6 +1151,10 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &capture.stack_overflow_entries)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &capture.thread_count)
             return false if not json_read_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &capture.trace_events_omitted)
+            return false if not json_read_optional_number_field(data, "sample_count", summary_start.usize(), summary_stop.usize(), &capture.sample_count)
+            return false if not json_read_optional_number_field(data, "sample_missed", summary_start.usize(), summary_stop.usize(), &capture.sample_missed)
+            return false if not json_read_optional_number_field(data, "sample_period_microseconds", summary_start.usize(), summary_stop.usize(), &capture.sample_period_microseconds)
+            return false if not json_read_optional_number_field(data, "sampling_setup_failed", summary_start.usize(), summary_stop.usize(), &capture.sampling_setup_failed)
             return false if not json_read_bool_field(data, "detail_budget_exceeded", summary_start.usize(), summary_stop.usize(), &capture.detail_budget_exceeded)
             return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &capture.execution_mean_micros)
             return false if not json_read_millis_field(data, "compile_ms", run_start.usize(), run_stop.usize(), &capture.compile_micros)
@@ -1178,4 +1234,32 @@ extend ProfilerNative:
                     append_i64(folded, weight)
                 cursor <- object_stop.usize()
                 cursor <- cursor + NATIVE_ONE.usize() if cursor < stop and data[cursor] == NATIVE_BYTE_COMMA
+            return true
+
+
+        def json_read_samples_to_folded(data: darray[u8]&, folded: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            array_start: i64 = json_key_value_start(data, "samples", NATIVE_ZERO.usize(), data.count)
+            return true if array_start < NATIVE_ZERO
+            return false if data[array_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            array_stop: i64 = json_array_end(data, array_start.usize(), data.count)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
+            stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            while cursor < stop |cursor, stop, data, folded|:
+                cursor <- json_skip_whitespace(data, cursor, stop)
+                break if cursor >= stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, stop)
+                return false if object_stop < NATIVE_ZERO
+                stack_value: mutable darray[u8] = []
+                return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &stack_value) or stack_value.count == NATIVE_ZERO.usize()
+                append_folded_separator(folded)
+                folded.extend(stack_value)
+                folded.push(NATIVE_BYTE_SPACE)
+                append_i64(folded, NATIVE_ONE)
+                cursor <- object_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, stop)
+                if cursor < stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
             return true

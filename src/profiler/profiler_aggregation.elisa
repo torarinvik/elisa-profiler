@@ -18,6 +18,7 @@ extend ProfilerNative:
                 stack_record_count: NATIVE_ZERO,
                 event_record_count: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
+                sample_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO,
@@ -53,6 +54,11 @@ extend ProfilerNative:
                 folded_records: [],
                 event_records: [],
                 thread_loss_records: [],
+                sample_count: NATIVE_ZERO,
+                sample_missed: NATIVE_ZERO,
+                sample_period_microseconds: NATIVE_ZERO,
+                sampling_setup_failed: NATIVE_ZERO,
+                sample_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
             }
@@ -70,6 +76,7 @@ extend ProfilerNative:
             destination.stack_record_count <- native_saturating_add(destination.stack_record_count, incoming.stack_record_count)
             destination.event_record_count <- native_saturating_add(destination.event_record_count, incoming.event_record_count)
             destination.thread_loss_record_count <- native_saturating_add(destination.thread_loss_record_count, incoming.thread_loss_record_count)
+            destination.sample_record_count <- native_saturating_add(destination.sample_record_count, incoming.sample_record_count)
             destination.dropped <- native_saturating_add(destination.dropped, incoming.dropped)
             destination.max_stack_depth <- incoming.max_stack_depth if incoming.max_stack_depth > destination.max_stack_depth
             destination.stack_overflow_entries <- native_saturating_add(destination.stack_overflow_entries, incoming.stack_overflow_entries)
@@ -78,6 +85,10 @@ extend ProfilerNative:
             destination.trace_captured <- native_saturating_add(destination.trace_captured, incoming.trace_captured)
             destination.trace_omitted <- native_saturating_add(destination.trace_omitted, incoming.trace_omitted)
             destination.trace_limit <- incoming.trace_limit
+            destination.sample_count <- native_saturating_add(destination.sample_count, incoming.sample_count)
+            destination.sample_missed <- native_saturating_add(destination.sample_missed, incoming.sample_missed)
+            destination.sample_period_microseconds <- incoming.sample_period_microseconds if incoming.sample_period_microseconds > NATIVE_ZERO
+            destination.sampling_setup_failed <- incoming.sampling_setup_failed if incoming.sampling_setup_failed != NATIVE_ZERO
             destination.location_limit <- incoming.location_limit
             destination.call_edge_limit <- incoming.call_edge_limit
             destination.stack_limit <- incoming.stack_limit
@@ -109,6 +120,8 @@ extend ProfilerNative:
             destination.stack_records.extend(incoming.stack_records)
             append_folded_separator(destination.folded_records)
             destination.folded_records.extend(incoming.folded_records)
+            append_record_separator(destination.sample_records)
+            destination.sample_records.extend(incoming.sample_records)
             append_record_separator(destination.event_records)
             destination.event_records.extend(incoming.event_records)
             if incoming.thread_loss_records.count > NATIVE_ZERO.usize():

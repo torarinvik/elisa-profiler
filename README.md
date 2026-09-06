@@ -114,6 +114,9 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop-functions.json
     bin/elisa-profiler profile examples/hot_loop.elisa --mode diagnostic --format html \
         -o profiles/hot-loop-diagnostic.html
+    bin/elisa-profiler profile examples/sampling.elisa --mode sample \
+        --sample-period-us 1000 --format speedscope \
+        -o profiles/sampling.speedscope.json
     bin/elisa-profiler profile examples/hot_loop.elisa --progress profiles/hot-loop.progress.json \
         --format json -o profiles/hot-loop.json
     bin/elisa-profiler report profiles/hot-loop.json --format html \
@@ -131,17 +134,20 @@ The default `full` mode records function, statement, and scalar-value events.
 `functions` keeps function/call-path evidence, `statements` keeps statement
 and function evidence, and `values` keeps scalar values plus function context.
 `diagnostic` enables the bounded event trace in addition to full instrumentation.
-Sampling is not claimed by this instrumented build; an explicit sampling mode
-request fails with an actionable error. The selected mode is recorded in
-`run.collection_mode` and shown by text/HTML reports. JSON also records
-`run.capabilities`, including retained event classes, trace/path policy, wall
-timing, the unsupported sampling status, and the active detail limits.
+`sample` enables launch-mode CPU sampling at the requested period (1000 µs by
+default; 100–1,000,000 µs accepted). The current backend uses `SIGPROF`/
+`ITIMER_PROF` and records the active instrumented Elisa call stack. It does not
+unwind native or foreign frames, and a sample is stack-occupancy evidence, not
+an invocation count. The selected mode is recorded in `run.collection_mode`
+and shown by text/HTML reports. JSON also records `run.capabilities`, including
+retained event classes, trace/path policy, CPU timing, and sampling scope; the
+summary carries the requested period and missed/setup-failure counters.
 
 The text report lists the structured run outcome, capture completeness, hot
 source locations, and event totals. HTML summary cards additionally show the
 source SHA-256, host identity, inherited-affinity policy, explicit thermal
 availability, and the same completeness classification. JSON reports have
-schema version 1, compiler provenance, selected optimization level,
+schema version 2 (with a native v1 reader-compatibility path), compiler provenance, selected optimization level,
 execution status/timing, all locations
 with source snippets, function call-event counts, aggregate caller-to-callee
 edges, folded call stacks, and scalar value statistics
@@ -231,7 +237,8 @@ available.
 Useful controls:
 
     --format text|json|folded|html|speedscope  choose the profile report format (default: text)
-    --mode full|functions|statements|values|diagnostic  choose event detail (default: full)
+    --mode full|functions|statements|values|sample|diagnostic  choose event detail (default: full)
+    --sample-period-us N   CPU sampling period in microseconds (100..1000000; default: 1000)
     -O0|-O1|-O2|-O3        choose the compiler optimization level (default: -O0)
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
@@ -251,7 +258,7 @@ Useful controls:
     -- TARGET_ARG...       forward target arguments without shell re-parsing
 
 `--env` rejects the profiler's private transport variables (`ELISA_PROFILE_FD`,
-framing, mode, trace, capture-budget, and recent-path keys). This prevents a
+framing, mode, trace, sample-period, capture-budget, and recent-path keys). This prevents a
 target override from replacing the collector channel; documented target-facing
 controls such as `ELISA_PROFILE_MAX_LOCATIONS`, `ELISA_PROFILE_MAX_CALL_EDGES`,
 `ELISA_PROFILE_MAX_STACKS`, and `ELISA_PROFILE_CHILD` remain available.
@@ -276,7 +283,13 @@ and the number of entries beyond its 1024-frame capacity; a nonzero
 Function call-events count observed entries, while completed-call counts include
 only functions whose return hook was observed; panic and timeout reports can
 therefore contain incomplete calls. Timing is an instrumented diagnostic
-estimate: it includes collector overhead and is not statistical CPU sampling.
+estimate: it includes collector overhead and is distinct from statistical CPU
+sampling. In `sample` mode, `summary.sample_count` is the number of valid sample
+records retained, `summary.sample_missed` counts signal coalescing/write-loss
+events, and `summary.sample_period_microseconds` is the requested timer period.
+`sample_missed` or `sampling_setup_failed` makes sample evidence degraded. The
+sample records carry sequence, thread, tracked depth, overflow depth, and a
+semicolon-separated active Elisa stack. They are not a chronological timeline.
 Wall timing includes sleeps and waits.
 Collector records are sent over a dedicated inherited file descriptor during
 normal profiler runs, so target stderr—including lines that resemble the
@@ -292,9 +305,10 @@ when a child process is intentionally part of the profiled capture.
 The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.
-The `speedscope` format emits a self-contained sampled-profile JSON document
-using the same stack weights, ready to open in Speedscope or another compatible
-viewer.
+The `speedscope` format emits a self-contained profile JSON document using the
+same stack weights, ready to open in Speedscope or another compatible viewer.
+Sample-mode exports use `unit: "samples"` and preserve one weight per retained
+sample; instrumented timing exports use nanoseconds instead.
 The `report` command renders an existing JSON report offline, so changing
 format or display limits never reruns the compiler or target. Pass
 `--source PATH` when the report is being inspected from a checkout: the

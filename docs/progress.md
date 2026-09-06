@@ -23,7 +23,9 @@ States are emitted in this order when their work exists:
 7. `complete`
 
 `events`, `capture_bytes`, and `valid_frames` describe the most recently
-normalized aggregate snapshot. They are evidence counters, not percentages.
+normalized aggregate snapshot. Sample-mode snapshots additionally carry the
+requested period, retained sample count, missed-sample count, and setup-failure
+flag. These are evidence counters, not percentages.
 `capture_complete` only becomes true when the normalized capture contains its
 completion marker; a timeout or other partial capture remains explicitly
 incomplete.

@@ -36,9 +36,9 @@ extend ProfilerNative:
             return false
 
 
-        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, identity_mismatch: bool, identity_ambiguity: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
+        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, sampling_configuration_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, identity_mismatch: bool, identity_ambiguity: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
             return false if not comparison_policy_requested(policy)
-            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or target_failure or evidence_loss
+            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or sampling_configuration_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or target_failure or evidence_loss
             return true if (policy.max_cpu_regression_percent >= NATIVE_ZERO or policy.max_cpu_micros >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
             return true if (policy.max_rss_regression_percent >= NATIVE_ZERO or policy.max_rss_bytes >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
             return true if policy.max_function_self_regression_percent >= NATIVE_ZERO and not comparison_has_shared_function(baseline.functions, candidate.functions)
@@ -771,6 +771,7 @@ extend ProfilerNative:
         ) -> i64 can[Abort.Panic, Memory.Allocate]:
             source_mismatch: bool = not byte_arrays_equal(baseline.source, candidate.source)
             collection_mode_mismatch: bool = (baseline.collection_mode.count > NATIVE_ZERO.usize() and candidate.collection_mode.count == NATIVE_ZERO.usize()) or (baseline.collection_mode.count == NATIVE_ZERO.usize() and candidate.collection_mode.count > NATIVE_ZERO.usize()) or (baseline.collection_mode.count > NATIVE_ZERO.usize() and candidate.collection_mode.count > NATIVE_ZERO.usize() and not byte_arrays_equal(baseline.collection_mode, candidate.collection_mode))
+            sampling_configuration_mismatch: bool = protocol_field_is(baseline.collection_mode, "sample") and protocol_field_is(candidate.collection_mode, "sample") and baseline.sample_period_microseconds != candidate.sample_period_microseconds
             workload_mismatch: mutable bool = false
             if baseline.workload_identity.count > NATIVE_ZERO.usize() or candidate.workload_identity.count > NATIVE_ZERO.usize():
                 workload_mismatch <- not byte_arrays_equal(baseline.workload_identity, candidate.workload_identity)
@@ -783,7 +784,7 @@ extend ProfilerNative:
             identity_ambiguity: bool = comparison_identity_has_ambiguous_matches(baseline, candidate)
             resource_metrics_mismatch: bool = baseline.resource_metrics_available != candidate.resource_metrics_available
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
-            evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.frame_dropped > NATIVE_ZERO or candidate.frame_dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
+            evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.frame_dropped > NATIVE_ZERO or candidate.frame_dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.sample_missed > NATIVE_ZERO or candidate.sample_missed > NATIVE_ZERO or baseline.sampling_setup_failed > NATIVE_ZERO or candidate.sampling_setup_failed > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
             cpu_available: bool = baseline.resource_metrics_available and candidate.resource_metrics_available and not resource_metrics_mismatch
             rss_available: bool = cpu_available
             wall_percent_failed: bool = comparison_percent_exceeded(baseline.execution_mean_micros, candidate.execution_mean_micros, policy.max_wall_regression_percent, true)
@@ -793,7 +794,7 @@ extend ProfilerNative:
             rss_percent_failed: bool = comparison_percent_exceeded(baseline.peak_rss_bytes, candidate.peak_rss_bytes, policy.max_rss_regression_percent, rss_available)
             rss_absolute_failed: bool = comparison_absolute_exceeded(candidate.peak_rss_bytes, policy.max_rss_bytes, rss_available)
             function_failed: bool = comparison_function_self_exceeded(baseline.functions, candidate.functions, policy.max_function_self_regression_percent)
-            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, identity_mismatch, identity_ambiguity, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
+            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, sampling_configuration_mismatch, compiler_mismatch, optimization_mismatch, identity_mismatch, identity_ambiguity, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
             gate_failed: bool = wall_percent_failed or wall_absolute_failed or cpu_percent_failed or cpu_absolute_failed or rss_percent_failed or rss_absolute_failed or function_failed
             if format_html:
                 json_details: mutable darray[u8] = []
@@ -854,11 +855,12 @@ extend ProfilerNative:
                 append_text(buffer, "<p><strong>Gate:</strong> ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
                 append_text(buffer, "</p>")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or resource_metrics_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or sampling_configuration_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "<section class='warning' aria-labelledby='comparison-warnings'><h2 id='comparison-warnings'>Warnings</h2><ul>")
                     append_text(buffer, "<li>Source paths or contents differ.</li>" if source_mismatch else "")
                     append_text(buffer, "<li>Workload metadata differs.</li>" if workload_mismatch else "")
                     append_text(buffer, "<li>Collection modes differ.</li>" if collection_mode_mismatch else "")
+                    append_text(buffer, "<li>Sample periods differ; sampled weights are not directly comparable.</li>" if sampling_configuration_mismatch else "")
                     append_text(buffer, "<li>Compiler commits differ.</li>" if compiler_mismatch else "")
                     append_text(buffer, "<li>Optimization levels differ.</li>" if optimization_mismatch else "")
                     append_text(buffer, "<li>Stable identity coverage or contract differs; readable-name fallback is unsafe for a gated comparison.</li>" if identity_mismatch else "")
@@ -934,6 +936,18 @@ extend ProfilerNative:
                 append_i64(buffer, baseline.stack_overflow_entries)
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.stack_overflow_entries)
+                append_text(buffer, "\nsamples: baseline=")
+                append_i64(buffer, baseline.sample_count)
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.sample_count)
+                append_text(buffer, " missed_baseline=")
+                append_i64(buffer, baseline.sample_missed)
+                append_text(buffer, " missed_candidate=")
+                append_i64(buffer, candidate.sample_missed)
+                append_text(buffer, " period_us_baseline=")
+                append_i64(buffer, baseline.sample_period_microseconds)
+                append_text(buffer, " period_us_candidate=")
+                append_i64(buffer, candidate.sample_period_microseconds)
                 append_text(buffer, "\n")
                 append_text(buffer, "functions compared: ")
                 append_i64(buffer, baseline.functions.count.i64())
@@ -952,17 +966,19 @@ extend ProfilerNative:
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.location_records.count.i64())
                 append_text(buffer, "\n")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or resource_metrics_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or sampling_configuration_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
                     append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different workload metadata", workload_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different collection modes", collection_mode_mismatch)
+                    append_comparison_warning_text(buffer, "baseline and candidate use different sample periods; sampled weights are not directly comparable", sampling_configuration_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different compiler commits", compiler_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different optimization levels", optimization_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate differ in stable identity coverage or contract; readable-name fallback is unsafe for a gated comparison", identity_mismatch)
                     append_comparison_warning_text(buffer, "one or more identities match multiple records; affected entries are shown as ambiguous additions/removals", identity_ambiguity)
                     append_comparison_warning_text(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch)
                     append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
+                    append_comparison_warning_text(buffer, "one or both sampled captures lost samples or could not start sampling", baseline.sample_missed > NATIVE_ZERO or candidate.sample_missed > NATIVE_ZERO or baseline.sampling_setup_failed > NATIVE_ZERO or candidate.sampling_setup_failed > NATIVE_ZERO)
                     append_comparison_warning_text(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss)
                 append_text(buffer, "gate: ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
@@ -1024,6 +1040,8 @@ extend ProfilerNative:
             append_text(buffer, "false" if workload_mismatch else "true")
             append_text(buffer, ",\"collection_mode_match\":")
             append_text(buffer, "false" if collection_mode_mismatch else "true")
+            append_text(buffer, ",\"sampling_configuration_match\":")
+            append_text(buffer, "false" if sampling_configuration_mismatch else "true")
             append_text(buffer, ",\"functions\":")
             append_comparison_functions_json(buffer, baseline.functions, candidate.functions)
             append_text(buffer, ",\"call_edges\":")
@@ -1084,6 +1102,30 @@ extend ProfilerNative:
             append_i64(buffer, candidate.trace_events_omitted)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.trace_events_omitted, baseline.trace_events_omitted))
+            append_text(buffer, "},\"sample_count\":{\"baseline\":")
+            append_i64(buffer, baseline.sample_count)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.sample_count)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, native_signed_delta(candidate.sample_count, baseline.sample_count))
+            append_text(buffer, "},\"sample_missed\":{\"baseline\":")
+            append_i64(buffer, baseline.sample_missed)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.sample_missed)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, native_signed_delta(candidate.sample_missed, baseline.sample_missed))
+            append_text(buffer, "},\"sample_period_microseconds\":{\"baseline\":")
+            append_i64(buffer, baseline.sample_period_microseconds)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.sample_period_microseconds)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, native_signed_delta(candidate.sample_period_microseconds, baseline.sample_period_microseconds))
+            append_text(buffer, "},\"sampling_setup_failed\":{\"baseline\":")
+            append_i64(buffer, baseline.sampling_setup_failed)
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate.sampling_setup_failed)
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, native_signed_delta(candidate.sampling_setup_failed, baseline.sampling_setup_failed))
             append_text(buffer, "}}")
             append_comparison_gate_json(buffer, policy, gate_inconclusive, gate_failed, wall_percent_failed, wall_absolute_failed, cpu_percent_failed, cpu_absolute_failed, rss_percent_failed, rss_absolute_failed, function_failed)
             append_text(buffer, ",\"warnings\":[")
@@ -1092,12 +1134,14 @@ extend ProfilerNative:
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different source paths or contents", source_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different workload metadata", workload_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different collection modes", collection_mode_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different sample periods; sampled weights are not directly comparable", sampling_configuration_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different compiler commits", compiler_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different optimization levels", optimization_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in stable identity coverage or contract; readable-name fallback is unsafe for a gated comparison", identity_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "one or more identities match multiple records; affected entries are shown as ambiguous additions/removals", identity_ambiguity, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline or candidate target execution failed", target_failure, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "one or both sampled captures lost samples or could not start sampling", baseline.sample_missed > NATIVE_ZERO or candidate.sample_missed > NATIVE_ZERO or baseline.sampling_setup_failed > NATIVE_ZERO or candidate.sampling_setup_failed > NATIVE_ZERO, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss, &warning_first)
             append_text(buffer, "],\"status\":\"")
             append_text(buffer, "warning" if warning_count > NATIVE_ZERO else "ok")
@@ -1208,12 +1252,12 @@ extend ProfilerNative:
             return report_error("candidate detail arrays contain invalid accounting") if not json_validate_detail_arrays(candidate_capture)
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
-                dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
+                dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO, sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO, sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
-                dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
+                dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO, sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO, sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)

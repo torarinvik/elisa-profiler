@@ -411,6 +411,56 @@ extend ProfilerNative:
             summary.stack_record_count <- native_saturating_add(summary.stack_record_count, NATIVE_ONE)
 
 
+        def append_sample_record(summary: mutable CaptureSummary&, sample_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.sample_record_count, NATIVE_PROTOCOL_ERROR_SAMPLE, NATIVE_MAX_PROTOCOL_SAMPLE_RECORDS)
+            sequence_field: mutable darray[u8] = []
+            thread_field: mutable darray[u8] = []
+            depth_field: mutable darray[u8] = []
+            overflow_field: mutable darray[u8] = []
+            stack_field: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
+            cursor <- protocol_field_into(data, cursor, stop, &thread_field)
+            cursor <- protocol_field_into(data, cursor, stop, &depth_field)
+            cursor <- protocol_field_into(data, cursor, stop, &overflow_field)
+            cursor <- protocol_field_into(data, cursor, stop, &stack_field)
+            valid: bool = cursor == stop and protocol_unsigned(sequence_field) and (protocol_field_is(thread_field, "-") or protocol_unsigned(thread_field)) and protocol_unsigned(depth_field) and protocol_unsigned(overflow_field) and (protocol_field_is(stack_field, "-") or stack_field.count > NATIVE_ZERO.usize())
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_SAMPLE
+                return
+            depth: i64 = protocol_number_field(depth_field)
+            overflow_depth: i64 = protocol_number_field(overflow_field)
+            append_record_separator(sample_records)
+            append_text(sample_records, "{\"sequence\":")
+            append_protocol_number(sample_records, sequence_field)
+            append_text(sample_records, ",\"thread_id\":")
+            if protocol_field_is(thread_field, "-"):
+                append_text(sample_records, "null")
+            else:
+                append_protocol_number(sample_records, thread_field)
+            append_text(sample_records, ",\"depth\":")
+            append_i64(sample_records, depth)
+            append_text(sample_records, ",\"overflow_depth\":")
+            append_i64(sample_records, overflow_depth)
+            append_text(sample_records, ",\"stack\":")
+            if protocol_field_is(stack_field, "-"):
+                append_text(sample_records, "\"<root>\"")
+            else:
+                append_json_string(sample_records, stack_field)
+            append_text(sample_records, ",\"repetition\":")
+            append_i64(sample_records, repetition)
+            append_text(sample_records, "}")
+            append_folded_separator(folded_records)
+            if protocol_field_is(stack_field, "-"):
+                append_text(folded_records, "<root>")
+            else:
+                for index in 0..<stack_field.count |folded_records, stack_field|:
+                    folded_records.push(stack_field[index])
+            folded_records.push(NATIVE_BYTE_SPACE)
+            append_i64(folded_records, NATIVE_ONE)
+            summary.sample_record_count <- native_saturating_add(summary.sample_record_count, NATIVE_ONE)
+
+
         def append_event_record(summary: mutable CaptureSummary&, event_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.event_record_count, NATIVE_PROTOCOL_ERROR_EVENT, NATIVE_MAX_PROTOCOL_EVENT_RECORDS)
             sequence_field: mutable darray[u8] = []
@@ -583,6 +633,7 @@ extend ProfilerNative:
                 stack_record_count: NATIVE_ZERO,
                 event_record_count: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
+                sample_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
                 max_stack_depth: NATIVE_ZERO,
                 stack_overflow_entries: NATIVE_ZERO,
@@ -591,6 +642,10 @@ extend ProfilerNative:
                 trace_captured: NATIVE_ZERO,
                 trace_omitted: NATIVE_ZERO,
                 trace_limit: NATIVE_ZERO,
+                sample_count: NATIVE_ZERO,
+                sample_missed: NATIVE_ZERO,
+                sample_period_microseconds: NATIVE_ZERO,
+                sampling_setup_failed: NATIVE_ZERO,
                 location_limit: NATIVE_ZERO,
                 call_edge_limit: NATIVE_ZERO,
                 stack_limit: NATIVE_ZERO,
@@ -618,6 +673,7 @@ extend ProfilerNative:
                 folded_records: [],
                 event_records: [],
                 thread_loss_records: [],
+                sample_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
             }
@@ -628,6 +684,7 @@ extend ProfilerNative:
             event_records: mutable darray[u8] = []
             thread_loss_records: mutable darray[u8] = []
             folded_records: mutable darray[u8] = []
+            sample_records: mutable darray[u8] = []
             begin_prefix: sview = "ELISA_PROFILE\t1\tbegin\t"
             end_prefix: sview = "ELISA_PROFILE\t1\tend\t"
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
@@ -635,6 +692,7 @@ extend ProfilerNative:
             thread_prefix: sview = "ELISA_PROFILE\t1\tthread\t"
             crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
             frame_prefix: sview = "ELISA_PROFILE\t1\tframe\t"
+            sample_prefix: sview = "ELISA_PROFILE\t1\tsample\t"
             protocol_prefix: sview = "ELISA_PROFILE\t1\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
             line_count: mutable usize = NATIVE_ZERO.usize()
@@ -729,12 +787,20 @@ extend ProfilerNative:
                             summary.capture_byte_limit <- parse_protocol_number(data, &cursor, line_stop)
                             summary.capture_bytes_used <- parse_protocol_number(data, &cursor, line_stop)
                             summary.capture_bytes_dropped <- parse_protocol_number(data, &cursor, line_stop)
-                        if cursor < line_stop:
+                        if framed_capture and cursor < line_stop:
                             summary.frame_dropped <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.sample_count <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.sample_missed <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.sample_period_microseconds <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.sampling_setup_failed <- parse_protocol_number(data, &cursor, line_stop)
                         if cursor != line_stop:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                        if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO or summary.frame_dropped < NATIVE_ZERO:
+                        if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO or summary.frame_dropped < NATIVE_ZERO or summary.sample_count < NATIVE_ZERO or summary.sample_missed < NATIVE_ZERO or summary.sample_period_microseconds < NATIVE_ZERO or summary.sampling_setup_failed < NATIVE_ZERO:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     elif frame_valid and line_prefix(data, record_start, line_stop, trace_prefix):
@@ -776,6 +842,9 @@ extend ProfilerNative:
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
                         append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, sample_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(sample_prefix)
+                        append_sample_record(&summary, &sample_records, &folded_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
                         append_event_record(&summary, &event_records, data, &cursor, line_stop, source)
@@ -790,4 +859,5 @@ extend ProfilerNative:
             summary.folded_records <- folded_records
             summary.event_records <- event_records
             summary.thread_loss_records <- thread_loss_records
+            summary.sample_records <- sample_records
             return summary

@@ -50,9 +50,10 @@ This is a compatibility container, not yet the final durable artifact format.
 The native collector transport is already record-framed: each streamed record
 carries a strict sequence number, byte length, and FNV-1a-64 checksum, and the
 Elisa decoder validates those fields before normalization. The JSON artifact
-still has no compression or automatic partial-capture recovery reader; those
-remain planned M2/M3 work. The sidecar manifest does carry a durable framed
-capture index. Raw JSON reports can opt in to an exact source snapshot with
+still has no compression; compression and chunked storage remain planned
+extensions. The sidecar manifest carries a durable framed capture index, and
+the native `recover` command reconstructs a bounded report from a partial
+manifest/capture. Raw JSON reports can opt in to an exact source snapshot with
 `--embed-source`; the top-level `source_snapshot` contains the UTF-8 source
 bytes and their SHA-256 digest. Snapshots are intentionally optional because
 they increase report size.

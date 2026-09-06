@@ -92,6 +92,7 @@ extend ProfilerNative:
             _ = profiler_ffi_unsetenv(NATIVE_PROFILE_MODE_ENVIRONMENT)
             _ = profiler_ffi_unsetenv(NATIVE_PROFILE_EVENT_TRACE_ENVIRONMENT)
             _ = profiler_ffi_unsetenv(NATIVE_PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_SAMPLE_PERIOD_ENVIRONMENT)
             _ = profiler_ffi_unsetenv(NATIVE_PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT)
             _ = profiler_ffi_unsetenv(NATIVE_PROFILE_RECENT_PATH_ENVIRONMENT)
             _ = profiler_ffi_unsetenv(NATIVE_PROFILE_FRAMED_ENVIRONMENT)
@@ -109,7 +110,7 @@ extend ProfilerNative:
 
 
         def profiler_internal_environment_name(name: darray[u8]&) -> bool can[Abort.Panic]:
-            return protocol_field_is(name, "ELISA_PROFILE_FD") or protocol_field_is(name, "ELISA_PROFILE_FRAMED") or protocol_field_is(name, "ELISA_PROFILE_THREAD_RECORDS") or protocol_field_is(name, "ELISA_PROFILE_MODE") or protocol_field_is(name, "ELISA_PROFILE_EVENT_TRACE") or protocol_field_is(name, "ELISA_PROFILE_EVENT_TRACE_LIMIT") or protocol_field_is(name, "ELISA_PROFILE_MAX_CAPTURE_BYTES") or protocol_field_is(name, "ELISA_PROFILE_RECENT_PATH")
+            return protocol_field_is(name, "ELISA_PROFILE_FD") or protocol_field_is(name, "ELISA_PROFILE_FRAMED") or protocol_field_is(name, "ELISA_PROFILE_THREAD_RECORDS") or protocol_field_is(name, "ELISA_PROFILE_MODE") or protocol_field_is(name, "ELISA_PROFILE_EVENT_TRACE") or protocol_field_is(name, "ELISA_PROFILE_EVENT_TRACE_LIMIT") or protocol_field_is(name, "ELISA_PROFILE_SAMPLE_PERIOD_US") or protocol_field_is(name, "ELISA_PROFILE_MAX_CAPTURE_BYTES") or protocol_field_is(name, "ELISA_PROFILE_RECENT_PATH")
 
 
         def profiler_internal_environment_assignment(value: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
@@ -265,7 +266,7 @@ extend ProfilerNative:
             return raw_value
 
 
-        def run_target_direct(executable: darray[u8]&, target_arguments: darray[darray[u8]], stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, mode: darray[u8]&, event_trace: bool, recent_path: bool, trace_limit: i64, capture_byte_limit: i64, timeout_ns: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+        def run_target_direct(executable: darray[u8]&, target_arguments: darray[darray[u8]], stdout_path: darray[u8]&, stderr_path: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], capture_fd: i64, mode: darray[u8]&, sample_period_microseconds: i64, event_trace: bool, recent_path: bool, trace_limit: i64, capture_byte_limit: i64, timeout_ns: i64) -> TargetRunResult can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             stdout_fd: i64 = open_output_file(stdout_path)
             return failed_target_run_result(false) if stdout_fd < NATIVE_ZERO
             stderr_fd: i64 = open_output_file(stderr_path)
@@ -309,6 +310,9 @@ extend ProfilerNative:
                 return failed_target_run_result(false)
             mode_text: mutable darray[u8] = []
             mode_text.extend(mode)
+            if protocol_field_is(mode, "sample"):
+                append_text(mode_text, ":")
+                append_i64(mode_text, sample_period_microseconds)
             mode_text.push(NATIVE_BYTE_NUL)
             mode_cstr: cstr = (&mode_text[0]).cast[cstr] can Unsafe.PointerCast
             if profiler_ffi_setenv(NATIVE_PROFILE_MODE_ENVIRONMENT, mode_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:

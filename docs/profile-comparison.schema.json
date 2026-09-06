@@ -12,6 +12,7 @@
     "candidate",
     "workload_metadata_match",
     "collection_mode_match",
+    "sampling_configuration_match",
     "functions",
     "call_edges",
     "stacks",
@@ -38,6 +39,7 @@
     "candidate": { "$ref": "#/$defs/identity" },
     "workload_metadata_match": { "type": "boolean" },
     "collection_mode_match": { "type": "boolean" },
+    "sampling_configuration_match": { "type": "boolean" },
     "functions": {
       "type": "array",
       "items": { "$ref": "#/$defs/function_change" }
@@ -66,7 +68,11 @@
         "dropped_events",
         "thread_count",
         "stack_overflow_entries",
-        "trace_events_omitted"
+        "trace_events_omitted",
+        "sample_count",
+        "sample_missed",
+        "sample_period_microseconds",
+        "sampling_setup_failed"
       ],
       "properties": {
         "execution_ms_mean": { "$ref": "#/$defs/timed_metric" },
@@ -78,7 +84,11 @@
         "dropped_events": { "$ref": "#/$defs/count_metric" },
         "thread_count": { "$ref": "#/$defs/count_metric" },
         "stack_overflow_entries": { "$ref": "#/$defs/count_metric" },
-        "trace_events_omitted": { "$ref": "#/$defs/count_metric" }
+        "trace_events_omitted": { "$ref": "#/$defs/count_metric" },
+        "sample_count": { "$ref": "#/$defs/count_metric" },
+        "sample_missed": { "$ref": "#/$defs/count_metric" },
+        "sample_period_microseconds": { "$ref": "#/$defs/count_metric" },
+        "sampling_setup_failed": { "$ref": "#/$defs/count_metric" }
       },
       "additionalProperties": false
     },
