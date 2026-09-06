@@ -106,6 +106,51 @@ def main() -> int:
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):
             raise SystemExit("native comparison omitted the target-failure warning")
 
+        maximum_count = 9223372036854775807
+        extreme_baseline = capture([])
+        extreme_candidate = capture([])
+        for field in (
+            "events",
+            "locations",
+            "dropped",
+            "thread_count",
+            "stack_overflow_entries",
+            "trace_events_omitted",
+        ):
+            extreme_baseline["summary"][field] = maximum_count  # type: ignore[index]
+            extreme_candidate["summary"][field] = 0  # type: ignore[index]
+        extreme_baseline_path = root / "extreme-baseline.json"
+        extreme_candidate_path = root / "extreme-candidate.json"
+        extreme_output = root / "extreme-comparison.json"
+        extreme_baseline_path.write_text(json.dumps(extreme_baseline), encoding="utf-8")
+        extreme_candidate_path.write_text(json.dumps(extreme_candidate), encoding="utf-8")
+        extreme_result = run_command(
+            [
+                str(profiler),
+                "compare",
+                extreme_baseline_path,
+                extreme_candidate_path,
+                "--format",
+                "json",
+                "--output",
+                extreme_output,
+            ],
+            "saturated comparison delta",
+        )
+        if extreme_result.returncode != 0:
+            raise SystemExit(f"saturated comparison failed: {extreme_result.stderr or extreme_result.stdout}")
+        extreme_comparison = json.loads(extreme_output.read_text(encoding="utf-8"))
+        for metric in (
+            "events",
+            "locations",
+            "dropped_events",
+            "thread_count",
+            "stack_overflow_entries",
+            "trace_events_omitted",
+        ):
+            if extreme_comparison["metrics"][metric]["delta"] != -maximum_count:
+                raise SystemExit(f"comparison delta wrapped for {metric}")
+
         deep = capture([])
         nested: dict[str, object] = deep["workload"]  # type: ignore[assignment]
         for _ in range(129):

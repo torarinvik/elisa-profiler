@@ -199,6 +199,11 @@ module ProfilerNative:
             return NATIVE_I64_MAX if magnitude > NATIVE_I64_MAX / magnitude
             return magnitude * magnitude
 
+
+        def native_signed_delta(left: i64, right: i64) -> i64:
+            return left - right if left >= right
+            return -(right - left)
+
         struct TargetRunResult:
             status: i64
             elapsed_ns: i64

@@ -36,6 +36,8 @@ int64_t elisa_profile_target_main(int64_t argc, void *argv) {
 int main(void) {
     size_t next_capacity = 0;
     uint64_t allocation_bytes = 0;
+    assert(profile_saturating_increment_u64(UINT64_MAX) == UINT64_MAX);
+    assert(profile_saturating_increment_size(SIZE_MAX) == SIZE_MAX);
     assert(!profile_next_capacity(SIZE_MAX, PROFILE_INITIAL_LOCATION_CAPACITY,
                                    &next_capacity));
     assert(!profile_allocation_bytes(SIZE_MAX, sizeof(profile_entry),
