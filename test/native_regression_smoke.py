@@ -175,6 +175,8 @@ def main():
         assert b"Source view" in live_html
         assert b"source-filter" in live_html
         assert b"source-line" in live_html
+        assert b"function hasMatch(node,query)" in live_html
+        assert b".split(/\\n+/)" not in live_html
 
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))
