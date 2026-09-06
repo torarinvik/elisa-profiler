@@ -131,6 +131,8 @@ profiler-native-smoke: profiler-native
 		grep -Fq 'function-filter' "$$native_work/hot-loop.html"; \
 		grep -Fq 'edge-filter' "$$native_work/hot-loop.html"; \
 		grep -Fq 'location-filter' "$$native_work/hot-loop.html"; \
+		grep -Fq 'View filters are stored locally on this device.' "$$native_work/hot-loop.html"; \
+		grep -Fq 'elisa-profiler:view-state:v1' "$$native_work/hot-loop.html"; \
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format speedscope --output "$$native_work/hot-loop.speedscope.json"; \
 		python3 "$(PROFILER_ROOT)/test/speedscope_smoke.py" "$$native_work/hot-loop.speedscope.json"; \
 		! grep -Fq 'native-transition' "$$native_work/report.json"; \

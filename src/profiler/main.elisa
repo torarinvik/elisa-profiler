@@ -925,6 +925,7 @@ extend ProfilerNative:
             append_html_flame_graph(buffer, summary.folded_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
             append_html_section(buffer, "Thread loss", summary.thread_loss_records)
+            append_html_view_state(buffer)
             append_text(buffer, "</main></body></html>\n")
 
 
