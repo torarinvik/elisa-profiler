@@ -705,6 +705,16 @@ extend ProfilerNative:
             append_text(buffer, "incomplete capture") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
 
 
+        def append_text_outcome(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            signal: i64 = observed_signal(status, summary)
+            append_text(buffer, "profiler_failure") if status < NATIVE_ZERO
+            append_text(buffer, "timeout") if status >= NATIVE_ZERO and timed_out
+            append_text(buffer, "target_signal") if status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "target_exit") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
+            append_text(buffer, "success") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
+            append_text(buffer, "incomplete_capture") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
+
+
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
@@ -1153,6 +1163,10 @@ extend ProfilerNative:
                 buffer.push(source[index])
             append_text(buffer, "\nstatus: ")
             append_text(buffer, "ok\n" if exit_code == NATIVE_ZERO else "target failed\n")
+            append_text(buffer, "outcome: ")
+            append_text_outcome(buffer, summary, status, timed_out)
+            append_text(buffer, "\ncapture completeness: ")
+            append_text(buffer, "complete\n" if summary.capture_complete else "partial\n")
             append_text(buffer, "collection mode: ")
             for index in 0..<mode.count |buffer, mode|:
                 buffer.push(mode[index])

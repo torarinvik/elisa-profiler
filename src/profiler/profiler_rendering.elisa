@@ -246,15 +246,20 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
+            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
+            if outcome_start >= NATIVE_ZERO:
+                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &outcome) < NATIVE_ZERO
+            if outcome.count == NATIVE_ZERO.usize():
+                append_text(outcome, "success" if exit_code == NATIVE_ZERO else "target_exit")
+            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
+            if capture_complete_start >= NATIVE_ZERO:
+                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &capture_complete)
+                capture_complete_available <- true
             workload_start: i64 = json_key_value_start(data, "workload", NATIVE_ZERO.usize(), data.count)
             if workload_start >= NATIVE_ZERO and data[workload_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
                 workload_stop: i64 = json_object_end(data, workload_start.usize(), data.count)
                 return false if workload_stop < NATIVE_ZERO
                 return false if not json_read_nullable_string_field(data, "source_sha256", workload_start.usize(), workload_stop.usize(), &source_digest, &source_digest_available)
-            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
-            if capture_complete_start >= NATIVE_ZERO:
-                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &capture_complete)
-                capture_complete_available <- true
             host_start: i64 = json_key_value_start(data, "host", NATIVE_ZERO.usize(), data.count)
             if host_start >= NATIVE_ZERO and data[host_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
                 host_stop: i64 = json_object_end(data, host_start.usize(), data.count)
@@ -274,11 +279,6 @@ extend ProfilerNative:
             successful_start: i64 = json_key_value_start(data, "successful_repetitions", run_start.usize(), run_stop.usize())
             if successful_start >= NATIVE_ZERO:
                 return false if not json_read_number_field(data, "successful_repetitions", run_start.usize(), run_stop.usize(), &successful_repetitions)
-            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
-            if outcome_start >= NATIVE_ZERO:
-                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &outcome) < NATIVE_ZERO
-            if outcome.count == NATIVE_ZERO.usize():
-                append_text(outcome, "success" if exit_code == NATIVE_ZERO else "target exit")
             timing: mutable bool = false
             return false if not json_read_location_timing(data, &timing)
             folded: mutable darray[u8] = []
@@ -380,6 +380,9 @@ extend ProfilerNative:
             dropped: mutable i64 = NATIVE_ZERO
             thread_count: mutable i64 = NATIVE_ZERO
             exit_code: mutable i64 = NATIVE_ZERO
+            outcome: mutable darray[u8] = []
+            capture_complete: mutable bool = false
+            capture_complete_available: mutable bool = false
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "statement_events", summary_start.usize(), summary_stop.usize(), &statement_events)
@@ -388,11 +391,25 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
+            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
+            if outcome_start >= NATIVE_ZERO:
+                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &outcome) < NATIVE_ZERO
+            if outcome.count == NATIVE_ZERO.usize():
+                append_text(outcome, "success" if exit_code == NATIVE_ZERO else "target_exit")
+            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
+            if capture_complete_start >= NATIVE_ZERO:
+                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &capture_complete)
+                capture_complete_available <- true
             append_text(buffer, "Elisa profiler\nsource: ")
             for index in 0..<source.count |buffer, source|:
                 buffer.push(source[index])
             append_text(buffer, "\nstatus: ")
             append_text(buffer, "ok\n" if exit_code == NATIVE_ZERO else "target failed\n")
+            append_text(buffer, "outcome: ")
+            for index in 0..<outcome.count |buffer, outcome|:
+                buffer.push(outcome[index])
+            append_text(buffer, "\ncapture completeness: ")
+            append_text(buffer, "complete\n" if capture_complete_available and capture_complete else "partial\n" if capture_complete_available else "not recorded\n")
             append_text(buffer, "events: ")
             append_i64(buffer, events)
             append_text(buffer, "\nlocations: ")

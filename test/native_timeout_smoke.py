@@ -62,6 +62,16 @@ def main() -> int:
         manifest = json.loads(Path(str(report) + ".manifest.json").read_text(encoding="utf-8"))
         assert manifest["state"] == "partial", manifest
         assert manifest["capture_complete"] is False, manifest
+        text_report = subprocess.run(
+            [str(native), "report", report, "--format", "text"],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert text_report.returncode == 0, (text_report.returncode, text_report.stderr)
+        assert b"outcome: timeout" in text_report.stdout, text_report.stdout
+        assert b"capture completeness: partial" in text_report.stdout, text_report.stdout
         assert manifest["completed_repetitions"] == 1, manifest
         capture_index = manifest["capture_index"]
         assert capture_index["format"] == "record-framed-v1", capture_index
