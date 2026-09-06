@@ -91,7 +91,7 @@ profiler-native-smoke: profiler-native
 		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/profile.elisaprof" --format folded --output "$$native_work/artifact.folded"; \
 		grep -Fq 'main' "$$native_work/artifact.folded"; \
 		native_run "$(NATIVE_PROFILER_BIN)" compare "$$native_work/profile.elisaprof" "$$native_work/profile.elisaprof" --format json --output "$$native_work/artifact-comparison.json"; \
-		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/comparison.schema.json" "$$native_work/artifact-comparison.json"; \
+		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile-comparison.schema.json" "$$native_work/artifact-comparison.json"; \
 		grep -Fq '"locations":[{' "$$native_work/report.json"; \
 		grep -Fq '"call_edges":[{' "$$native_work/report.json"; \
 		grep -Fq '"stacks":[{' "$$native_work/report.json"; \
@@ -131,7 +131,7 @@ profiler-native-smoke: profiler-native
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_argv_probe.elisa" --format json --output "$$native_work/argv-probe.json" -- --alpha "two words"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/argv-probe.json"; \
 		native_run "$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format json --output "$$native_work/comparison.json"; \
-		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/comparison.schema.json" "$$native_work/comparison.json"; \
+		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile-comparison.schema.json" "$$native_work/comparison.json"; \
 		python3 "$(PROFILER_ROOT)/test/native_compare_smoke.py" "$$native_work/comparison.json"; \
 		native_run "$(NATIVE_PROFILER_BIN)" compare "$$native_work/report.json" "$$native_work/report.json" --format text --output "$$native_work/comparison.txt"; \
 		grep -Fq 'Elisa profile comparison' "$$native_work/comparison.txt"; \

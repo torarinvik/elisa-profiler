@@ -2,209 +2,87 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://elisa-lang.org/schemas/profile-comparison-v1.json",
   "title": "Elisa profiler comparison",
-  "description": "Machine-readable output from the Elisa-native profiler compare command.",
+  "description": "Summary comparison emitted by the Elisa-native profiler compare command.",
   "type": "object",
   "required": [
-    "schema_version",
     "kind",
+    "schema_version",
     "baseline",
     "candidate",
-    "threshold_percent",
+    "workload_metadata_match",
+    "collection_mode_match",
     "metrics",
-    "functions",
-    "locations",
-    "call_edges",
-    "stacks",
     "warnings",
-    "regressions",
     "status"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
     "kind": { "const": "profile_comparison" },
+    "schema_version": { "const": 1 },
     "baseline": { "$ref": "#/$defs/identity" },
     "candidate": { "$ref": "#/$defs/identity" },
     "workload_metadata_match": { "type": "boolean" },
     "collection_mode_match": { "type": "boolean" },
-    "threshold_percent": { "type": "number", "minimum": 0 },
     "metrics": {
       "type": "object",
       "required": [
         "execution_ms_mean",
         "compile_ms",
-        "cpu_ms",
-        "peak_rss_bytes",
         "events",
+        "locations",
         "dropped_events",
+        "thread_count",
         "stack_overflow_entries",
         "trace_events_omitted"
       ],
       "properties": {
-        "execution_ms_mean": { "$ref": "#/$defs/metric" },
-        "compile_ms": { "$ref": "#/$defs/metric" },
-        "cpu_ms": { "$ref": "#/$defs/metric" },
-        "peak_rss_bytes": { "$ref": "#/$defs/metric" },
-        "events": { "$ref": "#/$defs/metric" },
-        "dropped_events": { "$ref": "#/$defs/metric" },
-        "stack_overflow_entries": { "$ref": "#/$defs/metric" },
-        "trace_events_omitted": { "$ref": "#/$defs/metric" }
+        "execution_ms_mean": { "$ref": "#/$defs/timed_metric" },
+        "compile_ms": { "$ref": "#/$defs/timed_metric" },
+        "events": { "$ref": "#/$defs/count_metric" },
+        "locations": { "$ref": "#/$defs/count_metric" },
+        "dropped_events": { "$ref": "#/$defs/count_metric" },
+        "thread_count": { "$ref": "#/$defs/count_metric" },
+        "stack_overflow_entries": { "$ref": "#/$defs/count_metric" },
+        "trace_events_omitted": { "$ref": "#/$defs/count_metric" }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
-    "functions": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/function_change" }
-    },
-    "locations": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/location_change" }
-    },
-    "call_edges": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/call_edge_change" }
-    },
-    "stacks": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/stack_change" }
-    },
-    "warnings": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "regressions": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/regression" }
-    },
-    "status": { "type": "string", "enum": ["ok", "regression"] }
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "status": { "type": "string", "enum": ["ok", "warning"] }
   },
+  "additionalProperties": false,
   "$defs": {
     "identity": {
       "type": "object",
-      "required": ["path", "source", "compiler", "opt_level", "completed_repetitions"],
+      "required": ["path", "source", "compiler_commit", "opt_level", "collection_mode", "exit_code"],
       "properties": {
         "path": { "type": "string" },
-        "source": { "type": ["string", "null"] },
-        "compiler": { "type": "object", "additionalProperties": true },
-        "opt_level": { "type": ["string", "null"] },
-        "collection_mode": { "type": ["string", "null"], "enum": ["full", "functions", "statements", "values", "diagnostic", ""] },
-        "location_timing": { "type": ["boolean", "null"] },
-        "timing_clock": { "type": ["string", "null"], "enum": ["wall", "cpu", null] },
-        "completed_repetitions": { "type": ["integer", "null"], "minimum": 0 },
-        "successful_repetitions": { "type": ["integer", "null"], "minimum": 0 },
-        "failed_repetitions": { "type": ["integer", "null"], "minimum": 0 },
-        "measurement_basis": { "type": ["string", "null"], "enum": ["successful", "all_completed", null] }
+        "source": { "type": "string" },
+        "compiler_commit": { "type": "string" },
+        "opt_level": { "type": "string" },
+        "collection_mode": { "type": "string" },
+        "exit_code": { "type": ["integer", "null"], "minimum": 0 }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
-    "metric": {
+    "timed_metric": {
       "type": "object",
-      "required": ["baseline", "candidate", "delta", "percent"],
+      "required": ["baseline", "candidate", "delta_micros"],
       "properties": {
-        "baseline": { "type": ["number", "null"] },
-        "candidate": { "type": ["number", "null"] },
-        "delta": { "type": ["number", "null"] },
-        "percent": { "type": ["number", "null"] }
+        "baseline": { "type": "number", "minimum": 0 },
+        "candidate": { "type": "number", "minimum": 0 },
+        "delta_micros": { "type": "integer" }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
-    "function_change": {
+    "count_metric": {
       "type": "object",
-      "required": [
-        "function",
-        "events",
-        "call_events",
-        "completed_calls",
-        "inclusive_ns",
-        "self_ns",
-        "interval_ns",
-        "max_interval_ns"
-      ],
+      "required": ["baseline", "candidate", "delta"],
       "properties": {
-        "function": { "type": "string" },
-        "events": { "$ref": "#/$defs/metric" },
-        "call_events": { "$ref": "#/$defs/metric" },
-        "completed_calls": { "$ref": "#/$defs/metric" },
-        "inclusive_ns": { "$ref": "#/$defs/metric" },
-        "self_ns": { "$ref": "#/$defs/metric" },
-        "interval_ns": { "$ref": "#/$defs/metric" },
-        "max_interval_ns": { "$ref": "#/$defs/metric" }
+        "baseline": { "type": "integer", "minimum": 0 },
+        "candidate": { "type": "integer", "minimum": 0 },
+        "delta": { "type": "integer" }
       },
-      "additionalProperties": true
-    },
-    "regression": {
-      "type": "object",
-      "required": ["scope", "metric", "baseline", "candidate", "delta", "percent", "message"],
-      "properties": {
-        "scope": { "type": "string", "enum": ["run", "function", "location", "call_edge", "stack", "quality"] },
-        "function": { "type": "string" },
-        "caller": { "type": "string" },
-        "callee": { "type": "string" },
-        "stack": { "type": "string" },
-        "source": { "type": ["string", "null"] },
-        "line": { "type": ["integer", "null"], "minimum": 0 },
-        "metric": { "type": "string" },
-        "baseline": { "type": ["number", "null"] },
-        "candidate": { "type": ["number", "null"] },
-        "delta": { "type": ["number", "null"] },
-        "percent": { "type": ["number", "null"] },
-        "message": { "type": "string" }
-      },
-      "additionalProperties": true
-    },
-    "location_change": {
-      "type": "object",
-      "required": [
-        "source",
-        "line",
-        "function",
-        "kind",
-        "variable",
-        "signed",
-        "count",
-        "interval_ns",
-        "max_interval_ns"
-      ],
-      "properties": {
-        "source": { "type": ["string", "null"] },
-        "line": { "type": ["integer", "null"], "minimum": 0 },
-        "function": { "type": "string" },
-        "kind": { "type": "string", "enum": ["statement", "value", "function"] },
-        "variable": { "type": ["string", "null"] },
-        "signed": { "type": "boolean" },
-        "count": { "$ref": "#/$defs/metric" },
-        "interval_ns": { "$ref": "#/$defs/metric" },
-        "max_interval_ns": { "$ref": "#/$defs/metric" }
-      },
-      "additionalProperties": true
-    },
-    "call_edge_change": {
-      "type": "object",
-      "required": [
-        "caller",
-        "callee",
-        "call_events",
-        "completed_calls",
-        "inclusive_ns"
-      ],
-      "properties": {
-        "caller": { "type": "string" },
-        "callee": { "type": "string" },
-        "call_events": { "$ref": "#/$defs/metric" },
-        "completed_calls": { "$ref": "#/$defs/metric" },
-        "inclusive_ns": { "$ref": "#/$defs/metric" }
-      },
-      "additionalProperties": true
-    },
-    "stack_change": {
-      "type": "object",
-      "required": ["stack", "call_events", "completed_calls", "self_ns"],
-      "properties": {
-        "stack": { "type": "string" },
-        "call_events": { "$ref": "#/$defs/metric" },
-        "completed_calls": { "$ref": "#/$defs/metric" },
-        "self_ns": { "$ref": "#/$defs/metric" }
-      },
-      "additionalProperties": true
+      "additionalProperties": false
     }
   }
 }

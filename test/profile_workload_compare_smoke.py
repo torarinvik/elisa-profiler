@@ -87,7 +87,7 @@ def main() -> int:
             [
                 sys.executable,
                 str(Path(__file__).with_name("profile_schema_smoke.py")),
-                str(Path(__file__).parents[1] / "docs/comparison.schema.json"),
+                str(Path(__file__).parents[1] / "docs/profile-comparison.schema.json"),
                 str(output),
             ],
             "comparison schema check",

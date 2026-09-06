@@ -63,6 +63,13 @@ def validate(value: Any, schema: dict[str, Any], root: dict[str, Any], path: str
         for required in schema.get("required", []):
             if required not in value:
                 raise SchemaError(f"{path}: missing required property {required!r}")
+        if schema.get("additionalProperties") is False:
+            known_properties = set(schema.get("properties", {}))
+            unknown_properties = sorted(set(value) - known_properties)
+            if unknown_properties:
+                raise SchemaError(
+                    f"{path}: unexpected properties {', '.join(repr(item) for item in unknown_properties)}"
+                )
         for name, child_schema in schema.get("properties", {}).items():
             if name in value:
                 validate(value[name], child_schema, root, f"{path}.{name}")
