@@ -8,17 +8,16 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-c15c491825223dcdbb124321480d54fd3422c056 merge: record wasm-sdk fix integration
+c6948142f19d0fa66089ca33ab5718c435738f15 fix: report stage0 seed failures
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
 found across the compiler worktrees, including the packed-header, nested-module,
-qualified-`usize`, stage0-path, and qualified-error-recovery fixes. The current
-integration adds the qualified fallible-return fix as content commit `92963549`.
-That commit is patch-equivalent to the source branch tip `c528860a`; the
-explicit no-op merge at `c15c4918` records the original `codex/wasm-sdk` branch
-tip in ancestry without duplicating the patch. All 11 local compiler branch
-tips are reachable from the dedicated branch.
+qualified-`usize`, stage0-path, qualified-error-recovery, lexical-error-family,
+and stable-module-identity fixes. The latest `codex/wasm-sdk` tip is integrated
+through merge commit `56a77e03`; the stage1 wrapper diagnostic follow-up is
+`c6948142`. All 11 local compiler branch tips are reachable from the dedicated
+branch.
 
 The audit is authoritative for branch/worktree provenance. The latest offline
 ledger records 11 local branches, 11 registered worktrees, nine dirty
@@ -30,16 +29,17 @@ the dedicated branch already contains a newer/superseding implementation, or
 the dirty patch is an older, reverting, or AST-incompatible variant. All owner
 worktrees remain untouched.
 
-The stage1 product was reseeded directly from `c15c4918` with the installed
-stage0 compiler at `-O0`, using an explicit 16 GiB seed ceiling. The seed
-completed successfully and the regenerated content manifest reports
-`freshness.usable: true`; no timestamp or identity bypass was used. The earlier
-SIGTERM therefore was not evidence of insufficient host memory. The current
+The current stage1 product has not yet been reseeded from `c6948142`. The
+previously usable artifact is retained, while the manifest correctly reports
+that compiler source/configuration is newer than the stage1 binary. Foreground,
+detached, and launchd-staged seed attempts—including an isolated `-O0` run with
+an 8 GiB guard—ended before publishing an object; the wrapper emitted no
+memory-guard diagnostic, and the latest staged run ended with signal 15. The
+dedicated global seed lock was cleaned up. Consequently the current
 `compiler-manifest-smoke`, `compiler-smoke`, and `profiler-native-smoke` gates
-all pass against the fresh product. The separate gen2/gen3 fixed-point script
-still terminates during its gen2 construction phase before it produces a usable
-gen2, so that bootstrap gate remains pending and is not conflated with the
-passing stage1/native gates.
+must not be reported as passing for `c6948142`; the earlier successful gates are
+historical evidence only. The separate gen2/gen3 fixed-point script remains
+pending as well.
 
 Historical checkpoints below retain the earlier commit and test evidence for
 the build pipeline, but must not be read as proof that the current stage1
@@ -156,11 +156,11 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `c15c4918` integration, the audit, manifest, compiler-smoke, and
-native rebuild gates pass against the freshly reseeded stage1 product. Keep
-`make compiler-self-host-smoke` as a separate pending gate until its gen2
-construction phase completes and the gen3/gen4 fixed-point evidence is
-available.
+For the current `c6948142` integration, the audit and ledger gates pass, while
+the manifest gate correctly rejects the stale retained stage1 artifact. Keep
+`make compiler-self-host-smoke` as a separate pending gate until a fresh stage1
+seed completes, its manifest and native parity gates pass, and gen2/gen3/gen4
+fixed-point evidence is available.
 
 The native profiler itself remains Elisa code. The C collector is only the explicit
 low-level ABI/runtime component used by the generated target and is not an alternate
