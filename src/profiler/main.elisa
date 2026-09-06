@@ -443,13 +443,17 @@ extend ProfilerNative:
             return path[prefix.count] == NATIVE_BYTE_SLASH
 
 
-        def remap_display_path(path: darray[u8]&, prefix: darray[u8]&, replacement: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+        def remap_display_path(path: darray[u8]&, mappings: darray[NativePathMap]&) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            selected: mutable i64 = NATIVE_NEGATIVE_ONE
+            for mapping_index in 0..<mappings.count |mapping_index, mappings, path, selected|:
+                if path_has_prefix(path, mappings[mapping_index].from) and (selected < NATIVE_ZERO or mappings[mapping_index].from.count > mappings[selected.usize()].from.count):
+                    selected <- mapping_index.i64()
             result: mutable darray[u8] = []
-            if not path_has_prefix(path, prefix):
+            if selected < NATIVE_ZERO:
                 result.extend(path)
                 return result
-            result.extend(replacement)
-            for index in prefix.count..<path.count |result, path|:
+            result.extend(mappings[selected.usize()].replacement)
+            for index in mappings[selected.usize()].from.count..<path.count |result, path|:
                 result.push(path[index])
             return result
 
@@ -1708,8 +1712,7 @@ extend ProfilerNative:
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
             progress_path: mutable darray[u8] = []
-            path_map_from: mutable darray[u8] = []
-            path_map_to: mutable darray[u8] = []
+            path_maps: mutable darray[NativePathMap] = []
             artifact_output: mutable darray[u8] = []
             embed_source: mutable bool = false
             opt_level: mutable i64 = NATIVE_ZERO
@@ -1734,7 +1737,7 @@ extend ProfilerNative:
             target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_map_from, path_map_to, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1798,12 +1801,12 @@ extend ProfilerNative:
                         separator <- separator - NATIVE_ONE.usize()
                         break if mapping[separator] == NATIVE_BYTE_EQUALS
                     return report_error("--path-map requires FROM=TO") if separator == NATIVE_ZERO.usize() or separator + NATIVE_ONE.usize() >= mapping.count
-                    path_map_from <- []
-                    path_map_to <- []
-                    for mapping_index in 0..<separator |path_map_from, mapping|:
-                        path_map_from.push(mapping[mapping_index])
-                    for mapping_index in separator + NATIVE_ONE.usize()..<mapping.count |path_map_to, mapping|:
-                        path_map_to.push(mapping[mapping_index])
+                    path_map: mutable NativePathMap = NativePathMap{from: [], replacement: []}
+                    for mapping_index in 0..<separator |path_map, mapping|:
+                        path_map.from.push(mapping[mapping_index])
+                    for mapping_index in separator + NATIVE_ONE.usize()..<mapping.count |path_map, mapping|:
+                        path_map.replacement.push(mapping[mapping_index])
+                    path_maps.push(path_map)
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--artifact-output") == NATIVE_ZERO:
@@ -1919,7 +1922,7 @@ extend ProfilerNative:
             return report_error("--artifact-output requires --format json") if artifact_output.count > NATIVE_ZERO.usize() and (format_text or format_folded or format_html or format_speedscope)
             source_check: darray[u8] = read_file(source)
             return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
-            display_source: darray[u8] = remap_display_path(source, path_map_from, path_map_to)
+            display_source: darray[u8] = remap_display_path(source, path_maps)
             host: NativeHostMetadata = native_host_metadata()
         
             compiler_root: mutable darray[u8] = []

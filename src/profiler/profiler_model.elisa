@@ -265,6 +265,10 @@ module ProfilerNative:
             load_average_1m: mutable f64
             load_average_available: mutable bool
 
+        struct NativePathMap:
+            from: mutable darray[u8]
+            replacement: mutable darray[u8]
+
         struct CaptureSummary:
             events: mutable i64
             locations: mutable i64

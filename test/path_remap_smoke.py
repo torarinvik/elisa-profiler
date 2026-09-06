@@ -13,6 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 TIMEOUT_SECONDS = 120
 DISPLAY_PREFIX = "PROJECT"
+NESTED_DISPLAY_PREFIX = "EXAMPLES"
 
 
 def main() -> int:
@@ -27,6 +28,8 @@ def main() -> int:
                 str(source),
                 "--path-map",
                 f"{ROOT.resolve()}={DISPLAY_PREFIX}",
+                "--path-map",
+                f"{(ROOT / 'examples').resolve()}={NESTED_DISPLAY_PREFIX}",
                 "--format",
                 "json",
                 "--output",
@@ -41,7 +44,7 @@ def main() -> int:
         if process.returncode != 0:
             raise SystemExit(f"path-remapped capture failed: {process.stderr or process.stdout}")
         report = json.loads(output.read_text(encoding="utf-8"))
-        expected = f"{DISPLAY_PREFIX}/examples/hot_loop.elisa"
+        expected = f"{NESTED_DISPLAY_PREFIX}/hot_loop.elisa"
         if report["source"] != expected:
             raise SystemExit(f"report source was not remapped: {report['source']!r}")
         if not report["locations"]:
