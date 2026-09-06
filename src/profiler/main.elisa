@@ -2088,7 +2088,7 @@ extend ProfilerNative:
                 if not write_progress(progress_path, "warmup_complete", warmup_index, warmup_repetitions, warmup_result.elapsed_ns, summary):
                     cleanup_temp(temporary)
                     return report_error("could not write profiler progress")
-                warmup_index <- warmup_index + 1
+                warmup_index <- warmup_index + NATIVE_ONE
 
             program_stdout: mutable darray[u8] = []
             program_stdout_truncated: mutable bool = false
@@ -2142,16 +2142,16 @@ extend ProfilerNative:
                 all_cpu_system_times.push(run_result.cpu_system_ns)
                 all_peak_rss_values.push(run_result.peak_rss_bytes)
                 all_resource_availability.push(NATIVE_ONE if run_result.resource_available else NATIVE_ZERO)
-                completed_repetitions <- completed_repetitions + 1
+                completed_repetitions <- completed_repetitions + NATIVE_ONE
                 if run_result.status == NATIVE_ZERO:
-                    successful_repetitions <- successful_repetitions + 1
+                    successful_repetitions <- successful_repetitions + NATIVE_ONE
                     measurement_execution_times.push(run_result.elapsed_ns)
                     measurement_cpu_user_times.push(run_result.cpu_user_ns)
                     measurement_cpu_system_times.push(run_result.cpu_system_ns)
                     measurement_peak_rss_values.push(run_result.peak_rss_bytes)
                     measurement_resource_availability.push(NATIVE_ONE if run_result.resource_available else NATIVE_ZERO)
                 else:
-                    failed_repetitions <- failed_repetitions + 1
+                    failed_repetitions <- failed_repetitions + NATIVE_ONE
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
                 overall_timed_out <- true if run_result.timed_out
                 if not write_progress(progress_path, "repetition_complete", repetition, requested_repetitions, run_result.elapsed_ns, summary):
@@ -2160,7 +2160,7 @@ extend ProfilerNative:
                 if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, "running", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes):
                     cleanup_temp(temporary)
                     return report_error("could not update capture manifest")
-                repetition <- repetition + 1
+                repetition <- repetition + NATIVE_ONE
 
             source_after_run: darray[u8] = read_file(source)
             if not byte_arrays_equal(source_check, source_after_run):
