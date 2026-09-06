@@ -447,6 +447,13 @@ def main():
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
+        assert measured["schema_version"] == 2
+        assert measured["envelope"] == {
+            "major": 2,
+            "minor": 0,
+            "kind": "profile",
+            "compatibility": "backward-compatible-v1",
+        }
         assert measured["run"]["outcome"] == "success"
         assert measured["functions"]
         assert all(record["inclusive_percent"] is None and record["self_percent"] is None for record in measured["functions"])

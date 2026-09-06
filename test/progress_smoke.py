@@ -13,7 +13,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "docs" / "progress.schema.json"
 TIMEOUT_SECONDS = 120
-EXPECTED_SCHEMA_VERSION = 1
+EXPECTED_REPORT_SCHEMA_VERSION = 2
+EXPECTED_PROGRESS_SCHEMA_VERSION = 1
 EXPECTED_REPETITIONS = 2
 EXPECTED_WARMUPS = 1
 
@@ -47,11 +48,18 @@ def main() -> int:
             raise SystemExit(f"progress capture failed: {process.stderr or process.stdout}")
         report = json.loads(process.stdout)
         status = json.loads(progress.read_text(encoding="utf-8"))
-        if report["schema_version"] != EXPECTED_SCHEMA_VERSION:
+        if report["schema_version"] != EXPECTED_REPORT_SCHEMA_VERSION:
             raise SystemExit("progress smoke received an unexpected report schema")
+        if report["envelope"] != {
+            "major": 2,
+            "minor": 0,
+            "kind": "profile",
+            "compatibility": "backward-compatible-v1",
+        }:
+            raise SystemExit("progress smoke received an unexpected report envelope")
         if status["kind"] != "elisa_profile_progress":
             raise SystemExit("progress status kind is incorrect")
-        if status["schema_version"] != EXPECTED_SCHEMA_VERSION:
+        if status["schema_version"] != EXPECTED_PROGRESS_SCHEMA_VERSION:
             raise SystemExit("progress status schema version is incorrect")
         if status["state"] != "complete":
             raise SystemExit(f"progress status did not finish: {status}")

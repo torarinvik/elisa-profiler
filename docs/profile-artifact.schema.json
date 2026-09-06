@@ -12,7 +12,7 @@
       "type": "object",
       "required": ["capture_format", "compression", "capture_bytes"],
       "properties": {
-        "capture_format": { "const": "profile-json-v1" },
+        "capture_format": { "const": "profile-json-v2" },
         "compression": { "const": "none" },
         "capture_bytes": { "type": "integer", "minimum": 1 }
       },

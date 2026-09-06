@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the v1 profile artifact envelope and its embedded report."""
+"""Validate the v1 artifact envelope and its embedded v2 report."""
 
 from __future__ import annotations
 
@@ -17,10 +17,16 @@ def main() -> int:
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert artifact["artifact_version"] == 1
     assert artifact["kind"] == "elisa-profile"
-    assert artifact["manifest"]["capture_format"] == "profile-json-v1"
+    assert artifact["manifest"]["capture_format"] == "profile-json-v2"
     assert artifact["manifest"]["compression"] == "none"
     capture = artifact["capture"]
-    assert capture["schema_version"] == 1
+    assert capture["schema_version"] == 2
+    assert capture["envelope"] == {
+        "major": 2,
+        "minor": 0,
+        "kind": "profile",
+        "compatibility": "backward-compatible-v1",
+    }
     assert capture["quality"]["capture"] in {
         "complete", "target_exit", "target_signal", "timeout", "profiler_failure", "recovered"
     }

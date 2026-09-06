@@ -13,7 +13,13 @@ def main(argv: list[str]) -> int:
         raise SystemExit(f"usage: {Path(sys.argv[0]).name} COMPARISON_JSON")
     report = json.loads(Path(argv[0]).read_text(encoding="utf-8"))
     assert report["kind"] == "profile_comparison"
-    assert report["schema_version"] == 1
+    assert report["schema_version"] == 2
+    assert report["envelope"] == {
+        "major": 2,
+        "minor": 0,
+        "kind": "comparison",
+        "compatibility": "backward-compatible-v1",
+    }
     assert report["baseline"]["source"] == report["candidate"]["source"]
     assert report["baseline"]["compiler_commit"] == report["candidate"]["compiler_commit"]
     assert report["metrics"]["execution_ms_mean"]["baseline"] > 0

@@ -643,7 +643,7 @@ extend ProfilerNative:
         def append_profile_artifact(buffer: mutable darray[u8]&, capture: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"artifact_version\":")
             append_i64(buffer, NATIVE_ARTIFACT_VERSION)
-            append_text(buffer, ",\"kind\":\"elisa-profile\",\"manifest\":{\"capture_format\":\"profile-json-v1\",\"compression\":\"none\",\"capture_bytes\":")
+            append_text(buffer, ",\"kind\":\"elisa-profile\",\"manifest\":{\"capture_format\":\"profile-json-v2\",\"compression\":\"none\",\"capture_bytes\":")
             append_i64(buffer, capture.count.i64())
             append_text(buffer, "},\"capture\":")
             buffer.extend(capture)
@@ -1116,7 +1116,11 @@ extend ProfilerNative:
         ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "{\"schema_version\":")
             append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
-            append_text(buffer, ",\"source\":")
+            append_text(buffer, ",\"envelope\":{\"major\":")
+            append_i64(buffer, NATIVE_REPORT_ENVELOPE_MAJOR)
+            append_text(buffer, ",\"minor\":")
+            append_i64(buffer, NATIVE_REPORT_ENVELOPE_MINOR)
+            append_text(buffer, ",\"kind\":\"profile\",\"compatibility\":\"backward-compatible-v1\"},\"source\":")
             append_json_string(buffer, source)
             append_text(buffer, ",\"compiler\":{\"root\":")
             append_json_string(buffer, compiler_root)
@@ -1719,6 +1723,9 @@ extend ProfilerNative:
             return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
             capture: mutable darray[u8] = []
             return report_error("capture artifact is malformed or unsupported") if not unwrap_profile_artifact(report, &capture)
+            report_schema_version: mutable i64 = NATIVE_ZERO
+            return report_error("capture report schema is missing or unsupported") if not json_read_number_field(capture, "schema_version", NATIVE_ZERO.usize(), capture.count, &report_schema_version)
+            return report_error("capture report envelope is missing or unsupported") if not json_validate_report_envelope(capture, report_schema_version, "profile")
             return report_error("capture source snapshot is invalid") if not json_validate_source_snapshot(capture)
             return report_error("capture detail arrays contain invalid accounting") if not json_validate_detail_arrays(capture)
             if source_override_seen:

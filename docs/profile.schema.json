@@ -1,11 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://elisa-lang.org/schemas/profile-v1.json",
+  "$id": "https://elisa-lang.org/schemas/profile-v2.json",
   "title": "Elisa profiler report",
   "description": "Machine-readable output from the Elisa profiler --format json CLI.",
   "type": "object",
   "required": [
     "schema_version",
+    "envelope",
     "source",
     "compiler",
     "summary",
@@ -18,7 +19,18 @@
     "locations"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
+    "envelope": {
+      "type": "object",
+      "required": ["major", "minor", "kind", "compatibility"],
+      "properties": {
+        "major": { "const": 2 },
+        "minor": { "const": 0 },
+        "kind": { "const": "profile" },
+        "compatibility": { "const": "backward-compatible-v1" }
+      },
+      "additionalProperties": false
+    },
     "source": { "type": "string" },
     "source_snapshot": {
       "type": "object",

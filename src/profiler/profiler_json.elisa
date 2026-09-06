@@ -823,6 +823,27 @@ extend ProfilerNative:
             return true
 
 
+        def json_validate_report_envelope(data: darray[u8]&, schema_version: i64, expected_kind: sview) -> bool can[Abort.Panic, Memory.Allocate]:
+            return true if schema_version == NATIVE_LEGACY_REPORT_SCHEMA_VERSION
+            return false if schema_version != NATIVE_REPORT_SCHEMA_VERSION
+            envelope_start: i64 = json_key_value_start(data, "envelope", NATIVE_ZERO.usize(), data.count)
+            return false if envelope_start < NATIVE_ZERO or data[envelope_start.usize()] != NATIVE_BYTE_LEFT_BRACE
+            envelope_stop: i64 = json_object_end(data, envelope_start.usize(), data.count)
+            return false if envelope_stop < NATIVE_ZERO
+            major: mutable i64 = NATIVE_ZERO
+            minor: mutable i64 = NATIVE_ZERO
+            kind: mutable darray[u8] = []
+            compatibility: mutable darray[u8] = []
+            return false if not json_read_number_field(data, "major", envelope_start.usize(), envelope_stop.usize(), &major)
+            return false if not json_read_number_field(data, "minor", envelope_start.usize(), envelope_stop.usize(), &minor)
+            return false if not json_read_string_field(data, "kind", envelope_start.usize(), envelope_stop.usize(), &kind)
+            return false if not json_read_string_field(data, "compatibility", envelope_start.usize(), envelope_stop.usize(), &compatibility)
+            return false if major != NATIVE_REPORT_ENVELOPE_MAJOR or minor < NATIVE_ZERO or minor > NATIVE_REPORT_ENVELOPE_MINOR
+            return false if not protocol_field_is(kind, expected_kind)
+            return false if not protocol_field_is(compatibility, "backward-compatible-v1")
+            return true
+
+
         def json_validate_source_snapshot(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             snapshot_start: i64 = json_key_value_start(data, "source_snapshot", NATIVE_ZERO.usize(), data.count)
             return true if snapshot_start < NATIVE_ZERO
@@ -841,7 +862,7 @@ extend ProfilerNative:
             return false if not json_document_is_object(data)
             schema_version: mutable i64 = NATIVE_ZERO
             return false if not json_read_number_field(data, "schema_version", NATIVE_ZERO.usize(), data.count, &schema_version)
-            return false if schema_version != NATIVE_REPORT_SCHEMA_VERSION
+            return false if not json_validate_report_envelope(data, schema_version, "profile")
             return false if not json_validate_source_snapshot(data)
             compiler_start: i64 = json_key_value_start(data, "compiler", NATIVE_ZERO.usize(), data.count)
             summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)

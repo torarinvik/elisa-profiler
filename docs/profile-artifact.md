@@ -1,7 +1,7 @@
 # Elisa profile artifacts
 
 `elisa-profiler record SOURCE --format json --artifact-output capture.elisaprof`
-emits a deterministic JSON v1 envelope around the native profile report. The
+emits a deterministic JSON v1 artifact envelope around the native v2 profile report. The
 envelope is deliberately readable and uncompressed in this first container
 slice, so it can be inspected or recovered with ordinary JSON tooling.
 
@@ -12,19 +12,29 @@ The top-level contract is:
   "artifact_version": 1,
   "kind": "elisa-profile",
   "manifest": {
-    "capture_format": "profile-json-v1",
+    "capture_format": "profile-json-v2",
     "compression": "none",
     "capture_bytes": 1234
   },
-  "capture": { "schema_version": 1 }
+  "capture": {
+    "schema_version": 2,
+    "envelope": {
+      "major": 2,
+      "minor": 0,
+      "kind": "profile",
+      "compatibility": "backward-compatible-v1"
+    }
+  }
 }
 ```
 
 `capture_bytes` is the byte count of the embedded profile JSON as written by
-the native renderer. The embedded capture remains a complete v1 profile and
+the native renderer. The embedded capture is a complete v2 profile and
 is validated with `docs/profile.schema.json`. `report` unwraps the envelope
 before rendering JSON, text, folded stacks, Speedscope, or HTML. `compare`
-also accepts either raw v1 reports or these envelopes.
+accepts raw v1 reports for migration and comparison, as well as these v2
+envelopes. The native readers accept the legacy v1 shape without an envelope,
+while v2 requires the envelope's major/minor compatibility fields.
 
 When `--artifact-output PATH` (or `--output PATH`) is used, the native command
 also maintains `PATH.manifest.json` beside the requested output. It is an
@@ -50,7 +60,7 @@ The quality object inside the embedded capture is authoritative about target
 termination and bounded-detail loss.
 
 If a `running`, `finalizing`, or `partial` manifest remains beside a capture,
-`elisa-profiler recover MANIFEST --format json` reconstructs a v1 report from
+`elisa-profiler recover MANIFEST --format json` reconstructs a v2 report from
 the checksum-validated framed records. Recovery verifies the source digest and
 stops before an incomplete trailing frame. The result is marked
 `quality.capture = recovered`, includes a `recovery` object with the manifest,
