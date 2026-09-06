@@ -240,6 +240,86 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
+        def comparison_location_index(records: darray[ComparisonLocationRecord]&, source: darray[u8]&, kind: darray[u8]&, function: darray[u8]&, variable: darray[u8]&, line: i64, signed: bool, source_available: bool, variable_available: bool) -> i64 can[Abort.Panic]:
+            for index in 0..<records.count |index, records, source, kind, function, variable, line, signed, source_available, variable_available|:
+                record: ComparisonLocationRecord = records[index]
+                return index.i64() if record.line == line and record.signed == signed and record.source_available == source_available and record.variable_available == variable_available and byte_arrays_equal(record.source, source) and byte_arrays_equal(record.kind, kind) and byte_arrays_equal(record.function, function) and byte_arrays_equal(record.variable, variable)
+            return NATIVE_NEGATIVE_ONE
+
+
+        def append_comparison_location_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonLocationRecord]&, baseline_index: i64, candidate: darray[ComparisonLocationRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            baseline_available: bool = baseline_index >= NATIVE_ZERO
+            candidate_available: bool = candidate_index >= NATIVE_ZERO
+            baseline_count: mutable i64 = NATIVE_ZERO
+            candidate_count: mutable i64 = NATIVE_ZERO
+            baseline_interval_ns: mutable i64 = NATIVE_ZERO
+            candidate_interval_ns: mutable i64 = NATIVE_ZERO
+            baseline_max_interval_ns: mutable i64 = NATIVE_ZERO
+            candidate_max_interval_ns: mutable i64 = NATIVE_ZERO
+            if baseline_available:
+                baseline_record: ComparisonLocationRecord = baseline[baseline_index.usize()]
+                baseline_count <- baseline_record.count
+                baseline_interval_ns <- baseline_record.interval_ns
+                baseline_max_interval_ns <- baseline_record.max_interval_ns
+            if candidate_available:
+                candidate_record: ComparisonLocationRecord = candidate[candidate_index.usize()]
+                candidate_count <- candidate_record.count
+                candidate_interval_ns <- candidate_record.interval_ns
+                candidate_max_interval_ns <- candidate_record.max_interval_ns
+            append_text(buffer, "{\"source\":")
+            if baseline_available and baseline[baseline_index.usize()].source_available:
+                append_json_string(buffer, baseline[baseline_index.usize()].source)
+            elif not baseline_available and candidate[candidate_index.usize()].source_available:
+                append_json_string(buffer, candidate[candidate_index.usize()].source)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"line\":")
+            append_i64(buffer, baseline[baseline_index.usize()].line) if baseline_available
+            append_i64(buffer, candidate[candidate_index.usize()].line) if not baseline_available
+            append_text(buffer, ",\"function\":")
+            append_json_string(buffer, baseline[baseline_index.usize()].function) if baseline_available
+            append_json_string(buffer, candidate[candidate_index.usize()].function) if not baseline_available
+            append_text(buffer, ",\"kind\":")
+            append_json_string(buffer, baseline[baseline_index.usize()].kind) if baseline_available
+            append_json_string(buffer, candidate[candidate_index.usize()].kind) if not baseline_available
+            append_text(buffer, ",\"variable\":")
+            if baseline_available and baseline[baseline_index.usize()].variable_available:
+                append_json_string(buffer, baseline[baseline_index.usize()].variable)
+            elif not baseline_available and candidate[candidate_index.usize()].variable_available:
+                append_json_string(buffer, candidate[candidate_index.usize()].variable)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"signed\":")
+            append_text(buffer, "true" if baseline[baseline_index.usize()].signed else "false") if baseline_available
+            append_text(buffer, "true" if candidate[candidate_index.usize()].signed else "false") if not baseline_available
+            append_text(buffer, ",\"count\":")
+            append_comparison_nullable_count_metric(buffer, baseline_count, candidate_count, baseline_available, candidate_available)
+            append_text(buffer, ",\"interval_ns\":")
+            append_comparison_nullable_count_metric(buffer, baseline_interval_ns, candidate_interval_ns, baseline_available, candidate_available)
+            append_text(buffer, ",\"max_interval_ns\":")
+            append_comparison_nullable_count_metric(buffer, baseline_max_interval_ns, candidate_max_interval_ns, baseline_available, candidate_available)
+            append_text(buffer, "}")
+
+
+        def append_comparison_locations_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonLocationRecord]&, candidate: darray[ComparisonLocationRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "[")
+            first: mutable bool = true
+            for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, buffer|:
+                baseline_record: ComparisonLocationRecord = baseline[baseline_index]
+                candidate_index: i64 = comparison_location_index(candidate, baseline_record.source, baseline_record.kind, baseline_record.function, baseline_record.variable, baseline_record.line, baseline_record.signed, baseline_record.source_available, baseline_record.variable_available)
+                append_text(buffer, ",") if not first
+                append_comparison_location_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
+                first <- false
+            for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, buffer|:
+                candidate_record: ComparisonLocationRecord = candidate[candidate_index]
+                baseline_index: i64 = comparison_location_index(baseline, candidate_record.source, candidate_record.kind, candidate_record.function, candidate_record.variable, candidate_record.line, candidate_record.signed, candidate_record.source_available, candidate_record.variable_available)
+                continue if baseline_index >= NATIVE_ZERO
+                append_text(buffer, ",") if not first
+                append_comparison_location_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
+                first <- false
+            append_text(buffer, "]")
+
+
         def append_comparison_report(
             buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool
         ) -> void can[Abort.Panic, Memory.Allocate]:
@@ -329,6 +409,10 @@ extend ProfilerNative:
                 append_i64(buffer, baseline.stacks.count.i64())
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.stacks.count.i64())
+                append_text(buffer, "; locations baseline=")
+                append_i64(buffer, baseline.location_records.count.i64())
+                append_text(buffer, " candidate=")
+                append_i64(buffer, candidate.location_records.count.i64())
                 append_text(buffer, "\n")
                 if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
@@ -383,6 +467,8 @@ extend ProfilerNative:
             append_comparison_call_edges_json(buffer, baseline.call_edges, candidate.call_edges)
             append_text(buffer, ",\"stacks\":")
             append_comparison_stacks_json(buffer, baseline.stacks, candidate.stacks)
+            append_text(buffer, ",\"locations\":")
+            append_comparison_locations_json(buffer, baseline.location_records, candidate.location_records)
             append_text(buffer, ",\"metrics\":{\"execution_ms_mean\":{\"baseline\":")
             append_micros_as_millis(buffer, baseline.execution_mean_micros)
             append_text(buffer, ",\"candidate\":")
@@ -491,12 +577,12 @@ extend ProfilerNative:
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: []
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: []
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)

@@ -100,6 +100,17 @@ def main() -> int:
             "completed_calls": 7,
             "self_ns": 500,
         }]
+        baseline_capture["locations"] = [{
+            "source": "fixture.elisa",
+            "kind": "statement",
+            "function": "alpha",
+            "line": 10,
+            "variable": None,
+            "signed": False,
+            "count": 7,
+            "interval_ns": 700,
+            "max_interval_ns": 200,
+        }]
         candidate_capture = capture(["--beta"], exit_code=None)
         candidate_capture["functions"] = [{
             "function": "beta",
@@ -123,6 +134,17 @@ def main() -> int:
             "call_events": 9,
             "completed_calls": 8,
             "self_ns": 600,
+        }]
+        candidate_capture["locations"] = [{
+            "source": "fixture.elisa",
+            "kind": "statement",
+            "function": "beta",
+            "line": 11,
+            "variable": None,
+            "signed": False,
+            "count": 9,
+            "interval_ns": 900,
+            "max_interval_ns": 300,
         }]
         baseline.write_text(json.dumps(baseline_capture), encoding="utf-8")
         candidate.write_text(json.dumps(candidate_capture), encoding="utf-8")
@@ -174,6 +196,19 @@ def main() -> int:
             raise SystemExit("native comparison did not retain added and removed stacks")
         if stack_changes["root;beta"]["self_ns"]["baseline"] is not None:
             raise SystemExit("native comparison did not mark the added stack as unavailable")
+        location_changes = {
+            (item["source"], item["kind"], item["function"], item["line"], item["variable"], item["signed"]): item
+            for item in comparison["locations"]
+        }
+        if set(location_changes) != {
+            ("fixture.elisa", "statement", "alpha", 10, None, False),
+            ("fixture.elisa", "statement", "beta", 11, None, False),
+        }:
+            raise SystemExit("native comparison did not retain added and removed source locations")
+        if location_changes[("fixture.elisa", "statement", "alpha", 10, None, False)]["count"]["candidate"] is not None:
+            raise SystemExit("native comparison did not mark the removed source location as unavailable")
+        if location_changes[("fixture.elisa", "statement", "beta", 11, None, False)]["count"]["baseline"] is not None:
+            raise SystemExit("native comparison did not mark the added source location as unavailable")
         if comparison["candidate"]["exit_code"] is not None:
             raise SystemExit("native comparison did not preserve a signaled null exit code")
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):

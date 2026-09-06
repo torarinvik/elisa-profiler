@@ -14,6 +14,7 @@
     "functions",
     "call_edges",
     "stacks",
+    "locations",
     "metrics",
     "warnings",
     "status"
@@ -36,6 +37,10 @@
     "stacks": {
       "type": "array",
       "items": { "$ref": "#/$defs/stack_change" }
+    },
+    "locations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/location_change" }
     },
     "metrics": {
       "type": "object",
@@ -158,6 +163,22 @@
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
         "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
         "self_ns": { "$ref": "#/$defs/resource_count_metric" }
+      },
+      "additionalProperties": false
+    },
+    "location_change": {
+      "type": "object",
+      "required": ["source", "line", "function", "kind", "variable", "signed", "count", "interval_ns", "max_interval_ns"],
+      "properties": {
+        "source": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 0 },
+        "function": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["statement", "value", "function"] },
+        "variable": { "type": ["string", "null"] },
+        "signed": { "type": "boolean" },
+        "count": { "$ref": "#/$defs/resource_count_metric" },
+        "interval_ns": { "$ref": "#/$defs/resource_count_metric" },
+        "max_interval_ns": { "$ref": "#/$defs/resource_count_metric" }
       },
       "additionalProperties": false
     }

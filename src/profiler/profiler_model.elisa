@@ -299,6 +299,19 @@ module ProfilerNative:
             completed_calls: mutable i64
             self_ns: mutable i64
 
+        struct ComparisonLocationRecord:
+            source: mutable darray[u8]
+            kind: mutable darray[u8]
+            function: mutable darray[u8]
+            variable: mutable darray[u8]
+            line: mutable i64
+            signed: mutable bool
+            source_available: mutable bool
+            variable_available: mutable bool
+            count: mutable i64
+            interval_ns: mutable i64
+            max_interval_ns: mutable i64
+
         struct ComparisonCapture:
             source: mutable darray[u8]
             workload_identity: mutable darray[u8]
@@ -325,3 +338,4 @@ module ProfilerNative:
             functions: mutable darray[ComparisonFunctionRecord]
             call_edges: mutable darray[ComparisonCallEdgeRecord]
             stacks: mutable darray[ComparisonStackRecord]
+            location_records: mutable darray[ComparisonLocationRecord]

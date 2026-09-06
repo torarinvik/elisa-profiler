@@ -121,9 +121,12 @@ tail after the last validated frame.
 - Function comparison records use the readable function key for the current
   version-1 contract. A function present on only one side has `null` metrics on
   the missing side; the comparison never treats absence as a measured zero.
-- Caller→callee and folded stack-path comparison records use the same rule.
-  Stable compiler-issued identities and location diff records are reserved for
-  a later schema evolution.
+- Caller→callee, folded stack-path, and source-location comparison records use
+  the same rule. Location identity includes source availability/value, event
+  kind, readable function, source line, variable availability/value, and
+  signedness so distinct scalar observations are not merged accidentally.
+  Stable compiler-issued identities remain reserved for a later schema
+  evolution.
 
 ## Completeness and failure states
 

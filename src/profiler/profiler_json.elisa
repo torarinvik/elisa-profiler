@@ -393,6 +393,31 @@ extend ProfilerNative:
             return json_string_into(data, value_start.usize(), stop, result) >= NATIVE_ZERO
 
 
+        def json_read_nullable_string_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable darray[u8]&, available: mutable bool&) -> bool can[Abort.Panic, Memory.Allocate]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            if value_start < NATIVE_ZERO:
+                result <- []
+                available <- false
+                return true
+            value_index: usize = value_start.usize()
+            if json_null_value_at(data, value_index, stop) == NATIVE_ONE:
+                result <- []
+                available <- false
+                return true
+            result <- []
+            return false if json_string_into(data, value_index, stop, result) < NATIVE_ZERO
+            available <- true
+            return true
+
+
+        def json_read_optional_bool_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable bool&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            if value_start < NATIVE_ZERO:
+                result <- false
+                return true
+            return json_bool_into(data, value_start.usize(), stop, &result)
+
+
         def json_read_optional_object_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             return true if value_start < NATIVE_ZERO
@@ -597,6 +622,47 @@ extend ProfilerNative:
             return true
 
 
+        def json_read_location_records(data: darray[u8]&, records: mutable darray[ComparisonLocationRecord]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            records <- []
+            array_start: i64 = json_key_value_start(data, "locations", NATIVE_ZERO.usize(), data.count)
+            return true if array_start < NATIVE_ZERO
+            return false if data[array_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            array_stop: i64 = json_array_end(data, array_start.usize(), data.count)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
+            content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            record_count: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, content_stop, data, records, record_count|:
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                break if cursor >= content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if record_count >= NATIVE_MAX_PROTOCOL_DETAIL_RECORDS or data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, content_stop)
+                return false if object_stop < NATIVE_ZERO
+                record: mutable ComparisonLocationRecord = ComparisonLocationRecord{
+                    source: [], kind: [], function: [], variable: [], line: NATIVE_ZERO, signed: false,
+                    source_available: false, variable_available: false, count: NATIVE_ZERO, interval_ns: NATIVE_ZERO, max_interval_ns: NATIVE_ZERO
+                }
+                return false if not json_read_nullable_string_field(data, "source", cursor, object_stop.usize(), &record.source, &record.source_available)
+                return false if not json_read_string_field(data, "kind", cursor, object_stop.usize(), &record.kind)
+                return false if not protocol_field_is(record.kind, "statement") and not protocol_field_is(record.kind, "value") and not protocol_field_is(record.kind, "function")
+                return false if not json_read_string_field(data, "function", cursor, object_stop.usize(), &record.function) or record.function.count == NATIVE_ZERO.usize()
+                return false if not json_read_number_field(data, "line", cursor, object_stop.usize(), &record.line)
+                return false if not json_read_nullable_string_field(data, "variable", cursor, object_stop.usize(), &record.variable, &record.variable_available)
+                return false if not json_read_optional_bool_field(data, "signed", cursor, object_stop.usize(), &record.signed)
+                return false if not json_read_number_field(data, "count", cursor, object_stop.usize(), &record.count)
+                return false if not json_read_number_field(data, "interval_ns", cursor, object_stop.usize(), &record.interval_ns)
+                return false if not json_read_number_field(data, "max_interval_ns", cursor, object_stop.usize(), &record.max_interval_ns)
+                return false if record.max_interval_ns > record.interval_ns
+                records.push(record)
+                record_count <- record_count + NATIVE_ONE
+                cursor <- object_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
+            return true
+
+
         def json_validate_detail_arrays(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             return false if not json_read_detail_array(data, "functions", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_FUNCTIONS)
             return false if not json_read_detail_array(data, "call_edges", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_CALL_EDGES)
@@ -723,6 +789,7 @@ extend ProfilerNative:
             return false if not json_read_function_records(data, &capture.functions)
             return false if not json_read_call_edge_records(data, &capture.call_edges)
             return false if not json_read_stack_records(data, &capture.stacks)
+            return false if not json_read_location_records(data, &capture.location_records)
             return true
 
 
