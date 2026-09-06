@@ -128,13 +128,14 @@ worktrees remain untouched, including their uncommitted `.DS_Store` files.
 
 The generated ledger is the detailed record; its current classifications are:
 
-- The main `Elisa-compiler` worktree has a mixed candidate: the relevant files
-  already matching `codex/profiler` are an `equivalent-patch`; its packed-header
+- The main `Elisa-compiler` worktree has a mixed candidate: its packed-header
   `c_header.elisa` fix was independently reviewed, parity-tested, and imported
-  as `d8cadbb1`. Its unrelated `.gitignore` change remains unimported. The
-  affected subsystems are backend/parser/semantic and packed-header emission;
-  the listed effect, packed-store, and differential tests are the verification
-  set.
+  as `d8cadbb1`, and its later semantic/parser/backend source patch was
+  independently reviewed and imported as `46c0671c`. Its unrelated owner
+  checkout changes remain unimported and untouched. The affected subsystems
+  are backend/parser/semantic and packed-header emission; diagnostics,
+  semantic-acceptance, internal-differential, and native profiler gates are the
+  verification set.
 - The temporary verification worktree is an `equivalent-patch` for the local
   region annotation and region-scope fixtures; it has not been rewritten or
   committed from this audit.
