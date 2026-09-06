@@ -471,8 +471,8 @@
         },
         "mean_inclusive_ns": { "type": "integer", "minimum": 0 },
         "mean_self_ns": { "type": "integer", "minimum": 0 },
-        "inclusive_percent": { "type": "number", "minimum": 0 },
-        "self_percent": { "type": "number", "minimum": 0 }
+        "inclusive_percent": { "type": ["number", "null"], "minimum": 0 },
+        "self_percent": { "type": ["number", "null"], "minimum": 0 }
       },
       "additionalProperties": true
     },

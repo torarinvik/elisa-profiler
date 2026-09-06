@@ -265,9 +265,9 @@ extend ProfilerNative:
                 append_text(function_records, ",\"mean_self_ns\":")
                 append_i64(function_records, NATIVE_ZERO)
                 append_text(function_records, ",\"inclusive_percent\":")
-                append_text(function_records, "0.0")
+                append_text(function_records, "null")
                 append_text(function_records, ",\"self_percent\":")
-                append_text(function_records, "0.0")
+                append_text(function_records, "null")
                 append_text(function_records, "}")
 
 

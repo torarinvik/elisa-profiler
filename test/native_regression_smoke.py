@@ -254,6 +254,8 @@ def main():
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
         assert measured["run"]["outcome"] == "success"
+        assert measured["functions"]
+        assert all(record["inclusive_percent"] is None and record["self_percent"] is None for record in measured["functions"])
         host = measured["host"]
         assert host["os"] in {"Darwin", "Linux"}, host
         assert host["architecture"], host

@@ -303,6 +303,8 @@ tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies. The flame graph uses BigInt parsing
 for serialized weights and treats frame labels as text, so large values and
 hostile names do not become JavaScript code or rounded metrics.
+Raw function records leave percentages null when the collector did not compute
+them; the viewer never presents that absence as a numeric zero.
 The overview also shows workload reproducibility evidence: working directory,
 stdin path and hash when available, forwarded target arguments, environment
 override names without their values, and the explicit random-seed/input-hash
