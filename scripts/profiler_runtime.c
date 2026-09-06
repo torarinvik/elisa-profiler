@@ -386,6 +386,46 @@ static void profile_release_bytes_locked(uint64_t bytes) {
                                      : profile_capture_bytes_used - bytes;
 }
 
+static int profile_next_capacity(size_t current, size_t initial, size_t *next) {
+    if (current == 0) {
+        *next = initial;
+        return 1;
+    }
+    if (current > SIZE_MAX / PROFILE_CAPACITY_GROWTH_FACTOR) {
+        return 0;
+    }
+    *next = current * PROFILE_CAPACITY_GROWTH_FACTOR;
+    return 1;
+}
+
+static int profile_allocation_bytes(size_t count, size_t element_size,
+                                    uint64_t *bytes) {
+    if (element_size != 0 && count > SIZE_MAX / element_size) {
+        return 0;
+    }
+    size_t allocation = count * element_size;
+    if ((uintmax_t)allocation > UINT64_MAX) {
+        return 0;
+    }
+    *bytes = (uint64_t)allocation;
+    return 1;
+}
+
+static int profile_table_requires_growth(size_t current_size, size_t capacity) {
+    if (capacity == 0) {
+        return 1;
+    }
+    size_t whole_capacity = capacity / PROFILE_TABLE_LOAD_NUMERATOR;
+    size_t remainder = capacity % PROFILE_TABLE_LOAD_NUMERATOR;
+    size_t threshold = whole_capacity * PROFILE_TABLE_LOAD_DENOMINATOR;
+    if (remainder != 0) {
+        threshold += (remainder * PROFILE_TABLE_LOAD_DENOMINATOR +
+                      PROFILE_TABLE_LOAD_NUMERATOR - 1) /
+                     PROFILE_TABLE_LOAD_NUMERATOR;
+    }
+    return current_size >= threshold - 1;
+}
+
 /* Trace strings are ABI data, not guaranteed to be interned by the compiler. */
 static int profile_strings_equal(const char *left, const char *right) {
     if (left == right) {
@@ -564,10 +604,13 @@ static profile_call_edge *profile_find_call_edge_locked(const char *caller_name,
 }
 
 static int profile_grow_call_edges_locked(void) {
-    size_t new_capacity = profile_call_edge_capacity == 0
-                              ? PROFILE_INITIAL_CALL_EDGE_CAPACITY
-                              : profile_call_edge_capacity * PROFILE_CAPACITY_GROWTH_FACTOR;
-    uint64_t new_bytes = (uint64_t)new_capacity * sizeof(*profile_call_edges);
+    size_t new_capacity;
+    uint64_t new_bytes;
+    if (!profile_next_capacity(profile_call_edge_capacity,
+                               PROFILE_INITIAL_CALL_EDGE_CAPACITY, &new_capacity) ||
+        !profile_allocation_bytes(new_capacity, sizeof(*profile_call_edges), &new_bytes)) {
+        return 0;
+    }
     if (!profile_reserve_bytes_locked(new_bytes)) {
         return 0;
     }
@@ -588,7 +631,9 @@ static int profile_grow_call_edges_locked(void) {
         }
         new_edges[slot] = edge;
     }
-    uint64_t old_bytes = (uint64_t)profile_call_edge_capacity * sizeof(*profile_call_edges);
+    uint64_t old_bytes = 0;
+    (void)profile_allocation_bytes(profile_call_edge_capacity,
+                                   sizeof(*profile_call_edges), &old_bytes);
     free(profile_call_edges);
     profile_release_bytes_locked(old_bytes);
     profile_call_edges = new_edges;
@@ -618,9 +663,8 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
         pthread_mutex_unlock(&profile_lock);
         return;
     }
-    if (profile_call_edge_capacity == 0 ||
-        (profile_call_edge_size + 1) * PROFILE_TABLE_LOAD_NUMERATOR >=
-            profile_call_edge_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
+    if (profile_table_requires_growth(profile_call_edge_size,
+                                      profile_call_edge_capacity)) {
         if (!profile_grow_call_edges_locked()) {
             ++profile_call_edge_dropped_count;
             if (thread != NULL) {
@@ -683,10 +727,13 @@ static uint64_t profile_call_path_hash(const profile_call_path *parent,
 }
 
 static int profile_grow_call_paths_locked(void) {
-    size_t new_capacity = profile_call_path_capacity == 0
-                              ? PROFILE_INITIAL_CALL_PATH_CAPACITY
-                              : profile_call_path_capacity * PROFILE_CAPACITY_GROWTH_FACTOR;
-    uint64_t new_bytes = (uint64_t)new_capacity * sizeof(*profile_call_paths);
+    size_t new_capacity;
+    uint64_t new_bytes;
+    if (!profile_next_capacity(profile_call_path_capacity,
+                               PROFILE_INITIAL_CALL_PATH_CAPACITY, &new_capacity) ||
+        !profile_allocation_bytes(new_capacity, sizeof(*profile_call_paths), &new_bytes)) {
+        return 0;
+    }
     if (!profile_reserve_bytes_locked(new_bytes)) {
         return 0;
     }
@@ -707,7 +754,9 @@ static int profile_grow_call_paths_locked(void) {
         }
         new_paths[slot] = path;
     }
-    uint64_t old_bytes = (uint64_t)profile_call_path_capacity * sizeof(*profile_call_paths);
+    uint64_t old_bytes = 0;
+    (void)profile_allocation_bytes(profile_call_path_capacity,
+                                   sizeof(*profile_call_paths), &old_bytes);
     free(profile_call_paths);
     profile_release_bytes_locked(old_bytes);
     profile_call_paths = new_paths;
@@ -749,9 +798,8 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
         pthread_mutex_unlock(&profile_lock);
         return NULL;
     }
-    if (profile_call_path_capacity == 0 ||
-        (profile_call_path_size + 1) * PROFILE_TABLE_LOAD_NUMERATOR >=
-            profile_call_path_capacity * PROFILE_TABLE_LOAD_DENOMINATOR) {
+    if (profile_table_requires_growth(profile_call_path_size,
+                                      profile_call_path_capacity)) {
         if (!profile_grow_call_paths_locked()) {
             ++profile_call_path_dropped_count;
             if (thread != NULL) {
@@ -907,10 +955,13 @@ static void profile_close_timing_cursor(void) {
 #endif
 
 static int profile_grow_locked(void) {
-    size_t new_capacity = profile_capacity == 0
-                              ? PROFILE_INITIAL_LOCATION_CAPACITY
-                              : profile_capacity * PROFILE_CAPACITY_GROWTH_FACTOR;
-    uint64_t new_bytes = (uint64_t)new_capacity * sizeof(*profile_table);
+    size_t new_capacity;
+    uint64_t new_bytes;
+    if (!profile_next_capacity(profile_capacity, PROFILE_INITIAL_LOCATION_CAPACITY,
+                               &new_capacity) ||
+        !profile_allocation_bytes(new_capacity, sizeof(*profile_table), &new_bytes)) {
+        return 0;
+    }
     if (!profile_reserve_bytes_locked(new_bytes)) {
         return 0;
     }
@@ -933,7 +984,8 @@ static int profile_grow_locked(void) {
         new_table[slot] = entry;
     }
 
-    uint64_t old_bytes = (uint64_t)profile_capacity * sizeof(*profile_table);
+    uint64_t old_bytes = 0;
+    (void)profile_allocation_bytes(profile_capacity, sizeof(*profile_table), &old_bytes);
     free(profile_table);
     profile_release_bytes_locked(old_bytes);
     profile_table = new_table;

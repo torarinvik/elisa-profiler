@@ -34,6 +34,14 @@ int64_t elisa_profile_target_main(int64_t argc, void *argv) {
 }
 
 int main(void) {
+    size_t next_capacity = 0;
+    uint64_t allocation_bytes = 0;
+    assert(!profile_next_capacity(SIZE_MAX, PROFILE_INITIAL_LOCATION_CAPACITY,
+                                   &next_capacity));
+    assert(!profile_allocation_bytes(SIZE_MAX, sizeof(profile_entry),
+                                     &allocation_bytes));
+    assert(profile_table_requires_growth(SIZE_MAX, SIZE_MAX));
+
     const uint32_t repeat_line = 1;
     const size_t entries_before_growth =
         (PROFILE_INITIAL_LOCATION_CAPACITY * PROFILE_TABLE_LOAD_DENOMINATOR - 1) /
