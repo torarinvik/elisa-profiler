@@ -106,6 +106,9 @@ def main():
         assert speedscope["profiles"][0]["weights"] == [1, 6]
         offline_html = run("report", capture, "--format", "html")
         assert b"<dt>Locations</dt><dd>2</dd>" in offline_html
+        assert b"<dt>Mean execution</dt><dd>1.250 ms</dd>" in offline_html
+        assert b"<dt>CPU</dt><dd>unavailable</dd>" in offline_html
+        assert b"<dt>Measured repetitions</dt><dd>0</dd>" in offline_html
         assert b"edge-filter" in offline_html
         assert b"location-filter" in offline_html
 

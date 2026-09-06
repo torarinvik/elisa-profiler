@@ -202,11 +202,31 @@ extend ProfilerNative:
             dropped: mutable i64 = NATIVE_ZERO
             thread_count: mutable i64 = NATIVE_ZERO
             exit_code: mutable i64 = NATIVE_ZERO
+            execution_mean_micros: mutable i64 = NATIVE_ZERO
+            execution_mean_available: mutable bool = false
+            cpu_micros: mutable i64 = NATIVE_ZERO
+            cpu_available: mutable bool = false
+            peak_rss_bytes: mutable i64 = NATIVE_ZERO
+            peak_rss_available: mutable bool = false
+            completed_repetitions: mutable i64 = NATIVE_ZERO
+            successful_repetitions: mutable i64 = NATIVE_ZERO
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
+            execution_mean_start: i64 = json_key_value_start(data, "execution_ms_mean", run_start.usize(), run_stop.usize())
+            if execution_mean_start >= NATIVE_ZERO:
+                return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &execution_mean_micros)
+                execution_mean_available <- true
+            return false if not json_read_nullable_millis_field(data, "cpu_ms", run_start.usize(), run_stop.usize(), &cpu_micros, &cpu_available)
+            return false if not json_read_nullable_number_field(data, "peak_rss_bytes", run_start.usize(), run_stop.usize(), &peak_rss_bytes, &peak_rss_available)
+            completed_start: i64 = json_key_value_start(data, "completed_repetitions", run_start.usize(), run_stop.usize())
+            if completed_start >= NATIVE_ZERO:
+                return false if not json_read_number_field(data, "completed_repetitions", run_start.usize(), run_stop.usize(), &completed_repetitions)
+            successful_start: i64 = json_key_value_start(data, "successful_repetitions", run_start.usize(), run_stop.usize())
+            if successful_start >= NATIVE_ZERO:
+                return false if not json_read_number_field(data, "successful_repetitions", run_start.usize(), run_stop.usize(), &successful_repetitions)
             timing: mutable bool = false
             return false if not json_read_location_timing(data, &timing)
             folded: mutable darray[u8] = []
@@ -243,6 +263,26 @@ extend ProfilerNative:
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
             append_text(buffer, "ok" if exit_code == NATIVE_ZERO else "target failed")
+            append_text(buffer, "</dd></div><div><dt>Mean execution</dt><dd>")
+            if execution_mean_available:
+                append_micros_as_millis(buffer, execution_mean_micros)
+                append_text(buffer, " ms")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</dd></div><div><dt>CPU</dt><dd>")
+            if cpu_available:
+                append_micros_as_millis(buffer, cpu_micros)
+                append_text(buffer, " ms")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</dd></div><div><dt>Peak RSS</dt><dd>")
+            if peak_rss_available:
+                append_i64(buffer, peak_rss_bytes)
+                append_text(buffer, " bytes")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</dd></div><div><dt>Measured repetitions</dt><dd>")
+            append_i64(buffer, successful_repetitions if successful_repetitions > NATIVE_ZERO else completed_repetitions)
             append_text(buffer, "</dd></div><div><dt>Events</dt><dd>")
             append_i64(buffer, events)
             append_text(buffer, "</dd></div><div><dt>Locations</dt><dd>")
