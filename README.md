@@ -120,6 +120,8 @@ the program, and reports function-entry, statement, and scalar-value events:
     bin/elisa-profiler compare profiles/baseline.json profiles/candidate.json
     bin/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
         --format html -o profiles/comparison.html
+    bin/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
+        --max-wall-regression-percent 5 --max-wall-ms 250
 
 The default `full` mode records function, statement, and scalar-value events.
 `functions` keeps function/call-path evidence, `statements` keeps statement

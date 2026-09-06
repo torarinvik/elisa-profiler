@@ -15,6 +15,11 @@ module ProfilerNative:
         const NATIVE_THREE: i64 = 3
         const NATIVE_NEGATIVE_ONE: i64 = -1
         const NATIVE_CHILD_FAILURE_STATUS: i64 = 127
+        # Stable profiler-owned exit codes. Target exit/signal values remain
+        # represented inside a successful capture; these values describe the
+        # command's ability to produce or gate a comparison report.
+        const NATIVE_EXIT_COMPARISON_INCONCLUSIVE: i64 = 4
+        const NATIVE_EXIT_COMPARISON_REGRESSION: i64 = 5
         const NATIVE_WAIT_NO_OPTIONS: i64 = 0
         const NATIVE_WAIT_NO_HANG: i64 = 1
         const NATIVE_WAIT_POLL_MICROSECONDS: u32 = 1000
@@ -46,6 +51,9 @@ module ProfilerNative:
         const NATIVE_TIMEOUT_FRACTION_DIGITS: i64 = 9
         const NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR: i64 = 100000000
         const NATIVE_MICROSECONDS_PER_MILLISECOND: i64 = 1000
+        const NATIVE_PERCENT_DENOMINATOR: i64 = 100
+        const NATIVE_COMPARISON_THRESHOLD_DISABLED: i64 = -1
+        const NATIVE_COMPARISON_MAX_PERCENT: i64 = 1000000
         const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192
@@ -339,3 +347,12 @@ module ProfilerNative:
             call_edges: mutable darray[ComparisonCallEdgeRecord]
             stacks: mutable darray[ComparisonStackRecord]
             location_records: mutable darray[ComparisonLocationRecord]
+
+        struct ComparisonPolicy:
+            max_wall_regression_percent: mutable i64
+            max_wall_micros: mutable i64
+            max_cpu_regression_percent: mutable i64
+            max_cpu_micros: mutable i64
+            max_rss_regression_percent: mutable i64
+            max_rss_bytes: mutable i64
+            max_function_self_regression_percent: mutable i64

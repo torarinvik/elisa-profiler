@@ -179,6 +179,10 @@ def main() -> int:
             raise SystemExit("native comparison omitted peak RSS")
         if any("resource-metric availability" in warning for warning in comparison.get("warnings", [])):
             raise SystemExit("native comparison reported a false resource-availability mismatch")
+        if comparison["gate"]["status"] != "not_requested":
+            raise SystemExit("native comparison unexpectedly requested a threshold gate")
+        if any(value is not None for value in comparison["thresholds"].values()):
+            raise SystemExit("native comparison emitted an unexpected default threshold")
         function_changes = {item["function"]: item for item in comparison["functions"]}
         if set(function_changes) != {"alpha", "beta"}:
             raise SystemExit("native comparison did not retain added and removed functions")
@@ -213,6 +217,119 @@ def main() -> int:
             raise SystemExit("native comparison did not preserve a signaled null exit code")
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):
             raise SystemExit("native comparison omitted the target-failure warning")
+
+        gate_baseline = capture(["--same-input"])
+        gate_baseline["functions"] = [{
+            "function": "alpha",
+            "events": 7,
+            "call_events": 7,
+            "completed_calls": 7,
+            "inclusive_ns": 700,
+            "self_ns": 500,
+            "interval_ns": 700,
+            "max_interval_ns": 200,
+        }]
+        gate_candidate = json.loads(json.dumps(gate_baseline))
+        gate_candidate["run"]["execution_ms_mean"] = 2.0  # type: ignore[index]
+        gate_baseline_path = root / "gate-baseline.json"
+        gate_candidate_path = root / "gate-candidate.json"
+        gate_output = root / "gate-comparison.json"
+        gate_baseline_path.write_text(json.dumps(gate_baseline), encoding="utf-8")
+        gate_candidate_path.write_text(json.dumps(gate_candidate), encoding="utf-8")
+        gate_result = run_command(
+            [
+                str(profiler),
+                "compare",
+                gate_baseline_path,
+                gate_candidate_path,
+                "--format",
+                "json",
+                "--output",
+                gate_output,
+                "--max-wall-regression-percent",
+                "10",
+            ],
+            "wall regression gate",
+        )
+        if gate_result.returncode != 5:
+            raise SystemExit(f"wall regression gate returned {gate_result.returncode}, expected 5")
+        gate_comparison = json.loads(gate_output.read_text(encoding="utf-8"))
+        if gate_comparison["gate"]["status"] != "fail":
+            raise SystemExit("wall regression gate did not report fail")
+        if "wall_regression_percent" not in gate_comparison["gate"]["violations"]:
+            raise SystemExit("wall regression gate omitted its violation")
+        if gate_comparison["thresholds"]["wall_regression_percent"] != 10:
+            raise SystemExit("wall regression gate omitted its threshold")
+
+        absolute_output = root / "absolute-comparison.json"
+        absolute_result = run_command(
+            [
+                str(profiler),
+                "compare",
+                gate_baseline_path,
+                gate_candidate_path,
+                "--format",
+                "json",
+                "--output",
+                absolute_output,
+                "--max-wall-ms",
+                "1",
+            ],
+            "absolute wall regression gate",
+        )
+        if absolute_result.returncode != 5:
+            raise SystemExit(f"absolute wall gate returned {absolute_result.returncode}, expected 5")
+        absolute_comparison = json.loads(absolute_output.read_text(encoding="utf-8"))
+        if absolute_comparison["gate"]["violations"] != ["wall_max_ms"]:
+            raise SystemExit("absolute wall gate reported an unexpected violation")
+
+        inconclusive_output = root / "inconclusive-comparison.json"
+        inconclusive_result = run_command(
+            [
+                str(profiler),
+                "compare",
+                baseline,
+                candidate,
+                "--format",
+                "json",
+                "--output",
+                inconclusive_output,
+                "--max-wall-regression-percent",
+                "10",
+            ],
+            "inconclusive comparison gate",
+        )
+        if inconclusive_result.returncode != 4:
+            raise SystemExit(f"inconclusive gate returned {inconclusive_result.returncode}, expected 4")
+        inconclusive_comparison = json.loads(inconclusive_output.read_text(encoding="utf-8"))
+        if inconclusive_comparison["gate"]["status"] != "inconclusive":
+            raise SystemExit("inconclusive gate did not preserve comparison uncertainty")
+
+        function_gate_candidate = json.loads(json.dumps(gate_baseline))
+        function_gate_candidate["functions"][0]["self_ns"] = 600  # type: ignore[index]
+        function_gate_candidate_path = root / "function-gate-candidate.json"
+        function_gate_output = root / "function-gate-comparison.json"
+        function_gate_candidate_path.write_text(json.dumps(function_gate_candidate), encoding="utf-8")
+        function_gate_result = run_command(
+            [
+                str(profiler),
+                "compare",
+                gate_baseline_path,
+                function_gate_candidate_path,
+                "--format",
+                "json",
+                "--output",
+                function_gate_output,
+                "--max-function-self-regression-percent",
+                "10",
+            ],
+            "function regression gate",
+        )
+        if function_gate_result.returncode != 5:
+            raise SystemExit(f"function regression gate returned {function_gate_result.returncode}, expected 5")
+        function_gate_comparison = json.loads(function_gate_output.read_text(encoding="utf-8"))
+        if function_gate_comparison["gate"]["violations"] != ["function_self_regression_percent"]:
+            raise SystemExit("function regression gate reported an unexpected violation")
 
         maximum_count = 9223372036854775807
         extreme_baseline = capture([])

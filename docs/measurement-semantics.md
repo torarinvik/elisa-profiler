@@ -97,6 +97,36 @@ tail after the last validated frame.
 - `thread_count` is the maximum number of registered collector threads seen in
   the capture. It is not the operating system's final thread count.
 
+## Comparison gates
+
+The comparison command always emits optional `thresholds` and `gate` objects.
+With no threshold option, `gate.status` is `not_requested` and the command
+retains its normal zero exit status (or a validation error). Thresholds are
+explicit policy, not a claim that every observed difference is statistically
+significant.
+
+Supported policies are:
+
+- `--max-wall-regression-percent N` and `--max-wall-ms N` constrain the
+  candidate's measured wall-time mean.
+- `--max-cpu-regression-percent N` and `--max-cpu-ms N` constrain summed child
+  CPU time when both captures have resource metrics.
+- `--max-rss-regression-percent N` and `--max-rss-bytes N` constrain peak RSS
+  when both captures have resource metrics.
+- `--max-function-self-regression-percent N` applies the relative limit to
+  every function present on both sides and reports one violation if any shared
+  function exceeds it.
+
+Percent values are whole percentages from `0` through `1,000,000`; zero means
+no increase is permitted. Absolute wall/CPU values are integer milliseconds,
+and RSS values are integer bytes. A zero baseline treats any positive candidate
+as a relative regression. A requested gate becomes `inconclusive` rather than
+failing when source, workload, mode, compiler, optimization, target outcome,
+or bounded-evidence identity is not comparable, or when a required resource or
+shared-function metric is unavailable. Gate exit status `5` means regression,
+`4` means inconclusive, and `0` means the requested policy passed. The JSON
+`gate.violations` array contains stable policy names suitable for CI logs.
+
 ## Function and stack accounting
 
 - `call_events` is incremented when a function entry is observed.

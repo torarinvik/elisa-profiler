@@ -4,6 +4,131 @@
 # it never compares raw protocol or JSON text directly.
 extend ProfilerNative:
     private:
+        def comparison_policy_requested(policy: ComparisonPolicy) -> bool:
+            return policy.max_wall_regression_percent >= NATIVE_ZERO or policy.max_wall_micros >= NATIVE_ZERO or policy.max_cpu_regression_percent >= NATIVE_ZERO or policy.max_cpu_micros >= NATIVE_ZERO or policy.max_rss_regression_percent >= NATIVE_ZERO or policy.max_rss_bytes >= NATIVE_ZERO or policy.max_function_self_regression_percent >= NATIVE_ZERO
+
+
+        def comparison_percent_exceeded(baseline: i64, candidate: i64, percent: i64, available: bool) -> bool:
+            return false if not available or percent < NATIVE_ZERO
+            allowed_delta: i64 = native_saturating_mul_nonnegative(baseline, percent) / NATIVE_PERCENT_DENOMINATOR
+            allowed_value: i64 = native_saturating_add(baseline, allowed_delta)
+            return candidate > allowed_value
+
+
+        def comparison_absolute_exceeded(candidate: i64, maximum: i64, available: bool) -> bool:
+            return available and maximum >= NATIVE_ZERO and candidate > maximum
+
+
+        def comparison_function_self_exceeded(baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&, percent: i64) -> bool can[Abort.Panic]:
+            return false if percent < NATIVE_ZERO
+            for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, percent|:
+                candidate_index: i64 = comparison_function_index(candidate, baseline[baseline_index].function)
+                continue if candidate_index < NATIVE_ZERO
+                baseline_record: ComparisonFunctionRecord = baseline[baseline_index]
+                candidate_record: ComparisonFunctionRecord = candidate[candidate_index.usize()]
+                return true if comparison_percent_exceeded(baseline_record.self_ns, candidate_record.self_ns, percent, true)
+            return false
+
+
+        def comparison_has_shared_function(baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&) -> bool can[Abort.Panic]:
+            for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate|:
+                return true if comparison_function_index(candidate, baseline[baseline_index].function) >= NATIVE_ZERO
+            return false
+
+
+        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
+            return false if not comparison_policy_requested(policy)
+            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or target_failure or evidence_loss
+            return true if (policy.max_cpu_regression_percent >= NATIVE_ZERO or policy.max_cpu_micros >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
+            return true if (policy.max_rss_regression_percent >= NATIVE_ZERO or policy.max_rss_bytes >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
+            return true if policy.max_function_self_regression_percent >= NATIVE_ZERO and not comparison_has_shared_function(baseline.functions, candidate.functions)
+            return false
+
+
+        def append_comparison_threshold(buffer: mutable darray[u8]&, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            append_i64(buffer, value) if value >= NATIVE_ZERO
+            append_text(buffer, "null") if value < NATIVE_ZERO
+
+
+        def append_comparison_gate_json(buffer: mutable darray[u8]&, policy: ComparisonPolicy, gate_inconclusive: bool, gate_failed: bool, wall_percent_failed: bool, wall_absolute_failed: bool, cpu_percent_failed: bool, cpu_absolute_failed: bool, rss_percent_failed: bool, rss_absolute_failed: bool, function_failed: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, ",\"thresholds\":{\"wall_regression_percent\":")
+            append_comparison_threshold(buffer, policy.max_wall_regression_percent)
+            append_text(buffer, ",\"wall_max_ms\":")
+            if policy.max_wall_micros >= NATIVE_ZERO:
+                append_micros_as_millis(buffer, policy.max_wall_micros)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"cpu_regression_percent\":")
+            append_comparison_threshold(buffer, policy.max_cpu_regression_percent)
+            append_text(buffer, ",\"cpu_max_ms\":")
+            if policy.max_cpu_micros >= NATIVE_ZERO:
+                append_micros_as_millis(buffer, policy.max_cpu_micros)
+            else:
+                append_text(buffer, "null")
+            append_text(buffer, ",\"rss_regression_percent\":")
+            append_comparison_threshold(buffer, policy.max_rss_regression_percent)
+            append_text(buffer, ",\"rss_max_bytes\":")
+            append_comparison_threshold(buffer, policy.max_rss_bytes)
+            append_text(buffer, ",\"function_self_regression_percent\":")
+            append_comparison_threshold(buffer, policy.max_function_self_regression_percent)
+            append_text(buffer, "},\"gate\":{\"status\":\"")
+            append_text(buffer, "inconclusive" if gate_inconclusive else "fail" if gate_failed else "pass" if comparison_policy_requested(policy) else "not_requested")
+            append_text(buffer, "\",\"violations\":[")
+            first: mutable bool = true
+            if wall_percent_failed:
+                append_text(buffer, "\"wall_regression_percent\"")
+                first <- false
+            if wall_absolute_failed:
+                append_text(buffer, "," if not first else "")
+                append_text(buffer, "\"wall_max_ms\"")
+                first <- false
+            if cpu_percent_failed:
+                append_text(buffer, "," if not first else "")
+                append_text(buffer, "\"cpu_regression_percent\"")
+                first <- false
+            if cpu_absolute_failed:
+                append_text(buffer, "," if not first else "")
+                append_text(buffer, "\"cpu_max_ms\"")
+                first <- false
+            if rss_percent_failed:
+                append_text(buffer, "," if not first else "")
+                append_text(buffer, "\"rss_regression_percent\"")
+                first <- false
+            if rss_absolute_failed:
+                append_text(buffer, "," if not first else "")
+                append_text(buffer, "\"rss_max_bytes\"")
+                first <- false
+            if function_failed:
+                append_text(buffer, "," if not first else "")
+                append_text(buffer, "\"function_self_regression_percent\"")
+            append_text(buffer, "]}")
+
+
+        def comparison_gate_exit_code(policy: ComparisonPolicy, gate_inconclusive: bool, gate_failed: bool) -> i64:
+            return NATIVE_EXIT_COMPARISON_INCONCLUSIVE if gate_inconclusive
+            return NATIVE_EXIT_COMPARISON_REGRESSION if gate_failed
+            return NATIVE_ZERO
+
+
+        def parse_nonnegative_integer(value: cstr) -> i64 can[Unsafe.PointerCast]:
+            bytes: u8& = value.cast[u8&] can Unsafe.PointerCast
+            cursor: mutable i64 = NATIVE_ZERO
+            result: mutable i64 = NATIVE_ZERO
+            saw_digit: mutable bool = false
+            while true |bytes, cursor, result, saw_digit|:
+                byte_ref: u8& = bytes + cursor
+                byte: u8 = byte_ref
+                break if byte == NATIVE_BYTE_NUL
+                return NATIVE_NEGATIVE_ONE if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                return NATIVE_NEGATIVE_ONE if result > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                result <- result * NATIVE_DECIMAL_BASE + digit
+                saw_digit <- true
+                cursor <- cursor + NATIVE_ONE
+            return NATIVE_NEGATIVE_ONE if not saw_digit
+            return result
+
+
         def append_comparison_warning_json(buffer: mutable darray[u8]&, warning: sview, include: bool, first: mutable bool&) -> i64 can[Abort.Panic, Memory.Allocate]:
             return NATIVE_ZERO if not include
             buffer.push(NATIVE_BYTE_COMMA) if not first
@@ -321,8 +446,8 @@ extend ProfilerNative:
 
 
         def append_comparison_report(
-            buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool
-        ) -> void can[Abort.Panic, Memory.Allocate]:
+            buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool, policy: ComparisonPolicy
+        ) -> i64 can[Abort.Panic, Memory.Allocate]:
             source_mismatch: bool = not byte_arrays_equal(baseline.source, candidate.source)
             collection_mode_mismatch: bool = (baseline.collection_mode.count > NATIVE_ZERO.usize() and candidate.collection_mode.count == NATIVE_ZERO.usize()) or (baseline.collection_mode.count == NATIVE_ZERO.usize() and candidate.collection_mode.count > NATIVE_ZERO.usize()) or (baseline.collection_mode.count > NATIVE_ZERO.usize() and candidate.collection_mode.count > NATIVE_ZERO.usize() and not byte_arrays_equal(baseline.collection_mode, candidate.collection_mode))
             workload_mismatch: mutable bool = false
@@ -333,6 +458,17 @@ extend ProfilerNative:
             resource_metrics_mismatch: bool = baseline.resource_metrics_available != candidate.resource_metrics_available
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
             evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.frame_dropped > NATIVE_ZERO or candidate.frame_dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
+            cpu_available: bool = baseline.resource_metrics_available and candidate.resource_metrics_available and not resource_metrics_mismatch
+            rss_available: bool = cpu_available
+            wall_percent_failed: bool = comparison_percent_exceeded(baseline.execution_mean_micros, candidate.execution_mean_micros, policy.max_wall_regression_percent, true)
+            wall_absolute_failed: bool = comparison_absolute_exceeded(candidate.execution_mean_micros, policy.max_wall_micros, true)
+            cpu_percent_failed: bool = comparison_percent_exceeded(baseline.cpu_micros, candidate.cpu_micros, policy.max_cpu_regression_percent, cpu_available)
+            cpu_absolute_failed: bool = comparison_absolute_exceeded(candidate.cpu_micros, policy.max_cpu_micros, cpu_available)
+            rss_percent_failed: bool = comparison_percent_exceeded(baseline.peak_rss_bytes, candidate.peak_rss_bytes, policy.max_rss_regression_percent, rss_available)
+            rss_absolute_failed: bool = comparison_absolute_exceeded(candidate.peak_rss_bytes, policy.max_rss_bytes, rss_available)
+            function_failed: bool = comparison_function_self_exceeded(baseline.functions, candidate.functions, policy.max_function_self_regression_percent)
+            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
+            gate_failed: bool = wall_percent_failed or wall_absolute_failed or cpu_percent_failed or cpu_absolute_failed or rss_percent_failed or rss_absolute_failed or function_failed
             if not format_json:
                 append_text(buffer, "Elisa profile comparison\n")
                 append_text(buffer, "baseline: ")
@@ -424,7 +560,10 @@ extend ProfilerNative:
                     append_comparison_warning_text(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch)
                     append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
                     append_comparison_warning_text(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss)
-                return
+                append_text(buffer, "gate: ")
+                append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
+                append_text(buffer, "\n")
+                return comparison_gate_exit_code(policy, gate_inconclusive, gate_failed)
             append_text(buffer, "{\"kind\":\"profile_comparison\",\"schema_version\":")
             append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
             append_text(buffer, ",\"baseline\":{\"path\":")
@@ -521,7 +660,9 @@ extend ProfilerNative:
             append_i64(buffer, candidate.trace_events_omitted)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.trace_events_omitted, baseline.trace_events_omitted))
-            append_text(buffer, "}},\"warnings\":[")
+            append_text(buffer, "}}")
+            append_comparison_gate_json(buffer, policy, gate_inconclusive, gate_failed, wall_percent_failed, wall_absolute_failed, cpu_percent_failed, cpu_absolute_failed, rss_percent_failed, rss_absolute_failed, function_failed)
+            append_text(buffer, ",\"warnings\":[")
             warning_first: mutable bool = true
             warning_count: mutable i64 = NATIVE_ZERO
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different source paths or contents", source_mismatch, &warning_first)
@@ -535,18 +676,28 @@ extend ProfilerNative:
             append_text(buffer, "],\"status\":\"")
             append_text(buffer, "warning" if warning_count > NATIVE_ZERO else "ok")
             append_text(buffer, "\"}\n")
+            return comparison_gate_exit_code(policy, gate_inconclusive, gate_failed)
 
 
         def compare_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler compare BASELINE CANDIDATE [--format text|json] [--output PATH]") if argc < NATIVE_MIN_COMPARE_ARGUMENTS
+            return report_error("usage: elisa-profiler compare BASELINE CANDIDATE [--format text|json] [--output PATH] [--max-wall-regression-percent N] [--max-wall-ms N] [--max-cpu-regression-percent N] [--max-cpu-ms N] [--max-rss-regression-percent N] [--max-rss-bytes N] [--max-function-self-regression-percent N]") if argc < NATIVE_MIN_COMPARE_ARGUMENTS
             baseline_path: mutable darray[u8] = []
             candidate_path: mutable darray[u8] = []
             output_path: mutable darray[u8] = []
+            policy: mutable ComparisonPolicy = ComparisonPolicy{
+                max_wall_regression_percent: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+                max_wall_micros: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+                max_cpu_regression_percent: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+                max_cpu_micros: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+                max_rss_regression_percent: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+                max_rss_bytes: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+                max_function_self_regression_percent: NATIVE_COMPARISON_THRESHOLD_DISABLED,
+            }
             copy_cstr(baseline_path, slots[NATIVE_COMPARE_BASELINE_INDEX].cast[cstr])
             copy_cstr(candidate_path, slots[NATIVE_COMPARE_CANDIDATE_INDEX].cast[cstr])
             format_json: mutable bool = false
             index: mutable i64 = NATIVE_COMPARE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, output_path, format_json|:
+            while index < argc |index, slots, output_path, format_json, policy|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
                     return report_error("--format requires text or json") if index + NATIVE_ONE >= argc
@@ -561,6 +712,55 @@ extend ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
                     return report_error("--output requires a path") if index + NATIVE_ONE >= argc
                     copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-wall-regression-percent") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--max-wall-regression-pct") == NATIVE_ZERO:
+                    return report_error("--max-wall-regression-percent requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-wall-regression-percent must be between 0 and 1000000") if value < NATIVE_ZERO or value > NATIVE_COMPARISON_MAX_PERCENT
+                    policy.max_wall_regression_percent <- value
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-wall-ms") == NATIVE_ZERO:
+                    return report_error("--max-wall-ms requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-wall-ms requires a non-negative integer") if value < NATIVE_ZERO
+                    policy.max_wall_micros <- native_saturating_mul_nonnegative(value, NATIVE_MICROSECONDS_PER_MILLISECOND)
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-cpu-regression-percent") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--max-cpu-regression-pct") == NATIVE_ZERO:
+                    return report_error("--max-cpu-regression-percent requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-cpu-regression-percent must be between 0 and 1000000") if value < NATIVE_ZERO or value > NATIVE_COMPARISON_MAX_PERCENT
+                    policy.max_cpu_regression_percent <- value
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-cpu-ms") == NATIVE_ZERO:
+                    return report_error("--max-cpu-ms requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-cpu-ms requires a non-negative integer") if value < NATIVE_ZERO
+                    policy.max_cpu_micros <- native_saturating_mul_nonnegative(value, NATIVE_MICROSECONDS_PER_MILLISECOND)
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-rss-regression-percent") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--max-rss-regression-pct") == NATIVE_ZERO:
+                    return report_error("--max-rss-regression-percent requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-rss-regression-percent must be between 0 and 1000000") if value < NATIVE_ZERO or value > NATIVE_COMPARISON_MAX_PERCENT
+                    policy.max_rss_regression_percent <- value
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-rss-bytes") == NATIVE_ZERO:
+                    return report_error("--max-rss-bytes requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-rss-bytes requires a non-negative integer") if value < NATIVE_ZERO
+                    policy.max_rss_bytes <- value
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-function-self-regression-percent") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "--max-function-self-regression-pct") == NATIVE_ZERO:
+                    return report_error("--max-function-self-regression-percent requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    value: i64 = parse_nonnegative_integer(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--max-function-self-regression-percent must be between 0 and 1000000") if value < NATIVE_ZERO or value > NATIVE_COMPARISON_MAX_PERCENT
+                    policy.max_function_self_regression_percent <- value
                     index <- index + NATIVE_TWO
                     continue
                 return report_error("unknown compare option")
@@ -587,9 +787,9 @@ extend ProfilerNative:
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)
             rendered: mutable darray[u8] = []
-            append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json)
+            gate_status: i64 = append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json, policy)
             if output_path.count > NATIVE_ZERO.usize():
-                return NATIVE_ZERO if write_file(output_path, rendered)
+                return gate_status if write_file(output_path, rendered)
                 return report_error("could not write native comparison report")
             _ = write_all_fd(NATIVE_STANDARD_OUTPUT, rendered) can Console
-            return NATIVE_ZERO
+            return gate_status

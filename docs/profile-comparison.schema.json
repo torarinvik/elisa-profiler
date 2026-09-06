@@ -71,7 +71,38 @@
       "additionalProperties": false
     },
     "warnings": { "type": "array", "items": { "type": "string" } },
-    "status": { "type": "string", "enum": ["ok", "warning"] }
+    "status": { "type": "string", "enum": ["ok", "warning"] },
+    "thresholds": {
+      "type": "object",
+      "required": [
+        "wall_regression_percent",
+        "wall_max_ms",
+        "cpu_regression_percent",
+        "cpu_max_ms",
+        "rss_regression_percent",
+        "rss_max_bytes",
+        "function_self_regression_percent"
+      ],
+      "properties": {
+        "wall_regression_percent": { "type": ["integer", "null"], "minimum": 0 },
+        "wall_max_ms": { "type": ["number", "null"], "minimum": 0 },
+        "cpu_regression_percent": { "type": ["integer", "null"], "minimum": 0 },
+        "cpu_max_ms": { "type": ["number", "null"], "minimum": 0 },
+        "rss_regression_percent": { "type": ["integer", "null"], "minimum": 0 },
+        "rss_max_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "function_self_regression_percent": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "required": ["status", "violations"],
+      "properties": {
+        "status": { "type": "string", "enum": ["not_requested", "pass", "fail", "inconclusive"] },
+        "violations": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false,
   "$defs": {
