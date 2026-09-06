@@ -216,6 +216,10 @@ def main():
         assert b"Inclusive callers overlap their callees" in live_html
         assert b".split(/\\n+/)" not in live_html
 
+        invalid_millis = json.dumps(report).replace(
+            '"execution_ms_mean": 1.25', '"execution_ms_mean": 01.25')
+        capture.write_text(invalid_millis, encoding="utf-8")
+        run("compare", capture, capture, "--format", "json", ok=False)
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))
             run("compare", capture, capture, "--format", "json", ok=False)

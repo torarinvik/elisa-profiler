@@ -102,18 +102,29 @@ enum {
 static const uint64_t PROFILE_FNV_OFFSET_BASIS = UINT64_C(14695981039346656037);
 static const uint64_t PROFILE_FNV_PRIME = UINT64_C(1099511628211);
 static const char PROFILE_CHILD_ENVIRONMENT[] = "ELISA_PROFILE_CHILD";
+static const char PROFILE_FD_ENVIRONMENT[] = "ELISA_PROFILE_FD";
+static const char PROFILE_FRAMED_ENVIRONMENT[] = "ELISA_PROFILE_FRAMED";
+static const char PROFILE_THREAD_RECORDS_ENVIRONMENT[] = "ELISA_PROFILE_THREAD_RECORDS";
+static const char PROFILE_MODE_ENVIRONMENT[] = "ELISA_PROFILE_MODE";
+static const char PROFILE_EVENT_TRACE_ENVIRONMENT[] = "ELISA_PROFILE_EVENT_TRACE";
+static const char PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT[] = "ELISA_PROFILE_EVENT_TRACE_LIMIT";
+static const char PROFILE_MAX_LOCATIONS_ENVIRONMENT[] = "ELISA_PROFILE_MAX_LOCATIONS";
+static const char PROFILE_MAX_CALL_EDGES_ENVIRONMENT[] = "ELISA_PROFILE_MAX_CALL_EDGES";
+static const char PROFILE_MAX_STACKS_ENVIRONMENT[] = "ELISA_PROFILE_MAX_STACKS";
+static const char PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT[] = "ELISA_PROFILE_MAX_CAPTURE_BYTES";
+static const char PROFILE_RECENT_PATH_ENVIRONMENT[] = "ELISA_PROFILE_RECENT_PATH";
 static const char *const PROFILE_INTERNAL_ENVIRONMENTS[] = {
-    "ELISA_PROFILE_FD",
-    "ELISA_PROFILE_FRAMED",
-    "ELISA_PROFILE_THREAD_RECORDS",
-    "ELISA_PROFILE_MODE",
-    "ELISA_PROFILE_EVENT_TRACE",
-    "ELISA_PROFILE_EVENT_TRACE_LIMIT",
-    "ELISA_PROFILE_MAX_LOCATIONS",
-    "ELISA_PROFILE_MAX_CALL_EDGES",
-    "ELISA_PROFILE_MAX_STACKS",
-    "ELISA_PROFILE_MAX_CAPTURE_BYTES",
-    "ELISA_PROFILE_RECENT_PATH",
+    PROFILE_FD_ENVIRONMENT,
+    PROFILE_FRAMED_ENVIRONMENT,
+    PROFILE_THREAD_RECORDS_ENVIRONMENT,
+    PROFILE_MODE_ENVIRONMENT,
+    PROFILE_EVENT_TRACE_ENVIRONMENT,
+    PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT,
+    PROFILE_MAX_LOCATIONS_ENVIRONMENT,
+    PROFILE_MAX_CALL_EDGES_ENVIRONMENT,
+    PROFILE_MAX_STACKS_ENVIRONMENT,
+    PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT,
+    PROFILE_RECENT_PATH_ENVIRONMENT,
 };
 
 typedef struct {
@@ -361,24 +372,29 @@ static void profile_write_capture_begin(FILE *stream) {
     profile_record_emit();
 }
 
+static void profile_write_fallback_capture_begin(void) {
+    profile_write_capture_begin(profile_output_stream);
+    profile_clear_internal_environment();
+}
+
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
     profile_output_fd = STDERR_FILENO;
-    profile_framing_enabled = profile_environment_is_true("ELISA_PROFILE_FRAMED");
-    const char *fd_text = getenv("ELISA_PROFILE_FD");
+    profile_framing_enabled = profile_environment_is_true(PROFILE_FRAMED_ENVIRONMENT);
+    const char *fd_text = getenv(PROFILE_FD_ENVIRONMENT);
     if (fd_text == NULL || *fd_text == '\0') {
-        profile_write_capture_begin(profile_output_stream);
+        profile_write_fallback_capture_begin();
         return;
     }
     char *end = NULL;
     long requested_fd = strtol(fd_text, &end, 10);
     if (end == fd_text || *end != '\0' || requested_fd < 0 || requested_fd > INT_MAX) {
-        profile_write_capture_begin(profile_output_stream);
+        profile_write_fallback_capture_begin();
         return;
     }
     int duplicate_fd = dup((int)requested_fd);
     if (duplicate_fd < 0) {
-        profile_write_capture_begin(profile_output_stream);
+        profile_write_fallback_capture_begin();
         return;
     }
     if (duplicate_fd != (int)requested_fd) {
@@ -387,7 +403,7 @@ static void profile_initialize_output(void) {
     FILE *stream = fdopen(duplicate_fd, "w");
     if (stream == NULL) {
         close(duplicate_fd);
-        profile_write_capture_begin(profile_output_stream);
+        profile_write_fallback_capture_begin();
         return;
     }
     (void)setvbuf(stream, NULL, _IONBF, 0);
@@ -1968,9 +1984,9 @@ static uint64_t profile_read_limit_environment(const char *name, uint64_t fallba
 }
 
 int main(int argc, char **argv) {
-    const char *recent_path = getenv("ELISA_PROFILE_RECENT_PATH");
+    const char *recent_path = getenv(PROFILE_RECENT_PATH_ENVIRONMENT);
     profile_recent_path_enabled = recent_path != NULL && strcmp(recent_path, "1") == 0;
-    const char *mode = getenv("ELISA_PROFILE_MODE");
+    const char *mode = getenv(PROFILE_MODE_ENVIRONMENT);
     if (mode != NULL) {
         if (strcmp(mode, "functions") == 0) {
             profile_mode = PROFILE_MODE_FUNCTIONS;
@@ -1982,20 +1998,20 @@ int main(int argc, char **argv) {
             profile_mode = PROFILE_MODE_DIAGNOSTIC;
         }
     }
-    const char *event_trace = getenv("ELISA_PROFILE_EVENT_TRACE");
+    const char *event_trace = getenv(PROFILE_EVENT_TRACE_ENVIRONMENT);
     profile_event_trace_enabled = event_trace != NULL && strcmp(event_trace, "1") == 0;
-    const char *thread_records = getenv("ELISA_PROFILE_THREAD_RECORDS");
+    const char *thread_records = getenv(PROFILE_THREAD_RECORDS_ENVIRONMENT);
     profile_thread_records_enabled = thread_records != NULL && strcmp(thread_records, "1") == 0;
     profile_event_trace_limit = profile_read_uint64_environment(
-        "ELISA_PROFILE_EVENT_TRACE_LIMIT");
+        PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT);
     profile_location_limit = profile_read_limit_environment(
-        "ELISA_PROFILE_MAX_LOCATIONS", PROFILE_DEFAULT_LOCATION_LIMIT);
+        PROFILE_MAX_LOCATIONS_ENVIRONMENT, PROFILE_DEFAULT_LOCATION_LIMIT);
     profile_call_edge_limit = profile_read_limit_environment(
-        "ELISA_PROFILE_MAX_CALL_EDGES", PROFILE_DEFAULT_CALL_EDGE_LIMIT);
+        PROFILE_MAX_CALL_EDGES_ENVIRONMENT, PROFILE_DEFAULT_CALL_EDGE_LIMIT);
     profile_call_path_limit = profile_read_limit_environment(
-        "ELISA_PROFILE_MAX_STACKS", PROFILE_DEFAULT_CALL_PATH_LIMIT);
+        PROFILE_MAX_STACKS_ENVIRONMENT, PROFILE_DEFAULT_CALL_PATH_LIMIT);
     profile_capture_byte_limit = profile_read_limit_environment(
-        "ELISA_PROFILE_MAX_CAPTURE_BYTES", PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT);
+        PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT, PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT);
     (void)profile_output();
     profile_install_crash_handlers();
     atexit(profile_dump);

@@ -107,6 +107,11 @@ int main(void) {
     profile_clear_internal_environment();
     assert(getenv("ELISA_PROFILE_FD") == NULL);
     assert(getenv("ELISA_PROFILE_MODE") == NULL);
+    setenv("ELISA_PROFILE_FD", "not-a-descriptor", 1);
+    setenv("ELISA_PROFILE_MODE", "functions", 1);
+    profile_initialize_output();
+    assert(getenv("ELISA_PROFILE_FD") == NULL);
+    assert(getenv("ELISA_PROFILE_MODE") == NULL);
     puts("collector regression smoke OK");
     return 0;
 }
