@@ -88,14 +88,14 @@ extend ProfilerNative:
 
 
         def clear_target_environment() -> void:
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_FD")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_MODE")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_EVENT_TRACE")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_EVENT_TRACE_LIMIT")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_MAX_CAPTURE_BYTES")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_RECENT_PATH")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_FRAMED")
-            _ = profiler_ffi_unsetenv("ELISA_PROFILE_THREAD_RECORDS")
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_FD_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_MODE_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_EVENT_TRACE_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_RECENT_PATH_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_FRAMED_ENVIRONMENT)
+            _ = profiler_ffi_unsetenv(NATIVE_PROFILE_THREAD_RECORDS_ENVIRONMENT)
 
 
         def environment_assignment_valid(value: darray[u8]&) -> bool:
@@ -274,17 +274,17 @@ extend ProfilerNative:
             append_i64(fd_text, capture_fd)
             fd_text.push(NATIVE_BYTE_NUL)
             fd_cstr: cstr = (&fd_text[0]).cast[cstr] can Unsafe.PointerCast
-            if profiler_ffi_setenv("ELISA_PROFILE_FD", fd_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_FD_ENVIRONMENT, fd_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
                 return failed_target_run_result(false)
-            if profiler_ffi_setenv("ELISA_PROFILE_FRAMED", "1", NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_FRAMED_ENVIRONMENT, "1", NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
                 return failed_target_run_result(false)
-            if profiler_ffi_setenv("ELISA_PROFILE_THREAD_RECORDS", "1", NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_THREAD_RECORDS_ENVIRONMENT, "1", NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
@@ -293,14 +293,14 @@ extend ProfilerNative:
             mode_text.extend(mode)
             mode_text.push(NATIVE_BYTE_NUL)
             mode_cstr: cstr = (&mode_text[0]).cast[cstr] can Unsafe.PointerCast
-            if profiler_ffi_setenv("ELISA_PROFILE_MODE", mode_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_MODE_ENVIRONMENT, mode_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
                 return failed_target_run_result(false)
             trace_flag: mutable cstr = "0"
             trace_flag <- "1" if event_trace
-            if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE", trace_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_EVENT_TRACE_ENVIRONMENT, trace_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
@@ -309,7 +309,7 @@ extend ProfilerNative:
             append_i64(limit_text, trace_limit if event_trace else NATIVE_ZERO)
             limit_text.push(NATIVE_BYTE_NUL)
             limit_cstr: cstr = (&limit_text[0]).cast[cstr] can Unsafe.PointerCast
-            if profiler_ffi_setenv("ELISA_PROFILE_EVENT_TRACE_LIMIT", limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_EVENT_TRACE_LIMIT_ENVIRONMENT, limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
@@ -318,14 +318,14 @@ extend ProfilerNative:
             append_i64(capture_byte_limit_text, capture_byte_limit)
             capture_byte_limit_text.push(NATIVE_BYTE_NUL)
             capture_byte_limit_cstr: cstr = (&capture_byte_limit_text[0]).cast[cstr] can Unsafe.PointerCast
-            if profiler_ffi_setenv("ELISA_PROFILE_MAX_CAPTURE_BYTES", capture_byte_limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT, capture_byte_limit_cstr, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
                 return failed_target_run_result(false)
             recent_flag: mutable cstr = "0"
             recent_flag <- "1" if recent_path and not event_trace
-            if profiler_ffi_setenv("ELISA_PROFILE_RECENT_PATH", recent_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
+            if profiler_ffi_setenv(NATIVE_PROFILE_RECENT_PATH_ENVIRONMENT, recent_flag, NATIVE_ENV_OVERWRITE) != NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 _ = profiler_ffi_close(stderr_fd)
                 clear_target_environment()
