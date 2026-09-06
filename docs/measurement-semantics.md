@@ -266,7 +266,10 @@ When native collection is enabled, `thread_loss` records the event count and
 loss counters for each profiler thread. `repetition` identifies the target
 run because collector thread IDs are local to a capture. `location_dropped`,
 `call_edge_dropped`, and `stack_dropped` identify bounded-detail loss;
-`trace_dropped` and `bytes_dropped` identify omitted event-trace records. A
+`trace_dropped` and `bytes_dropped` identify omitted event-trace records.
+`event_start` and `event_end` bracket the first and last observed event
+sequence for that thread, so loss is localized to an evidence interval without
+claiming exact drop timestamps. They are nullable for legacy captures. A
 thread record is diagnostic evidence, not a replacement for aggregate counters.
 No individual trace event is treated as an independent statistical sample.
 The median is the middle value (the arithmetic mean of the two middle values

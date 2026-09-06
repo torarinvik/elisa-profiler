@@ -436,6 +436,8 @@ struct profile_thread_state {
     profile_thread_state *next;
     uint64_t thread_id;
     uint64_t event_count;
+    uint64_t first_event;
+    uint64_t last_event;
     uint64_t location_dropped;
     uint64_t call_edge_dropped;
     uint64_t stack_dropped;
@@ -1148,6 +1150,10 @@ static void profile_record(const char *function_name, uint32_t line,
     (void)thread;
 #endif
     if (thread != NULL) {
+        if (thread->event_count == 0) {
+            thread->first_event = profile_event_count;
+        }
+        thread->last_event = profile_event_count;
         thread->event_count =
             profile_saturating_increment_u64(thread->event_count);
     }
@@ -1614,6 +1620,18 @@ static void profile_dump_thread_records(void) {
         profile_record_append_uint64(thread->trace_dropped);
         profile_record_append_char('\t');
         profile_record_append_uint64(thread->bytes_dropped);
+        profile_record_append_char('\t');
+        if (thread->event_count == 0) {
+            profile_record_append_char('-');
+        } else {
+            profile_record_append_uint64(thread->first_event);
+        }
+        profile_record_append_char('\t');
+        if (thread->event_count == 0) {
+            profile_record_append_char('-');
+        } else {
+            profile_record_append_uint64(thread->last_event);
+        }
         profile_record_emit();
     }
 }

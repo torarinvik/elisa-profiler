@@ -611,7 +611,9 @@
         "call_edge_dropped": { "type": "integer", "minimum": 0 },
         "stack_dropped": { "type": "integer", "minimum": 0 },
         "trace_dropped": { "type": "integer", "minimum": 0 },
-        "bytes_dropped": { "type": "integer", "minimum": 0 }
+        "bytes_dropped": { "type": "integer", "minimum": 0 },
+        "event_start": { "type": ["integer", "null"], "minimum": 0 },
+        "event_end": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": false
     },

@@ -437,6 +437,8 @@ extend ProfilerNative:
             stack_dropped: mutable darray[u8] = []
             trace_dropped: mutable darray[u8] = []
             bytes_dropped: mutable darray[u8] = []
+            event_start: mutable darray[u8] = []
+            event_end: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &thread_id)
             cursor <- protocol_field_into(data, cursor, stop, &events)
             cursor <- protocol_field_into(data, cursor, stop, &location_dropped)
@@ -444,7 +446,14 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &stack_dropped)
             cursor <- protocol_field_into(data, cursor, stop, &trace_dropped)
             cursor <- protocol_field_into(data, cursor, stop, &bytes_dropped)
-            valid: bool = cursor == stop and protocol_unsigned(thread_id) and protocol_unsigned(events) and protocol_unsigned(location_dropped) and protocol_unsigned(call_edge_dropped) and protocol_unsigned(stack_dropped) and protocol_unsigned(trace_dropped) and protocol_unsigned(bytes_dropped)
+            if cursor < stop:
+                cursor <- protocol_field_into(data, cursor, stop, &event_start)
+                cursor <- protocol_field_into(data, cursor, stop, &event_end)
+            event_range_available: bool = event_start.count > NATIVE_ZERO.usize() and event_end.count > NATIVE_ZERO.usize() and not protocol_field_is(event_start, "-") and not protocol_field_is(event_end, "-")
+            event_range_missing: bool = event_start.count == NATIVE_ZERO.usize() and event_end.count == NATIVE_ZERO.usize() or (protocol_field_is(event_start, "-") and protocol_field_is(event_end, "-"))
+            valid: mutable bool = cursor == stop and protocol_unsigned(thread_id) and protocol_unsigned(events) and protocol_unsigned(location_dropped) and protocol_unsigned(call_edge_dropped) and protocol_unsigned(stack_dropped) and protocol_unsigned(trace_dropped) and protocol_unsigned(bytes_dropped)
+            valid <- valid and (event_range_missing or event_range_available)
+            valid <- valid and (not event_range_available or (protocol_unsigned(event_start) and protocol_unsigned(event_end) and protocol_number_field(event_start) <= protocol_number_field(event_end)))
             if not valid:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_THREAD
@@ -466,6 +475,16 @@ extend ProfilerNative:
             append_protocol_number(records, trace_dropped)
             append_text(records, ",\"bytes_dropped\":")
             append_protocol_number(records, bytes_dropped)
+            append_text(records, ",\"event_start\":")
+            if event_range_available:
+                append_protocol_number(records, event_start)
+            else:
+                append_text(records, "null")
+            append_text(records, ",\"event_end\":")
+            if event_range_available:
+                append_protocol_number(records, event_end)
+            else:
+                append_text(records, "null")
             append_text(records, "}")
             summary.thread_loss_record_count <- native_saturating_add(summary.thread_loss_record_count, NATIVE_ONE)
 

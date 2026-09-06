@@ -402,10 +402,15 @@ def main():
                 "stack_dropped",
                 "trace_dropped",
                 "bytes_dropped",
+                "event_start",
+                "event_end",
             }
             for record in measured["thread_loss"]
         )
         assert all(record["events"] > 0 for record in measured["thread_loss"])
+        assert all(record["event_start"] is not None for record in measured["thread_loss"])
+        assert all(record["event_end"] is not None for record in measured["thread_loss"])
+        assert all(record["event_start"] <= record["event_end"] for record in measured["thread_loss"])
         assert {record["repetition"] for record in measured["thread_loss"]} == {1, 2}
         assert all(item["detail_records"]["locations"] >= item["detail_records"]["functions"] for item in repetitions)
         assert all(item["cpu_user_ms"] is not None for item in repetitions)
