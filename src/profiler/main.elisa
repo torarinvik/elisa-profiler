@@ -701,7 +701,8 @@ extend ProfilerNative:
             append_text(buffer, "timeout") if status >= NATIVE_ZERO and timed_out
             append_text(buffer, "target signal") if status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
             append_text(buffer, "target exit") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
-            append_text(buffer, "success") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO
+            append_text(buffer, "success") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
+            append_text(buffer, "incomplete capture") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
 
 
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:

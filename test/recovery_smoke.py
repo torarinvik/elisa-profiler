@@ -86,6 +86,14 @@ def main() -> int:
         assert payload["recovery"]["valid_frames"] == 2, payload
         assert payload["recovery"]["valid_bytes"] == len(complete), payload
         assert payload["recovery"]["capture_bytes"] == len(complete + truncated), payload
+        recovered_html = subprocess.run(
+            [str(native), "report", str(output), "--format", "html"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert recovered_html.returncode == 0, (recovered_html.returncode, recovered_html.stderr)
+        assert b"<dt>Outcome</dt><dd>incomplete_artifact</dd>" in recovered_html.stdout, recovered_html.stdout
         subprocess.run([sys.executable, str(ROOT / "test" / "profile_schema_smoke.py"), str(SCHEMA), str(output)], check=True)
         legacy_manifest = work / "legacy.manifest.json"
         legacy_payload = dict(manifest_payload)
