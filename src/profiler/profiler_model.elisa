@@ -455,6 +455,7 @@ module ProfilerNative:
             stable_ids_available: mutable bool
             stable_id_namespace: mutable darray[u8]
             stable_id_version: mutable i64
+            stable_id_contract_known: mutable bool
             exit_code: mutable i64
             detail_budget_exceeded: mutable bool
             functions: mutable darray[ComparisonFunctionRecord]

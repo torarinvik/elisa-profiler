@@ -127,6 +127,15 @@ def main():
             "compare", identity_baseline_path, legacy_candidate_path, "--format", "json",
             "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
         )
+        run(
+            "compare", identity_baseline_path, identity_baseline_path, "--format", "json",
+            "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
+        )
+        mixed_identity = copy.deepcopy(identity_baseline)
+        mixed_identity["functions"].append({key: value for key, value in identity_function.items() if key != "identity_id"})
+        mixed_identity_path = work / "identity-mixed.json"
+        mixed_identity_path.write_text(json.dumps(mixed_identity), encoding="utf-8")
+        run("compare", mixed_identity_path, mixed_identity_path, "--format", "json", ok=False)
         contract_baseline = copy.deepcopy(identity_baseline)
         contract_candidate = copy.deepcopy(identity_baseline)
         contract_baseline["run"]["capabilities"] = {"identity": {

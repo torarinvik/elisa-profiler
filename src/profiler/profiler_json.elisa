@@ -1020,6 +1020,51 @@ extend ProfilerNative:
             return true
 
 
+        def json_validate_identity_coverage(capture: ComparisonCapture) -> bool:
+            function_seen: mutable bool = false
+            function_has_identity: mutable bool = false
+            for index in 0..<capture.functions.count |index, capture, function_seen, function_has_identity|:
+                has_identity: bool = capture.functions[index].identity_id.count > NATIVE_ZERO.usize()
+                if not function_seen:
+                    function_seen <- true
+                    function_has_identity <- has_identity
+                else:
+                    return false if has_identity != function_has_identity
+
+            edge_seen: mutable bool = false
+            edge_has_identity: mutable bool = false
+            for index in 0..<capture.call_edges.count |index, capture, edge_seen, edge_has_identity|:
+                caller_has_identity: bool = capture.call_edges[index].caller_identity_id.count > NATIVE_ZERO.usize()
+                callee_has_identity: bool = capture.call_edges[index].callee_identity_id.count > NATIVE_ZERO.usize()
+                return false if caller_has_identity != callee_has_identity
+                if not edge_seen:
+                    edge_seen <- true
+                    edge_has_identity <- caller_has_identity
+                else:
+                    return false if caller_has_identity != edge_has_identity
+
+            stack_seen: mutable bool = false
+            stack_has_identity: mutable bool = false
+            for index in 0..<capture.stacks.count |index, capture, stack_seen, stack_has_identity|:
+                has_identity: bool = capture.stacks[index].identity_path.count > NATIVE_ZERO.usize()
+                if not stack_seen:
+                    stack_seen <- true
+                    stack_has_identity <- has_identity
+                else:
+                    return false if has_identity != stack_has_identity
+
+            location_seen: mutable bool = false
+            location_has_identity: mutable bool = false
+            for index in 0..<capture.location_records.count |index, capture, location_seen, location_has_identity|:
+                has_identity: bool = capture.location_records[index].identity_id.count > NATIVE_ZERO.usize()
+                if not location_seen:
+                    location_seen <- true
+                    location_has_identity <- has_identity
+                else:
+                    return false if has_identity != location_has_identity
+            return true
+
+
         def read_comparison_capture(data: darray[u8]&, capture: mutable ComparisonCapture&) -> bool can[Abort.Panic, Memory.Allocate]:
             return false if not json_document_is_object(data)
             schema_version: mutable i64 = NATIVE_ZERO
@@ -1064,6 +1109,7 @@ extend ProfilerNative:
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &capture.exit_code)
             capture.stable_id_namespace <- []
             capture.stable_id_version <- NATIVE_ZERO
+            identity_status: mutable darray[u8] = []
             capabilities_start: i64 = json_key_value_start(data, "capabilities", run_start.usize(), run_stop.usize())
             if capabilities_start >= NATIVE_ZERO:
                 capabilities_stop: i64 = json_object_end(data, capabilities_start.usize(), run_stop.usize())
@@ -1071,7 +1117,6 @@ extend ProfilerNative:
                 identity_object: mutable darray[u8] = []
                 return false if not json_read_optional_object_field(data, "identity", capabilities_start.usize(), capabilities_stop.usize(), &identity_object)
                 if identity_object.count > NATIVE_ZERO.usize():
-                    identity_status: mutable darray[u8] = []
                     return false if not json_read_string_field(identity_object, "status", NATIVE_ZERO.usize(), identity_object.count, &identity_status)
                     if protocol_field_is(identity_status, "compiler_stable_ids"):
                         return false if not json_read_string_field(identity_object, "namespace", NATIVE_ZERO.usize(), identity_object.count, &capture.stable_id_namespace)
@@ -1090,6 +1135,16 @@ extend ProfilerNative:
                 capture.stable_ids_available <- true if capture.stacks[index].identity_path.count > NATIVE_ZERO.usize()
             for index in 0..<capture.location_records.count |index, capture|:
                 capture.stable_ids_available <- true if capture.location_records[index].identity_id.count > NATIVE_ZERO.usize()
+            return false if not json_validate_identity_coverage(capture)
+            if protocol_field_is(identity_status, "compiler_stable_ids"):
+                return false if not capture.stable_ids_available
+            elif protocol_field_is(identity_status, "source_name_fallback"):
+                return false if capture.stable_ids_available
+            elif identity_status.count > NATIVE_ZERO.usize():
+                return false
+            capture.stable_id_contract_known <- false
+            if capture.stable_ids_available:
+                capture.stable_id_contract_known <- capture.stable_id_namespace.count > NATIVE_ZERO.usize() and protocol_field_is(capture.stable_id_namespace, "elisa.compiler.trace") and capture.stable_id_version == NATIVE_TRACE_ID_VERSION
             return true
 
 
