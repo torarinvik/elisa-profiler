@@ -1631,16 +1631,19 @@ extend ProfilerNative:
             recovered: mutable darray[u8] = []
             append_recovered_report(&recovered, source, source_bytes, mode, summary, manifest_path, capture_path, manifest_state, source_digest, capture.count.i64())
             rendered: mutable darray[u8] = []
-            if format_text:
-                return report_error("recovered capture is not a native JSON profile") if not append_offline_text_report(&rendered, recovered)
-            elif format_folded:
-                return report_error("recovered capture is not a native JSON profile") if not append_offline_folded_report(&rendered, recovered)
-            elif format_speedscope:
-                return report_error("recovered capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, recovered)
-            elif format_html:
-                return report_error("recovered capture is not a native JSON profile") if not append_offline_html_report(&rendered, recovered)
-            else:
+            if format_json:
                 rendered.extend(recovered)
+            else:
+                recovered_profile: mutable NativeOfflineProfile = empty_native_offline_profile()
+                return report_error("recovered capture is malformed or unsupported") if not read_offline_profile(recovered, &recovered_profile)
+                if format_text:
+                    return report_error("recovered capture is not a native JSON profile") if not append_offline_text_profile(&rendered, recovered_profile)
+                elif format_folded:
+                    return report_error("recovered capture is not a native JSON profile") if not append_offline_folded_report(&rendered, recovered_profile)
+                elif format_speedscope:
+                    return report_error("recovered capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, recovered_profile)
+                elif format_html:
+                    return report_error("recovered capture is not a native JSON profile") if not append_offline_html_profile(&rendered, recovered_profile)
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, rendered)
                 return report_error("could not write recovered profile")
@@ -1723,32 +1726,23 @@ extend ProfilerNative:
             return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
             capture: mutable darray[u8] = []
             return report_error("capture artifact is malformed or unsupported") if not unwrap_profile_artifact(report, &capture)
-            report_schema_version: mutable i64 = NATIVE_ZERO
-            return report_error("capture report schema is missing or unsupported") if not json_read_number_field(capture, "schema_version", NATIVE_ZERO.usize(), capture.count, &report_schema_version)
-            return report_error("capture report envelope is missing or unsupported") if not json_validate_report_envelope(capture, report_schema_version, "profile")
-            return report_error("capture source snapshot is invalid") if not json_validate_source_snapshot(capture)
-            return report_error("capture detail arrays contain invalid accounting") if not json_validate_detail_arrays(capture)
+            offline_profile: mutable NativeOfflineProfile = empty_native_offline_profile()
+            return report_error("capture report is malformed or unsupported") if not read_offline_profile(capture, &offline_profile)
             if source_override_seen:
-                workload_start: i64 = json_key_value_start(capture, "workload", NATIVE_ZERO.usize(), capture.count)
-                return report_error("capture does not contain workload identity") if workload_start < NATIVE_ZERO or capture[workload_start.usize()] != NATIVE_BYTE_LEFT_BRACE
-                workload_stop: i64 = json_object_end(capture, workload_start.usize(), capture.count)
-                return report_error("capture workload identity is malformed") if workload_stop < NATIVE_ZERO
-                expected_source_digest: mutable darray[u8] = []
-                expected_source_available: mutable bool = false
-                return report_error("capture workload identity is malformed") if not json_read_nullable_string_field(capture, "source_sha256", workload_start.usize(), workload_stop.usize(), &expected_source_digest, &expected_source_available)
-                return report_error("capture does not contain a source SHA-256 identity") if not expected_source_available
+                return report_error("capture does not contain workload identity") if offline_profile.workload.count == NATIVE_ZERO.usize()
+                return report_error("capture does not contain a source SHA-256 identity") if not offline_profile.source_digest_available
                 source_bytes: darray[u8] = read_file(source_override)
                 return report_error("source file could not be read for report verification") if source_bytes.count == NATIVE_ZERO.usize()
-                return report_error("source changed since capture; report locations would be misattributed") if not byte_arrays_equal(expected_source_digest, sha256_hex(source_bytes))
+                return report_error("source changed since capture; report locations would be misattributed") if not byte_arrays_equal(offline_profile.source_digest, sha256_hex(source_bytes))
             rendered: mutable darray[u8] = []
             if format_text:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_text_report(&rendered, capture)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_text_profile(&rendered, offline_profile)
             elif format_folded:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_folded_report(&rendered, capture)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_folded_report(&rendered, offline_profile)
             elif format_speedscope:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, capture)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_speedscope_report(&rendered, offline_profile)
             elif format_html:
-                return report_error("offline capture is not a native JSON profile") if not append_offline_html_report(&rendered, capture)
+                return report_error("offline capture is not a native JSON profile") if not append_offline_html_profile(&rendered, offline_profile)
             else:
                 rendered.extend(capture)
             if output_path.count > NATIVE_ZERO.usize():

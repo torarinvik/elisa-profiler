@@ -146,26 +146,12 @@ extend ProfilerNative:
             append_text(buffer, "]}]}\n")
 
 
-        def append_offline_folded_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
-            return false if not json_document_is_object(data)
-            timing: mutable bool = false
-            return false if not json_read_location_timing(data, &timing)
-            return false if not json_read_stacks_to_folded(data, buffer, timing)
+        def append_offline_folded_report(buffer: mutable darray[u8]&, profile: NativeOfflineProfile) -> bool can[Abort.Panic, Memory.Allocate]:
+            buffer.extend(profile.folded_records)
             buffer.push(NATIVE_BYTE_NEWLINE) if buffer.count > NATIVE_ZERO.usize()
             return true
-
-
-        def append_offline_speedscope_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
-            return false if not json_document_is_object(data)
-            source: mutable darray[u8] = []
-            timing: mutable bool = false
-            source_start: i64 = json_source_value_start(data)
-            return false if source_start < NATIVE_ZERO
-            return false if json_string_into(data, source_start.usize(), data.count, &source) < NATIVE_ZERO
-            return false if not json_read_location_timing(data, &timing)
-            folded: mutable darray[u8] = []
-            return false if not json_read_stacks_to_folded(data, &folded, timing)
-            append_speedscope_report(buffer, source, folded, timing)
+        def append_offline_speedscope_report(buffer: mutable darray[u8]&, profile: NativeOfflineProfile) -> bool can[Abort.Panic, Memory.Allocate]:
+            append_speedscope_report(buffer, profile.source, profile.folded_records, profile.location_timing)
             return true
 
 
@@ -292,255 +278,85 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details></section>")
 
 
-        def append_offline_html_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
-            return false if not json_document_is_object(data)
-            source: mutable darray[u8] = []
-            source_start: i64 = json_source_value_start(data)
-            return false if source_start < NATIVE_ZERO
-            return false if json_string_into(data, source_start.usize(), data.count, &source) < NATIVE_ZERO
-            source_snapshot: mutable darray[u8] = []
-            source_snapshot_start: i64 = json_key_value_start(data, "source_snapshot", NATIVE_ZERO.usize(), data.count)
-            if source_snapshot_start >= NATIVE_ZERO and data[source_snapshot_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
-                source_snapshot_stop: i64 = json_object_end(data, source_snapshot_start.usize(), data.count)
-                return false if source_snapshot_stop < NATIVE_ZERO
-                return false if not json_read_string_field(data, "content", source_snapshot_start.usize(), source_snapshot_stop.usize(), &source_snapshot)
-            summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
-            run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
-            return false if summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
-            summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
-            run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
-            return false if summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
-            events: mutable i64 = NATIVE_ZERO
-            locations: mutable i64 = NATIVE_ZERO
-            dropped: mutable i64 = NATIVE_ZERO
-            thread_count: mutable i64 = NATIVE_ZERO
-            exit_code: mutable i64 = NATIVE_ZERO
-            execution_mean_micros: mutable i64 = NATIVE_ZERO
-            execution_mean_available: mutable bool = false
-            cpu_micros: mutable i64 = NATIVE_ZERO
-            cpu_available: mutable bool = false
-            peak_rss_bytes: mutable i64 = NATIVE_ZERO
-            peak_rss_available: mutable bool = false
-            completed_repetitions: mutable i64 = NATIVE_ZERO
-            successful_repetitions: mutable i64 = NATIVE_ZERO
-            outcome: mutable darray[u8] = []
-            source_digest: mutable darray[u8] = []
-            source_digest_available: mutable bool = false
-            capture_complete: mutable bool = false
-            capture_complete_available: mutable bool = false
-            host: mutable NativeHostMetadata = NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false}
-            host_os: mutable darray[u8] = []
-            host_architecture: mutable darray[u8] = []
-            host_os_available: mutable bool = false
-            host_architecture_available: mutable bool = false
-            workload: mutable darray[u8] = []
-            call_edge_dropped: mutable i64 = NATIVE_ZERO
-            stack_dropped: mutable i64 = NATIVE_ZERO
-            frame_dropped: mutable i64 = NATIVE_ZERO
-            capture_bytes_dropped: mutable i64 = NATIVE_ZERO
-            stack_overflow_entries: mutable i64 = NATIVE_ZERO
-            trace_omitted: mutable i64 = NATIVE_ZERO
-            crash_signal: mutable i64 = NATIVE_ZERO
-            crash_signal_available: mutable bool = false
-            return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
-            return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
-            return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
-            return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
-            return false if not json_read_optional_number_field(data, "dropped_call_edges", summary_start.usize(), summary_stop.usize(), &call_edge_dropped)
-            return false if not json_read_optional_number_field(data, "dropped_stacks", summary_start.usize(), summary_stop.usize(), &stack_dropped)
-            return false if not json_read_optional_number_field(data, "frame_dropped", summary_start.usize(), summary_stop.usize(), &frame_dropped)
-            return false if not json_read_optional_number_field(data, "capture_bytes_dropped", summary_start.usize(), summary_stop.usize(), &capture_bytes_dropped)
-            return false if not json_read_optional_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &stack_overflow_entries)
-            return false if not json_read_optional_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &trace_omitted)
-            return false if not json_read_nullable_number_field(data, "crash_signal", summary_start.usize(), summary_stop.usize(), &crash_signal, &crash_signal_available)
-            return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
-            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
-            if outcome_start >= NATIVE_ZERO:
-                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &outcome) < NATIVE_ZERO
-            if outcome.count == NATIVE_ZERO.usize():
-                append_text(outcome, "success" if exit_code == NATIVE_ZERO else "target_exit")
-            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
-            if capture_complete_start >= NATIVE_ZERO:
-                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &capture_complete)
-                capture_complete_available <- true
-            workload_start: i64 = json_key_value_start(data, "workload", NATIVE_ZERO.usize(), data.count)
-            if workload_start >= NATIVE_ZERO and data[workload_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
-                workload_stop: i64 = json_object_end(data, workload_start.usize(), data.count)
-                return false if workload_stop < NATIVE_ZERO
-                return false if not json_read_nullable_string_field(data, "source_sha256", workload_start.usize(), workload_stop.usize(), &source_digest, &source_digest_available)
-                for index in workload_start.usize()..<workload_stop.usize() |workload, data|:
-                    workload.push(data[index])
-            host_start: i64 = json_key_value_start(data, "host", NATIVE_ZERO.usize(), data.count)
-            if host_start >= NATIVE_ZERO and data[host_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
-                host_stop: i64 = json_object_end(data, host_start.usize(), data.count)
-                return false if host_stop < NATIVE_ZERO
-                return false if not json_read_nullable_string_field(data, "os", host_start.usize(), host_stop.usize(), &host_os, &host_os_available)
-                return false if not json_read_nullable_string_field(data, "architecture", host_start.usize(), host_stop.usize(), &host_architecture, &host_architecture_available)
-                host <- NativeHostMetadata{available: true, os: host_os, architecture: host_architecture, load_average_1m: NATIVE_ZERO_F64, load_average_available: false}
-            execution_mean_start: i64 = json_key_value_start(data, "execution_ms_mean", run_start.usize(), run_stop.usize())
-            if execution_mean_start >= NATIVE_ZERO:
-                return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &execution_mean_micros)
-                execution_mean_available <- true
-            return false if not json_read_nullable_millis_field(data, "cpu_ms", run_start.usize(), run_stop.usize(), &cpu_micros, &cpu_available)
-            return false if not json_read_nullable_number_field(data, "peak_rss_bytes", run_start.usize(), run_stop.usize(), &peak_rss_bytes, &peak_rss_available)
-            completed_start: i64 = json_key_value_start(data, "completed_repetitions", run_start.usize(), run_stop.usize())
-            if completed_start >= NATIVE_ZERO:
-                return false if not json_read_number_field(data, "completed_repetitions", run_start.usize(), run_stop.usize(), &completed_repetitions)
-            successful_start: i64 = json_key_value_start(data, "successful_repetitions", run_start.usize(), run_stop.usize())
-            if successful_start >= NATIVE_ZERO:
-                return false if not json_read_number_field(data, "successful_repetitions", run_start.usize(), run_stop.usize(), &successful_repetitions)
-            timing: mutable bool = false
-            return false if not json_read_location_timing(data, &timing)
-            folded: mutable darray[u8] = []
-            return false if not json_read_stacks_to_folded(data, &folded, timing)
-            functions_start: i64 = json_key_value_start(data, "functions", NATIVE_ZERO.usize(), data.count)
-            return false if functions_start < NATIVE_ZERO or data[functions_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
-            functions_stop: i64 = json_array_end(data, functions_start.usize(), data.count)
-            return false if functions_stop < NATIVE_ZERO
-            functions: mutable darray[u8] = []
-            for index in functions_start.usize()..<functions_stop.usize() |functions, data|:
-                functions.push(data[index])
-            call_edges: mutable darray[u8] = []
-            call_edges_start: i64 = json_key_value_start(data, "call_edges", NATIVE_ZERO.usize(), data.count)
-            if call_edges_start >= NATIVE_ZERO:
-                call_edges_stop: i64 = json_array_end(data, call_edges_start.usize(), data.count)
-                return false if call_edges_stop < NATIVE_ZERO
-                for index in call_edges_start.usize()..<call_edges_stop.usize() |call_edges, data|:
-                    call_edges.push(data[index])
-            location_records: mutable darray[u8] = []
-            location_records_start: i64 = json_key_value_start(data, "locations", NATIVE_ZERO.usize(), data.count)
-            if location_records_start >= NATIVE_ZERO:
-                location_records_stop: i64 = json_array_end(data, location_records_start.usize(), data.count)
-                return false if location_records_stop < NATIVE_ZERO
-                for index in location_records_start.usize()..<location_records_stop.usize() |location_records, data|:
-                    location_records.push(data[index])
-            thread_loss: mutable darray[u8] = []
-            thread_loss_start: i64 = json_key_value_start(data, "thread_loss", NATIVE_ZERO.usize(), data.count)
-            if thread_loss_start >= NATIVE_ZERO:
-                thread_loss_stop: i64 = json_array_end(data, thread_loss_start.usize(), data.count)
-                return false if thread_loss_stop < NATIVE_ZERO
-                for index in thread_loss_start.usize()..<thread_loss_stop.usize() |thread_loss, data|:
-                    thread_loss.push(data[index])
+        def append_offline_html_profile(buffer: mutable darray[u8]&, profile: NativeOfflineProfile) -> bool can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa offline renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
-            append_html_escaped(buffer, source)
+            append_html_escaped(buffer, profile.source)
             append_text(buffer, "</code></p><dl><div><dt>Source SHA-256</dt><dd><code>")
-            append_html_escaped(buffer, source_digest) if source_digest_available
-            append_text(buffer, "unavailable" if not source_digest_available else "")
+            append_html_escaped(buffer, profile.source_digest) if profile.source_digest_available
+            append_text(buffer, "unavailable" if not profile.source_digest_available else "")
             append_text(buffer, "</code></dd></div><div><dt>Status</dt><dd>")
-            append_text(buffer, "ok" if exit_code == NATIVE_ZERO else "target failed")
+            append_text(buffer, "ok" if profile.exit_code == NATIVE_ZERO else "target failed")
             append_text(buffer, "</dd></div><div><dt>Outcome</dt><dd>")
-            append_html_escaped(buffer, outcome)
+            append_html_escaped(buffer, profile.outcome)
             append_text(buffer, "</dd></div><div><dt>Mean execution</dt><dd>")
-            if execution_mean_available:
-                append_micros_as_millis(buffer, execution_mean_micros)
+            if profile.execution_mean_available:
+                append_micros_as_millis(buffer, profile.execution_mean_micros)
                 append_text(buffer, " ms")
             else:
                 append_text(buffer, "unavailable")
             append_text(buffer, "</dd></div><div><dt>CPU</dt><dd>")
-            if cpu_available:
-                append_micros_as_millis(buffer, cpu_micros)
+            if profile.cpu_available:
+                append_micros_as_millis(buffer, profile.cpu_micros)
                 append_text(buffer, " ms")
             else:
                 append_text(buffer, "unavailable")
             append_text(buffer, "</dd></div><div><dt>Peak RSS</dt><dd>")
-            if peak_rss_available:
-                append_i64(buffer, peak_rss_bytes)
+            if profile.peak_rss_available:
+                append_i64(buffer, profile.peak_rss_bytes)
                 append_text(buffer, " bytes")
             else:
                 append_text(buffer, "unavailable")
             append_text(buffer, "</dd></div><div><dt>Measured repetitions</dt><dd>")
-            append_i64(buffer, successful_repetitions if successful_repetitions > NATIVE_ZERO else completed_repetitions)
+            append_i64(buffer, profile.successful_repetitions if profile.successful_repetitions > NATIVE_ZERO else profile.completed_repetitions)
             append_text(buffer, "</dd></div><div><dt>Capture completeness</dt><dd>")
-            append_text(buffer, "complete" if capture_complete_available and capture_complete else "partial" if capture_complete_available else "not recorded")
+            append_text(buffer, "complete" if profile.capture_complete_available and profile.capture_complete else "partial" if profile.capture_complete_available else "not recorded")
             append_text(buffer, "</dd></div><div><dt>Events</dt><dd>")
-            append_i64(buffer, events)
+            append_i64(buffer, profile.events)
             append_text(buffer, "</dd></div><div><dt>Locations</dt><dd>")
-            append_i64(buffer, locations)
+            append_i64(buffer, profile.locations)
             append_text(buffer, "</dd></div><div><dt>Dropped events</dt><dd>")
-            append_i64(buffer, dropped)
+            append_i64(buffer, profile.dropped)
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
-            append_i64(buffer, thread_count)
+            append_i64(buffer, profile.thread_count)
             append_text(buffer, "</dd></div>")
-            append_html_host_summary(buffer, host)
+            append_html_host_summary(buffer, profile.host)
             append_text(buffer, "</dl>")
-            append_html_workload_object(buffer, workload) if workload.count > NATIVE_ZERO.usize()
-            append_html_diagnostics(buffer, capture_complete if capture_complete_available else true, dropped, call_edge_dropped, stack_dropped, frame_dropped, capture_bytes_dropped, stack_overflow_entries, trace_omitted, crash_signal if crash_signal_available else NATIVE_NEGATIVE_ONE)
-            append_html_source_view(buffer, source, source_snapshot, location_records, true) if source_snapshot.count > NATIVE_ZERO.usize()
-            append_html_function_browser(buffer, functions, folded)
-            append_html_detail_browsers(buffer, call_edges, location_records)
-            append_html_flame_graph(buffer, folded)
-            append_html_section(buffer, "Thread loss", thread_loss)
-            append_html_section(buffer, "Folded stacks", folded)
+            append_html_workload_object(buffer, profile.workload) if profile.workload.count > NATIVE_ZERO.usize()
+            append_html_diagnostics(buffer, profile.capture_complete if profile.capture_complete_available else true, profile.dropped, profile.call_edge_dropped, profile.stack_dropped, profile.frame_dropped, profile.capture_bytes_dropped, profile.stack_overflow_entries, profile.trace_omitted, profile.crash_signal if profile.crash_signal_available else NATIVE_NEGATIVE_ONE)
+            append_html_source_view(buffer, profile.source, profile.source_snapshot, profile.location_records, true) if profile.source_snapshot.count > NATIVE_ZERO.usize()
+            append_html_function_browser(buffer, profile.functions, profile.folded_records)
+            append_html_detail_browsers(buffer, profile.call_edges, profile.location_records)
+            append_html_flame_graph(buffer, profile.folded_records)
+            append_html_section(buffer, "Thread loss", profile.thread_loss)
+            append_html_section(buffer, "Folded stacks", profile.folded_records)
             append_html_view_state(buffer)
             append_text(buffer, "</main></body></html>\n")
             return true
 
 
-        def append_offline_text_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
-            return false if not json_document_is_object(data)
-            source: mutable darray[u8] = []
-            source_start: i64 = json_source_value_start(data)
-            return false if source_start < NATIVE_ZERO
-            return false if json_string_into(data, source_start.usize(), data.count, &source) < NATIVE_ZERO
-            summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
-            run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
-            return false if summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
-            summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
-            run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
-            return false if summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
-            events: mutable i64 = NATIVE_ZERO
-            locations: mutable i64 = NATIVE_ZERO
-            statement_events: mutable i64 = NATIVE_ZERO
-            value_events: mutable i64 = NATIVE_ZERO
-            function_events: mutable i64 = NATIVE_ZERO
-            dropped: mutable i64 = NATIVE_ZERO
-            thread_count: mutable i64 = NATIVE_ZERO
-            exit_code: mutable i64 = NATIVE_ZERO
-            outcome: mutable darray[u8] = []
-            capture_complete: mutable bool = false
-            capture_complete_available: mutable bool = false
-            return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
-            return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
-            return false if not json_read_number_field(data, "statement_events", summary_start.usize(), summary_stop.usize(), &statement_events)
-            return false if not json_read_number_field(data, "value_events", summary_start.usize(), summary_stop.usize(), &value_events)
-            return false if not json_read_number_field(data, "function_events", summary_start.usize(), summary_stop.usize(), &function_events)
-            return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
-            return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
-            return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
-            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
-            if outcome_start >= NATIVE_ZERO:
-                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &outcome) < NATIVE_ZERO
-            if outcome.count == NATIVE_ZERO.usize():
-                append_text(outcome, "success" if exit_code == NATIVE_ZERO else "target_exit")
-            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
-            if capture_complete_start >= NATIVE_ZERO:
-                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &capture_complete)
-                capture_complete_available <- true
+        def append_offline_text_profile(buffer: mutable darray[u8]&, profile: NativeOfflineProfile) -> bool can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "Elisa profiler\nsource: ")
-            for index in 0..<source.count |buffer, source|:
-                buffer.push(source[index])
+            buffer.extend(profile.source)
             append_text(buffer, "\nstatus: ")
-            append_text(buffer, "ok\n" if exit_code == NATIVE_ZERO else "target failed\n")
+            append_text(buffer, "ok\n" if profile.exit_code == NATIVE_ZERO else "target failed\n")
             append_text(buffer, "outcome: ")
-            for index in 0..<outcome.count |buffer, outcome|:
-                buffer.push(outcome[index])
+            buffer.extend(profile.outcome)
             append_text(buffer, "\ncapture completeness: ")
-            append_text(buffer, "complete\n" if capture_complete_available and capture_complete else "partial\n" if capture_complete_available else "not recorded\n")
+            append_text(buffer, "complete\n" if profile.capture_complete_available and profile.capture_complete else "partial\n" if profile.capture_complete_available else "not recorded\n")
             append_text(buffer, "events: ")
-            append_i64(buffer, events)
+            append_i64(buffer, profile.events)
             append_text(buffer, "\nlocations: ")
-            append_i64(buffer, locations)
+            append_i64(buffer, profile.locations)
             append_text(buffer, "\nstatement events: ")
-            append_i64(buffer, statement_events)
+            append_i64(buffer, profile.statement_events)
             append_text(buffer, "\nvalue events: ")
-            append_i64(buffer, value_events)
+            append_i64(buffer, profile.value_events)
             append_text(buffer, "\nfunction events: ")
-            append_i64(buffer, function_events)
+            append_i64(buffer, profile.function_events)
             append_text(buffer, "\nthreads: ")
-            append_i64(buffer, thread_count)
+            append_i64(buffer, profile.thread_count)
             append_text(buffer, "\ndropped: ")
-            append_i64(buffer, dropped)
-            thread_loss_start: i64 = json_key_value_start(data, "thread_loss", NATIVE_ZERO.usize(), data.count)
+            append_i64(buffer, profile.dropped)
             append_text(buffer, "\nthread loss records: ")
-            append_text(buffer, "present\n" if thread_loss_start >= NATIVE_ZERO else "none\n")
+            append_text(buffer, "present\n" if profile.thread_loss.count > NATIVE_ZERO.usize() else "none\n")
             return true

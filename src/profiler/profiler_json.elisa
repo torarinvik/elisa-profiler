@@ -858,6 +858,168 @@ extend ProfilerNative:
             return byte_arrays_equal(digest, expected)
 
 
+
+        # Normalize and validate an offline profile exactly once. Presentation
+        # modules receive this model instead of raw JSON so each output format
+        # shares the same compatibility, bounds, and optional-field policy.
+        def read_offline_profile(data: darray[u8]&, profile: mutable NativeOfflineProfile&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
+            schema_version: mutable i64 = NATIVE_ZERO
+            return false if not json_read_number_field(data, "schema_version", NATIVE_ZERO.usize(), data.count, &schema_version)
+            return false if not json_validate_report_envelope(data, schema_version, "profile")
+            return false if not json_validate_source_snapshot(data)
+            return false if not json_validate_detail_arrays(data)
+
+            profile.source <- []
+            profile.source_snapshot <- []
+            profile.source_digest <- []
+            profile.workload <- []
+            profile.outcome <- []
+            profile.functions <- []
+            profile.call_edges <- []
+            profile.stacks <- []
+            profile.location_records <- []
+            profile.thread_loss <- []
+            profile.folded_records <- []
+            profile.source_digest_available <- false
+            profile.crash_signal_available <- false
+            profile.capture_complete_available <- false
+            profile.execution_mean_available <- false
+            profile.cpu_available <- false
+            profile.peak_rss_available <- false
+            profile.location_timing <- false
+            profile.host <- NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false}
+
+            source_start: i64 = json_source_value_start(data)
+            return false if source_start < NATIVE_ZERO
+            return false if json_string_into(data, source_start.usize(), data.count, &profile.source) < NATIVE_ZERO
+
+            snapshot_start: i64 = json_key_value_start(data, "source_snapshot", NATIVE_ZERO.usize(), data.count)
+            if snapshot_start >= NATIVE_ZERO:
+                return false if data[snapshot_start.usize()] != NATIVE_BYTE_LEFT_BRACE
+                snapshot_stop: i64 = json_object_end(data, snapshot_start.usize(), data.count)
+                return false if snapshot_stop < NATIVE_ZERO
+                return false if not json_read_string_field(data, "content", snapshot_start.usize(), snapshot_stop.usize(), &profile.source_snapshot)
+
+            summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
+            run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
+            return false if summary_start < NATIVE_ZERO or run_start < NATIVE_ZERO
+            summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
+            run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
+            return false if summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
+
+            return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &profile.events)
+            return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &profile.locations)
+            return false if not json_read_number_field(data, "statement_events", summary_start.usize(), summary_stop.usize(), &profile.statement_events)
+            return false if not json_read_number_field(data, "value_events", summary_start.usize(), summary_stop.usize(), &profile.value_events)
+            return false if not json_read_number_field(data, "function_events", summary_start.usize(), summary_stop.usize(), &profile.function_events)
+            return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &profile.dropped)
+            return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &profile.thread_count)
+            return false if not json_read_optional_number_field(data, "dropped_call_edges", summary_start.usize(), summary_stop.usize(), &profile.call_edge_dropped)
+            return false if not json_read_optional_number_field(data, "dropped_stacks", summary_start.usize(), summary_stop.usize(), &profile.stack_dropped)
+            return false if not json_read_optional_number_field(data, "frame_dropped", summary_start.usize(), summary_stop.usize(), &profile.frame_dropped)
+            return false if not json_read_optional_number_field(data, "capture_bytes_dropped", summary_start.usize(), summary_stop.usize(), &profile.capture_bytes_dropped)
+            return false if not json_read_optional_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &profile.stack_overflow_entries)
+            return false if not json_read_optional_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &profile.trace_omitted)
+            return false if not json_read_nullable_number_field(data, "crash_signal", summary_start.usize(), summary_stop.usize(), &profile.crash_signal, &profile.crash_signal_available)
+            return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &profile.exit_code)
+
+            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
+            if outcome_start >= NATIVE_ZERO:
+                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &profile.outcome) < NATIVE_ZERO
+            if profile.outcome.count == NATIVE_ZERO.usize():
+                append_text(profile.outcome, "success" if profile.exit_code == NATIVE_ZERO else "target_exit")
+
+            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
+            if capture_complete_start >= NATIVE_ZERO:
+                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &profile.capture_complete)
+                profile.capture_complete_available <- true
+
+            workload_start: i64 = json_key_value_start(data, "workload", NATIVE_ZERO.usize(), data.count)
+            if workload_start >= NATIVE_ZERO:
+                workload_stop: i64 = json_object_end(data, workload_start.usize(), data.count)
+                return false if workload_stop < NATIVE_ZERO
+                profile.workload <- []
+                for index in workload_start.usize()..<workload_stop.usize() |index, data, profile|:
+                    profile.workload.push(data[index])
+                return false if not json_read_nullable_string_field(data, "source_sha256", workload_start.usize(), workload_stop.usize(), &profile.source_digest, &profile.source_digest_available)
+
+            host_start: i64 = json_key_value_start(data, "host", NATIVE_ZERO.usize(), data.count)
+            if host_start >= NATIVE_ZERO and data[host_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
+                host_stop: i64 = json_object_end(data, host_start.usize(), data.count)
+                return false if host_stop < NATIVE_ZERO
+                host_os: mutable darray[u8] = []
+                host_architecture: mutable darray[u8] = []
+                host_os_available: mutable bool = false
+                host_architecture_available: mutable bool = false
+                return false if not json_read_nullable_string_field(data, "os", host_start.usize(), host_stop.usize(), &host_os, &host_os_available)
+                return false if not json_read_nullable_string_field(data, "architecture", host_start.usize(), host_stop.usize(), &host_architecture, &host_architecture_available)
+                profile.host.available <- true
+                profile.host.os <- []
+                profile.host.architecture <- []
+                profile.host.os.extend(host_os)
+                profile.host.architecture.extend(host_architecture)
+                profile.host.load_average_1m <- NATIVE_ZERO_F64
+                profile.host.load_average_available <- false
+
+            execution_start: i64 = json_key_value_start(data, "execution_ms_mean", run_start.usize(), run_stop.usize())
+            if execution_start >= NATIVE_ZERO:
+                return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &profile.execution_mean_micros)
+                profile.execution_mean_available <- true
+            return false if not json_read_nullable_millis_field(data, "cpu_ms", run_start.usize(), run_stop.usize(), &profile.cpu_micros, &profile.cpu_available)
+            return false if not json_read_nullable_number_field(data, "peak_rss_bytes", run_start.usize(), run_stop.usize(), &profile.peak_rss_bytes, &profile.peak_rss_available)
+            completed_start: i64 = json_key_value_start(data, "completed_repetitions", run_start.usize(), run_stop.usize())
+            if completed_start >= NATIVE_ZERO:
+                return false if not json_read_number_field(data, "completed_repetitions", run_start.usize(), run_stop.usize(), &profile.completed_repetitions)
+            successful_start: i64 = json_key_value_start(data, "successful_repetitions", run_start.usize(), run_stop.usize())
+            if successful_start >= NATIVE_ZERO:
+                return false if not json_read_number_field(data, "successful_repetitions", run_start.usize(), run_stop.usize(), &profile.successful_repetitions)
+            return false if not json_read_location_timing(data, &profile.location_timing)
+            return false if not json_read_stacks_to_folded(data, &profile.folded_records, profile.location_timing)
+
+            functions_start: i64 = json_key_value_start(data, "functions", NATIVE_ZERO.usize(), data.count)
+            return false if functions_start < NATIVE_ZERO or data[functions_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            functions_stop: i64 = json_array_end(data, functions_start.usize(), data.count)
+            return false if functions_stop < NATIVE_ZERO
+            profile.functions <- []
+            for index in functions_start.usize()..<functions_stop.usize() |index, data, profile|:
+                profile.functions.push(data[index])
+
+            call_edges_start: i64 = json_key_value_start(data, "call_edges", NATIVE_ZERO.usize(), data.count)
+            return false if call_edges_start < NATIVE_ZERO or data[call_edges_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            call_edges_stop: i64 = json_array_end(data, call_edges_start.usize(), data.count)
+            return false if call_edges_stop < NATIVE_ZERO
+            profile.call_edges <- []
+            for index in call_edges_start.usize()..<call_edges_stop.usize() |index, data, profile|:
+                profile.call_edges.push(data[index])
+
+            stacks_start: i64 = json_key_value_start(data, "stacks", NATIVE_ZERO.usize(), data.count)
+            return false if stacks_start < NATIVE_ZERO or data[stacks_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            stacks_stop: i64 = json_array_end(data, stacks_start.usize(), data.count)
+            return false if stacks_stop < NATIVE_ZERO
+            profile.stacks <- []
+            for index in stacks_start.usize()..<stacks_stop.usize() |index, data, profile|:
+                profile.stacks.push(data[index])
+
+            locations_start: i64 = json_key_value_start(data, "locations", NATIVE_ZERO.usize(), data.count)
+            return false if locations_start < NATIVE_ZERO or data[locations_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            locations_stop: i64 = json_array_end(data, locations_start.usize(), data.count)
+            return false if locations_stop < NATIVE_ZERO
+            profile.location_records <- []
+            for index in locations_start.usize()..<locations_stop.usize() |index, data, profile|:
+                profile.location_records.push(data[index])
+
+            thread_start: i64 = json_key_value_start(data, "thread_loss", NATIVE_ZERO.usize(), data.count)
+            if thread_start >= NATIVE_ZERO:
+                return false if data[thread_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+                thread_stop: i64 = json_array_end(data, thread_start.usize(), data.count)
+                return false if thread_stop < NATIVE_ZERO
+                profile.thread_loss <- []
+                for index in thread_start.usize()..<thread_stop.usize() |index, data, profile|:
+                    profile.thread_loss.push(data[index])
+            return true
+
+
         def read_comparison_capture(data: darray[u8]&, capture: mutable ComparisonCapture&) -> bool can[Abort.Panic, Memory.Allocate]:
             return false if not json_document_is_object(data)
             schema_version: mutable i64 = NATIVE_ZERO
