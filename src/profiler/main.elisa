@@ -871,7 +871,21 @@ extend ProfilerNative:
             append_text(buffer, "</code></dd></div><div><dt>Reproducibility policy</dt><dd>random seed not controlled; environment values redacted; inputs hashed</dd></div></dl></section>")
 
 
-        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def append_html_program_output(buffer: mutable darray[u8]&, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            return if program_stdout.count == NATIVE_ZERO.usize() and program_stderr.count == NATIVE_ZERO.usize() and not program_stdout_truncated and not program_stderr_truncated
+            append_text(buffer, "<section class='panel' aria-labelledby='target-output-title'><h2 id='target-output-title'>Target output</h2>")
+            append_text(buffer, "<details open><summary>stdout")
+            append_text(buffer, " (truncated)" if program_stdout_truncated else "")
+            append_text(buffer, "</summary><pre>")
+            append_html_escaped(buffer, program_stdout)
+            append_text(buffer, "</pre></details><details><summary>stderr")
+            append_text(buffer, " (truncated)" if program_stderr_truncated else "")
+            append_text(buffer, "</summary><pre>")
+            append_html_escaped(buffer, program_stderr)
+            append_text(buffer, "</pre></details></section>")
+
+
+        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Source SHA-256</dt><dd><code>")
@@ -928,6 +942,7 @@ extend ProfilerNative:
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
             append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments)
+            append_html_program_output(buffer, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated)
             append_html_diagnostics(buffer, summary.capture_complete, summary.dropped, summary.call_edge_dropped, summary.stack_dropped, summary.frame_dropped, summary.capture_bytes_dropped, summary.stack_overflow_entries, summary.trace_omitted, summary.crash_signal)
             append_html_source_view(buffer, source, source_bytes, summary.location_records, false)
             append_html_function_browser(buffer, summary.function_records)
@@ -1230,7 +1245,7 @@ extend ProfilerNative:
             append_text(buffer, "}\n")
 
 
-        def append_text_report(buffer: mutable darray[u8]&, source: darray[u8]&, mode: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, event_trace: bool, recent_path: bool, execution_ns: i64, compile_ns: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_text_report(buffer: mutable darray[u8]&, source: darray[u8]&, mode: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, event_trace: bool, recent_path: bool, execution_ns: i64, compile_ns: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "Elisa profiler\nsource: ")
             for index in 0..<source.count |buffer, source|:
                 buffer.push(source[index])
@@ -1296,6 +1311,18 @@ extend ProfilerNative:
             elif recent_path:
                 append_text(buffer, "recent path events: ")
                 append_i64(buffer, summary.event_records.count)
+                append_text(buffer, "\n")
+            if program_stdout.count > NATIVE_ZERO.usize() or program_stdout_truncated:
+                append_text(buffer, "\nprogram stdout")
+                append_text(buffer, " (truncated)" if program_stdout_truncated else "")
+                append_text(buffer, ":\n")
+                buffer.extend(program_stdout)
+                append_text(buffer, "\n")
+            if program_stderr.count > NATIVE_ZERO.usize() or program_stderr_truncated:
+                append_text(buffer, "\nprogram stderr")
+                append_text(buffer, " (truncated)" if program_stderr_truncated else "")
+                append_text(buffer, ":\n")
+                buffer.extend(program_stderr)
                 append_text(buffer, "\n")
 
 
@@ -2200,13 +2227,13 @@ extend ProfilerNative:
             final_exit_code: i64 = system_exit_code(overall_status)
             report: mutable darray[u8] = []
             if format_text:
-                append_text_report(report, display_source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
+                append_text_report(report, display_source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, event_trace, recent_path, total_execution_ns, compile_elapsed_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated)
             elif format_folded:
                 append_folded_report(report, summary)
             elif format_speedscope:
                 append_speedscope_report(report, display_source, summary.folded_records, true)
             elif format_html:
-                append_html_report(report, display_source, source_check, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, working_directory, stdin_path, environment, target_arguments)
+                append_html_report(report, display_source, source_check, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments)
             else:
                 append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []

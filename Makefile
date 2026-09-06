@@ -145,6 +145,12 @@ profiler-native-smoke: profiler-native
 		grep -Fq '"program_stdout_truncated":false' "$$native_work/stderr-probe.json"; \
 		grep -Fq '"program_stderr":"ELISA_PROFILE\\t1\\tmeta\\tspoofed\\n"' "$$native_work/stderr-probe.json"; \
 		grep -Fq '"program_stderr_truncated":false' "$$native_work/stderr-probe.json"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format text --output "$$native_work/output-probe.txt"; \
+		grep -Fq 'program stdout:' "$$native_work/output-probe.txt"; \
+		grep -Fq 'program stderr:' "$$native_work/output-probe.txt"; \
+		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format html --output "$$native_work/output-probe.html"; \
+		grep -Fq 'Target output' "$$native_work/output-probe.html"; \
+		grep -Fq 'target stdout' "$$native_work/output-probe.html"; \
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"; \
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_launch_probe.elisa" --cwd "$$native_work" --stdin "$(PROFILER_ROOT)/README.md" --env ELISA_PROFILER_LAUNCH=enabled --format json --output "$$native_work/launch-probe.json"; \
 		test -s "$$native_work/native-launch-cwd-marker.txt"; \
