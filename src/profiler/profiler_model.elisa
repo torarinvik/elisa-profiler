@@ -36,6 +36,12 @@ module ProfilerNative:
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
         const NATIVE_MICROSECONDS_PER_SECOND: i64 = 1000000
+        # Approximate 95% confidence intervals use a two-sided normal critical
+        # value of 1.96. Fixed-point arithmetic keeps the native report free of
+        # floating-point rounding differences while preserving sub-second data.
+        const NATIVE_CONFIDENCE_SCALE: i64 = 1000
+        const NATIVE_CONFIDENCE_Z95_SCALE: i64 = 1960
+        const NATIVE_MIN_CONFIDENCE_SAMPLES: i64 = 2
         const NATIVE_TIMEOUT_FRACTION_DIGITS: i64 = 9
         const NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR: i64 = 100000000
         const NATIVE_MICROSECONDS_PER_MILLISECOND: i64 = 1000
@@ -203,6 +209,17 @@ module ProfilerNative:
         def native_signed_delta(left: i64, right: i64) -> i64:
             return left - right if left >= right
             return -(right - left)
+
+
+        def native_confidence_half_width(value_stdev_ns: i64, sample_count: i64) -> i64:
+            # A single observation has no estimate of dispersion. The caller
+            # serializes equal bounds with `available: false` in that case.
+            return NATIVE_ZERO if sample_count < NATIVE_MIN_CONFIDENCE_SAMPLES or value_stdev_ns <= NATIVE_ZERO
+            scaled_count: i64 = native_saturating_mul_nonnegative(sample_count, native_saturating_mul_nonnegative(NATIVE_CONFIDENCE_SCALE, NATIVE_CONFIDENCE_SCALE))
+            scaled_root: i64 = integer_sqrt(scaled_count)
+            return NATIVE_ZERO if scaled_root <= NATIVE_ZERO
+            numerator: i64 = native_saturating_mul_nonnegative(value_stdev_ns, NATIVE_CONFIDENCE_Z95_SCALE)
+            return numerator / scaled_root
 
         struct TargetRunResult:
             status: i64

@@ -66,6 +66,16 @@ tail after the last validated frame.
 - `execution_ms` is the launcher-observed elapsed duration around the child
   process. It includes startup and shutdown work and is not interchangeable
   with the sum of instrumented function durations.
+- `execution_ms_mean`, `execution_ms_median`, `execution_ms_stdev`, and the
+  `execution_ms_ci95_low`/`execution_ms_ci95_high` fields summarize the
+  selected measured repetitions. The standard deviation is the sample standard
+  deviation in microsecond precision (`n - 1` denominator). When at least two
+  repetitions are available, the interval is a two-sided normal approximation
+  using `1.96 * s / sqrt(n)`; fixed-point native arithmetic rounds its bounds
+  conservatively outward. With fewer than two observations,
+  `execution_ci95_available` is `false` and the equal bounds are descriptive,
+  not an uncertainty interval. This is repetition-level benchmark evidence,
+  never a claim that individual trace events are independent samples.
 - `timeout_s` is the requested positive per-execution wall-time limit, or `null`
   when no limit was requested. When the limit is reached, the native launcher
   sends `SIGTERM` to the target's process group, waits up to its bounded grace

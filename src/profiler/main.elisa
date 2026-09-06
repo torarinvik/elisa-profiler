@@ -862,7 +862,7 @@ extend ProfilerNative:
             buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, summary: CaptureSummary,
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
-            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64,
+            warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64, execution_ci95_low_ns: i64, execution_ci95_high_ns: i64, execution_ci95_available: bool,
             cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool,
             working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
         ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -1002,6 +1002,12 @@ extend ProfilerNative:
             append_millis(buffer, execution_median_ns)
             append_text(buffer, ",\"execution_ms_stdev\":")
             append_millis(buffer, execution_stdev_ns)
+            append_text(buffer, ",\"execution_ms_ci95_low\":")
+            append_millis(buffer, execution_ci95_low_ns)
+            append_text(buffer, ",\"execution_ms_ci95_high\":")
+            append_millis(buffer, execution_ci95_high_ns)
+            append_text(buffer, ",\"execution_ci95_available\":")
+            append_text(buffer, "true" if execution_ci95_available else "false")
             append_text(buffer, ",\"cpu_user_ms\":")
             if resource_metrics_available:
                 append_millis(buffer, cpu_user_ns)
@@ -1234,7 +1240,14 @@ extend ProfilerNative:
                 peak_rss_bytes: NATIVE_ZERO,
             }
             append_repetition_record(&repetition_records, NATIVE_ONE, NATIVE_ONE, recovery_result, summary, false, false)
-            append_report(buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit, true, runtime_object, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true, NATIVE_ZERO, empty_program_stderr, NATIVE_ZERO, NATIVE_ZERO, repetition_records, NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, false, empty_working_directory, empty_stdin_path, empty_environment, empty_target_arguments)
+            append_report(
+                buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit,
+                true, runtime_object, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
+                NATIVE_ZERO, empty_program_stderr, NATIVE_ZERO, NATIVE_ZERO, repetition_records,
+                NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO,
+                NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO,
+                false, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, false,
+                empty_working_directory, empty_stdin_path, empty_environment, empty_target_arguments)
             append_recovery_metadata(buffer, manifest_path, capture_path, state, source_digest, capture_bytes, summary)
 
 
@@ -1963,8 +1976,12 @@ extend ProfilerNative:
             for index in 0..<metric_times.count |index, metric_times, variance, mean_micros|:
                 difference: i64 = metric_times[index] / NATIVE_NANOS_PER_MICROSECOND - mean_micros
                 variance <- native_saturating_add(variance, native_saturating_square(difference))
-            variance <- variance / metric_times.count.i64()
+            variance <- variance / (metric_times.count.i64() - NATIVE_ONE) if metric_times.count.i64() > NATIVE_MIN_CONFIDENCE_SAMPLES - NATIVE_ONE
             execution_stdev_ns: i64 = integer_sqrt(variance) * NATIVE_NANOS_PER_MICROSECOND
+            execution_ci95_available: bool = metric_times.count.i64() >= NATIVE_MIN_CONFIDENCE_SAMPLES
+            execution_ci95_half_width_ns: i64 = native_confidence_half_width(execution_stdev_ns, metric_times.count.i64())
+            execution_ci95_low_ns: i64 = execution_mean_ns - execution_ci95_half_width_ns if execution_mean_ns > execution_ci95_half_width_ns else NATIVE_ZERO
+            execution_ci95_high_ns: i64 = native_saturating_add(execution_mean_ns, execution_ci95_half_width_ns)
             cpu_user_ns: mutable i64 = NATIVE_ZERO
             cpu_system_ns: mutable i64 = NATIVE_ZERO
             peak_rss_bytes: mutable i64 = NATIVE_ZERO
@@ -1986,7 +2003,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, display_source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

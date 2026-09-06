@@ -246,8 +246,12 @@ def main():
         assert all(item["trace_events_captured"] == 10 for item in repetitions)
         mean_of_middle = sum(item["execution_ms"] for item in repetitions) / 2
         assert abs(measured["run"]["execution_ms_median"] - mean_of_middle) <= 0.002
-        expected_stdev = statistics.pstdev(item["execution_ms"] for item in repetitions)
+        expected_stdev = statistics.stdev(item["execution_ms"] for item in repetitions)
         assert abs(measured["run"]["execution_ms_stdev"] - expected_stdev) <= 0.002
+        assert measured["run"]["execution_ci95_available"] is True
+        assert measured["run"]["execution_ms_ci95_low"] <= measured["run"]["execution_ms_mean"]
+        assert measured["run"]["execution_ms_ci95_high"] >= measured["run"]["execution_ms_mean"]
+        assert measured["run"]["execution_ms_ci95_high"] > measured["run"]["execution_ms_ci95_low"]
 
         threaded_output = work / "threaded.json"
         run("profile", ROOT / "examples/threaded.elisa", "--format", "json", "--output", threaded_output)
