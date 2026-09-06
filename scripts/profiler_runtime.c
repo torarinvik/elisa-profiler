@@ -1625,13 +1625,13 @@ static void profile_crash_handler(int signal_number) {
 }
 
 static void profile_install_crash_handlers(void) {
-    signal(SIGABRT, profile_crash_handler);
-    signal(SIGFPE, profile_crash_handler);
-    signal(SIGILL, profile_crash_handler);
-    signal(SIGSEGV, profile_crash_handler);
-    signal(SIGBUS, profile_crash_handler);
-    signal(SIGTERM, profile_crash_handler);
-    signal(SIGINT, profile_crash_handler);
+    (void)signal(SIGABRT, profile_crash_handler);
+    (void)signal(SIGFPE, profile_crash_handler);
+    (void)signal(SIGILL, profile_crash_handler);
+    (void)signal(SIGSEGV, profile_crash_handler);
+    (void)signal(SIGBUS, profile_crash_handler);
+    (void)signal(SIGTERM, profile_crash_handler);
+    (void)signal(SIGINT, profile_crash_handler);
 }
 
 static void profile_dump_body(void) {
@@ -1669,6 +1669,12 @@ static void profile_dump_body(void) {
     size_t output_count = 0;
     for (size_t index = 0; index < profile_capacity; ++index) {
         if (profile_table[index].function_name != NULL) {
+            if (output_count >= count) {
+                profile_budget_exceeded = 1;
+                profile_dropped_count = profile_saturating_add_u64(
+                    profile_dropped_count, 1);
+                break;
+            }
             entries[output_count++] = &profile_table[index];
         }
     }
@@ -1738,6 +1744,12 @@ static void profile_dump_body(void) {
         size_t call_output_count = 0;
         for (size_t index = 0; index < profile_call_edge_capacity; ++index) {
             if (profile_call_edges[index].caller_name != NULL) {
+                if (call_output_count >= profile_call_edge_size) {
+                    profile_budget_exceeded = 1;
+                    profile_call_edge_dropped_count = profile_saturating_add_u64(
+                        profile_call_edge_dropped_count, 1);
+                    break;
+                }
                 call_edges[call_output_count++] = &profile_call_edges[index];
             }
         }
@@ -1765,6 +1777,12 @@ static void profile_dump_body(void) {
         size_t path_output_count = 0;
         for (size_t index = 0; index < profile_call_path_capacity; ++index) {
             if (profile_call_paths[index] != NULL) {
+                if (path_output_count >= profile_call_path_size) {
+                    profile_budget_exceeded = 1;
+                    profile_call_path_dropped_count = profile_saturating_add_u64(
+                        profile_call_path_dropped_count, 1);
+                    break;
+                }
                 paths[path_output_count++] = profile_call_paths[index];
             }
         }
