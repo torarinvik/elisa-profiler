@@ -49,9 +49,11 @@ native sampler, allocator-lifecycle stream, or task scheduler lifecycle stream.
 `identity` is `compiler_stable_ids` when compiler-issued function and location
 identity callbacks are observed, and `source_name_fallback` for legacy
 compiler/collector streams. Stable-ID captures also declare the
-`elisa.compiler.trace` namespace and identity-contract version `1`; fallback
-captures use null namespace/version. These fields are declarations of evidence
-coverage, not estimates.
+`elisa.compiler.trace` namespace and identity-contract version `2`; version `2`
+includes module ownership and concrete generic specialization in the function
+identity contract. Fallback captures use null namespace/version. A capture from
+an older identity contract must not be compared as if it used the same IDs;
+these fields are declarations of evidence coverage, not estimates.
 
 Native collector streams begin with a capture marker and finish with a
 completion marker. Successful target runs require both markers; timeout and

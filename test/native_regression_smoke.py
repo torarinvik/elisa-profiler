@@ -20,6 +20,8 @@ RECURSIVE_CALLS = 7
 I64_MAX = 9223372036854775807
 IDENTITY_ID_BASELINE = 2**63
 IDENTITY_ID_CANDIDATE = 2**64 - 1
+IDENTITY_CONTRACT_LEGACY_VERSION = 1
+IDENTITY_CONTRACT_CURRENT_VERSION = 2
 
 
 def run(*args, ok=True, expected=None):
@@ -128,10 +130,10 @@ def main():
         contract_baseline = copy.deepcopy(identity_baseline)
         contract_candidate = copy.deepcopy(identity_baseline)
         contract_baseline["run"]["capabilities"] = {"identity": {
-            "status": "compiler_stable_ids", "reason": "fixture", "namespace": "elisa.compiler.trace", "version": 1, "scope": "capture"
+            "status": "compiler_stable_ids", "reason": "fixture", "namespace": "elisa.compiler.trace", "version": IDENTITY_CONTRACT_LEGACY_VERSION, "scope": "capture"
         }}
         contract_candidate["run"]["capabilities"] = {"identity": {
-            "status": "compiler_stable_ids", "reason": "fixture", "namespace": "other.trace", "version": 1, "scope": "capture"
+            "status": "compiler_stable_ids", "reason": "fixture", "namespace": "other.trace", "version": IDENTITY_CONTRACT_LEGACY_VERSION, "scope": "capture"
         }}
         contract_baseline_path = work / "identity-contract-baseline.json"
         contract_candidate_path = work / "identity-contract-candidate.json"
@@ -143,6 +145,20 @@ def main():
         assert any("stable identity coverage or contract" in warning for warning in contract_comparison["warnings"])
         run(
             "compare", contract_baseline_path, contract_candidate_path, "--format", "json",
+            "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
+        )
+        version_candidate = copy.deepcopy(contract_baseline)
+        version_candidate["run"]["capabilities"]["identity"]["version"] = IDENTITY_CONTRACT_CURRENT_VERSION
+        version_candidate_path = work / "identity-version-candidate.json"
+        version_candidate_path.write_text(json.dumps(version_candidate), encoding="utf-8")
+        version_comparison = json.loads(run("compare", contract_baseline_path, version_candidate_path, "--format", "json"))
+        assert version_comparison["baseline"]["identity_namespace"] == "elisa.compiler.trace"
+        assert version_comparison["candidate"]["identity_namespace"] == "elisa.compiler.trace"
+        assert version_comparison["baseline"]["identity_version"] == IDENTITY_CONTRACT_LEGACY_VERSION
+        assert version_comparison["candidate"]["identity_version"] == IDENTITY_CONTRACT_CURRENT_VERSION
+        assert any("stable identity coverage or contract" in warning for warning in version_comparison["warnings"])
+        run(
+            "compare", contract_baseline_path, version_candidate_path, "--format", "json",
             "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
         )
         assert comparison["metrics"]["execution_ms_mean"]["baseline"] == 1.25
@@ -436,7 +452,7 @@ def main():
         }
         assert measured["run"]["capabilities"]["identity"] == {
             "status": "compiler_stable_ids", "reason": "compiler_issued_function_and_location_ids",
-            "namespace": "elisa.compiler.trace", "version": 1, "scope": "capture"
+            "namespace": "elisa.compiler.trace", "version": IDENTITY_CONTRACT_CURRENT_VERSION, "scope": "capture"
         }
         assert measured["capture"] == {
             "process": {"scope": "single_profiled_child", "lifetime": "launch_to_wait"},
