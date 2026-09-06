@@ -801,7 +801,7 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details>")
 
 
-        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, mode: darray[u8]&, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
@@ -849,7 +849,9 @@ extend ProfilerNative:
             append_i64(buffer, summary.thread_count)
             append_text(buffer, "</dd></div><div><dt>Collection mode</dt><dd>")
             append_html_escaped(buffer, mode)
-            append_text(buffer, "</dd></div></dl>")
+            append_text(buffer, "</dd></div>")
+            append_html_host_summary(buffer, host)
+            append_text(buffer, "</dl>")
             append_html_function_browser(buffer, summary.function_records)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
@@ -2084,7 +2086,7 @@ extend ProfilerNative:
             elif format_speedscope:
                 append_speedscope_report(report, display_source, summary.folded_records, true)
             elif format_html:
-                append_html_report(report, display_source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions)
+                append_html_report(report, display_source, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions)
             else:
                 append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []

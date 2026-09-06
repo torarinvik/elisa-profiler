@@ -186,6 +186,27 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details></section><script>(function(){'use strict';const quote=String.fromCharCode(34);const maxRows=200;const edgeRaw=document.getElementById('edge-records');const edgeBody=document.getElementById('edge-rows');const edgeFilter=document.getElementById('edge-filter');const edgeStatus=document.getElementById('edge-status');const locationRaw=document.getElementById('location-records');const locationBody=document.getElementById('location-rows');const locationFilter=document.getElementById('location-filter');const locationStatus=document.getElementById('location-status');function objects(text){const result=[];let start=-1,depth=0,inString=false,escaped=false;for(let index=0;index<text.length;index+=1){const byte=text.charAt(index);if(inString){if(escaped){escaped=false;}else if(byte===String.fromCharCode(92)){escaped=true;}else if(byte===quote){inString=false;}continue;}if(byte===quote){inString=true;}else if(byte==='{'){if(depth===0){start=index;}depth+=1;}else if(byte==='}'){depth-=1;if(depth===0&&start>=0){result.push(text.slice(start,index+1));start=-1;}}}return result;}function field(record,name){const marker=quote+name+quote+':';const start=record.indexOf(marker);if(start<0){return '';}let cursor=start+marker.length;while(cursor<record.length&&(record.charAt(cursor)===' '||record.charCodeAt(cursor)===9)){cursor+=1;}if(record.charAt(cursor)===quote){let end=cursor+1,escaped=false;for(;end<record.length;end+=1){const byte=record.charAt(end);if(escaped){escaped=false;}else if(byte===String.fromCharCode(92)){escaped=true;}else if(byte===quote){break;}}try{return JSON.parse(record.slice(cursor,end+1));}catch(_error){return '';}}let end=cursor;while(end<record.length&&((record.charCodeAt(end)>=48&&record.charCodeAt(end)<=57)||record.charAt(end)==='-')){end+=1;}return record.slice(cursor,end);}function magnitude(value){try{return BigInt(value||'0');}catch(_error){return BigInt(0);}}function draw(body,rows){body.replaceChildren();rows.slice(0,maxRows).forEach(function(row){const line=document.createElement('tr');row.values.forEach(function(value){const cell=document.createElement('td');cell.textContent=value;line.appendChild(cell);});body.appendChild(line);});}function renderEdges(){const query=(edgeFilter.value||'').toLowerCase();const rows=objects(edgeRaw.textContent||'').map(function(record){const caller=field(record,'caller'),callee=field(record,'callee');return{search:(caller+' '+callee).toLowerCase(),values:[caller,callee,field(record,'inclusive_ns')+' ns',field(record,'completed_calls')]};}).filter(function(row){return row.search.includes(query);}).sort(function(left,right){const a=magnitude(left.values[2]),b=magnitude(right.values[2]);return a===b?left.values[0].localeCompare(right.values[0]):(a>b?-1:1);});draw(edgeBody,rows);edgeStatus.textContent=rows.length+' edge'+(rows.length===1?'':'s')+' shown'+(rows.length>maxRows?' (first '+maxRows+')':'');}function renderLocations(){const query=(locationFilter.value||'').toLowerCase();const rows=objects(locationRaw.textContent||'').map(function(record){const source=field(record,'source'),line=field(record,'line'),func=field(record,'function'),variable=field(record,'variable');return{search:(source+' '+func+' '+variable).toLowerCase(),values:[source,line,func,variable,field(record,'interval_ns')+' ns',field(record,'count')]};}).filter(function(row){return row.search.includes(query);}).sort(function(left,right){const a=magnitude(left.values[4]),b=magnitude(right.values[4]);return a===b?left.values[0].localeCompare(right.values[0]):(a>b?-1:1);});draw(locationBody,rows);locationStatus.textContent=rows.length+' location'+(rows.length===1?'':'s')+' shown'+(rows.length>maxRows?' (first '+maxRows+')':'');}edgeFilter.addEventListener('input',renderEdges);locationFilter.addEventListener('input',renderLocations);renderEdges();renderLocations();}());</script>")
 
 
+        def append_html_host_summary(buffer: mutable darray[u8]&, host: NativeHostMetadata) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<div><dt>Host</dt><dd>")
+            if not host.available:
+                append_text(buffer, "unavailable")
+            else:
+                if host.os.count > NATIVE_ZERO.usize():
+                    append_html_escaped(buffer, host.os)
+                else:
+                    append_text(buffer, "unknown OS")
+                append_text(buffer, " / ")
+                if host.architecture.count > NATIVE_ZERO.usize():
+                    append_html_escaped(buffer, host.architecture)
+                else:
+                    append_text(buffer, "unknown architecture")
+            append_text(buffer, "</dd></div><div><dt>Affinity</dt><dd>")
+            append_text(buffer, "inherited; unchanged" if host.available else "unavailable")
+            append_text(buffer, "</dd></div><div><dt>Power/thermal</dt><dd>")
+            append_text(buffer, "not collected" if host.available else "unavailable")
+            append_text(buffer, "</dd></div>")
+
+
         def append_offline_html_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             source: mutable darray[u8] = []
             source_start: i64 = json_source_value_start(data)
@@ -211,11 +232,23 @@ extend ProfilerNative:
             completed_repetitions: mutable i64 = NATIVE_ZERO
             successful_repetitions: mutable i64 = NATIVE_ZERO
             outcome: mutable darray[u8] = []
+            host: mutable NativeHostMetadata = NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false}
+            host_os: mutable darray[u8] = []
+            host_architecture: mutable darray[u8] = []
+            host_os_available: mutable bool = false
+            host_architecture_available: mutable bool = false
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
+            host_start: i64 = json_key_value_start(data, "host", NATIVE_ZERO.usize(), data.count)
+            if host_start >= NATIVE_ZERO and data[host_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
+                host_stop: i64 = json_object_end(data, host_start.usize(), data.count)
+                return false if host_stop < NATIVE_ZERO
+                return false if not json_read_nullable_string_field(data, "os", host_start.usize(), host_stop.usize(), &host_os, &host_os_available)
+                return false if not json_read_nullable_string_field(data, "architecture", host_start.usize(), host_stop.usize(), &host_architecture, &host_architecture_available)
+                host <- NativeHostMetadata{available: true, os: host_os, architecture: host_architecture, load_average_1m: NATIVE_ZERO_F64, load_average_available: false}
             execution_mean_start: i64 = json_key_value_start(data, "execution_ms_mean", run_start.usize(), run_stop.usize())
             if execution_mean_start >= NATIVE_ZERO:
                 return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &execution_mean_micros)
@@ -299,7 +332,9 @@ extend ProfilerNative:
             append_i64(buffer, dropped)
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
             append_i64(buffer, thread_count)
-            append_text(buffer, "</dd></div></dl>")
+            append_text(buffer, "</dd></div>")
+            append_html_host_summary(buffer, host)
+            append_text(buffer, "</dl>")
             append_html_function_browser(buffer, functions)
             append_html_detail_browsers(buffer, call_edges, location_records)
             append_html_section(buffer, "Thread loss", thread_loss)

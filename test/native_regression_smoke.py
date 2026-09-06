@@ -51,6 +51,12 @@ def main():
         "schema_version": 1,
         "compiler": {"source": "nested decoy", "branch": "test", "commit": "abc"},
         "source": "café/λ/😀\n\t.elisa",
+        "host": {
+            "os": "Darwin", "architecture": "arm64",
+            "load_average_1m": 1.234, "load_average_source": "getloadavg",
+            "affinity": {"policy": "inherited", "changed": False},
+            "power_thermal": None,
+        },
         "summary": {
             "events": 7, "locations": 2, "dropped": 0,
             "statement_events": 5, "value_events": 0, "function_events": 2,
@@ -106,6 +112,8 @@ def main():
         assert speedscope["profiles"][0]["weights"] == [1, 6]
         offline_html = run("report", capture, "--format", "html")
         assert b"<dt>Outcome</dt><dd>success</dd>" in offline_html
+        assert b"<dt>Host</dt><dd>Darwin / arm64</dd>" in offline_html
+        assert b"<dt>Affinity</dt><dd>inherited; unchanged</dd>" in offline_html
         assert b"<dt>Locations</dt><dd>2</dd>" in offline_html
         assert b"<dt>Mean execution</dt><dd>1.250 ms</dd>" in offline_html
         assert b"<dt>CPU</dt><dd>unavailable</dd>" in offline_html
