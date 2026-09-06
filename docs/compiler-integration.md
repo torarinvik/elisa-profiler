@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-1cf1815f Merge branch 'work' into codex/profiler
+b85e27fd merge: integrate latest region return diagnostics
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -16,7 +16,9 @@ found across the compiler worktrees, including the packed-header, nested-module,
 qualified-`usize`, stage0-path, qualified-error-recovery, lexical-error-family,
 stable-module-identity, bounded self-host, scope-binding, machine-start
 fallback, lmut-threading/parity, region-owned-return, storage-invalidation,
-and process-tree termination fixes. All 11 local compiler branch tips are
+and process-tree termination fixes. The latest `work` tip added the
+owned-container return rejection diagnostic (`8dc832b5`) and was merged into
+the dedicated branch as `b85e27fd`. All 11 local compiler branch tips are
 reachable from the dedicated branch.
 
 The audit is authoritative for branch/worktree provenance. The latest offline
@@ -28,7 +30,7 @@ the structpy checkout. Compatible deltas were imported where they
 were independently verifiable; the remaining dirty portions are either already
 superseded or AST-incompatible. All owner worktrees remain untouched.
 
-The stage1 product was freshly reseeded from `1cf1815f` with the canonical
+The stage1 product was freshly reseeded from `b85e27fd` with the canonical
 stage0 compiler and its usable build manifest was regenerated. The audit and
 manifest are current. The full gate passes as
 `DYLD_SHARED_REGION=avoid TMPDIR=/tmp make test`, including self-host stages
@@ -168,7 +170,7 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `1cf1815f` integration, the audit, ledger, manifest, compiler,
+For the current `b85e27fd` integration, the audit, ledger, manifest, compiler,
 native profiler, and full profiler gates pass with the loader workaround above.
 Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
