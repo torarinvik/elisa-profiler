@@ -173,12 +173,17 @@ extend ProfilerNative:
 
 
         def comparison_function_index(records: darray[ComparisonFunctionRecord]&, subject: ComparisonFunctionRecord) -> i64 can[Abort.Panic]:
+            matched: mutable i64 = NATIVE_NEGATIVE_ONE
             for index in 0..<records.count |index, records, subject|:
                 candidate: ComparisonFunctionRecord = records[index]
                 if subject.identity_id.count > NATIVE_ZERO.usize():
-                    return index.i64() if candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id)
-                return index.i64() if candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function)
-            return NATIVE_NEGATIVE_ONE
+                    if candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id):
+                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                        matched <- index.i64()
+                elif candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched
 
 
         def comparison_missing_function_count(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> i64 can[Abort.Panic]:
@@ -303,12 +308,17 @@ extend ProfilerNative:
 
 
         def comparison_call_edge_index(records: darray[ComparisonCallEdgeRecord]&, subject: ComparisonCallEdgeRecord) -> i64 can[Abort.Panic]:
+            matched: mutable i64 = NATIVE_NEGATIVE_ONE
             for index in 0..<records.count |index, records, subject|:
                 candidate: ComparisonCallEdgeRecord = records[index]
                 if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
-                    return index.i64() if candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id)
-                return index.i64() if candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee)
-            return NATIVE_NEGATIVE_ONE
+                    if candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id):
+                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                        matched <- index.i64()
+                elif candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched
 
 
         def append_comparison_call_edge_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonCallEdgeRecord]&, baseline_index: i64, candidate: darray[ComparisonCallEdgeRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
@@ -412,12 +422,17 @@ extend ProfilerNative:
 
 
         def comparison_stack_index(records: darray[ComparisonStackRecord]&, subject: ComparisonStackRecord) -> i64 can[Abort.Panic]:
+            matched: mutable i64 = NATIVE_NEGATIVE_ONE
             for index in 0..<records.count |index, records, subject|:
                 candidate: ComparisonStackRecord = records[index]
                 if subject.identity_path.count > NATIVE_ZERO.usize():
-                    return index.i64() if candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path)
-                return index.i64() if candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path)
-            return NATIVE_NEGATIVE_ONE
+                    if candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path):
+                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                        matched <- index.i64()
+                elif candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched
 
 
         def comparison_missing_stack_count(records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&) -> i64 can[Abort.Panic]:
@@ -514,12 +529,17 @@ extend ProfilerNative:
 
 
         def comparison_location_index(records: darray[ComparisonLocationRecord]&, subject: ComparisonLocationRecord) -> i64 can[Abort.Panic]:
+            matched: mutable i64 = NATIVE_NEGATIVE_ONE
             for index in 0..<records.count |index, records, subject|:
                 record: ComparisonLocationRecord = records[index]
                 if subject.identity_id.count > NATIVE_ZERO.usize():
-                    return index.i64() if record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
-                return index.i64() if record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
-            return NATIVE_NEGATIVE_ONE
+                    if record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id):
+                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                        matched <- index.i64()
+                elif record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched
 
 
         def comparison_missing_location_count(records: darray[ComparisonLocationRecord]&, other: darray[ComparisonLocationRecord]&) -> i64 can[Abort.Panic]:

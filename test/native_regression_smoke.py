@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / "bin" / "elisa-profiler"
 TIMEOUT_SECONDS = 120
 ERROR_STATUS = 2
+INCONCLUSIVE_STATUS = 4
 RECURSIVE_CALLS = 7
 I64_MAX = 9223372036854775807
 IDENTITY_ID_BASELINE = 2**63
@@ -112,6 +113,18 @@ def main():
         assert any(row["events"]["baseline"] is None and row["events"]["candidate"] is not None for row in identity_changes)
         assert identity_comparison["baseline"]["identity"] == "compiler_stable_ids"
         assert identity_comparison["candidate"]["identity"] == "compiler_stable_ids"
+        legacy_candidate = copy.deepcopy(identity_baseline)
+        del legacy_candidate["functions"][0]["identity_id"]
+        legacy_candidate_path = work / "identity-legacy-candidate.json"
+        legacy_candidate_path.write_text(json.dumps(legacy_candidate), encoding="utf-8")
+        coverage_comparison = json.loads(run("compare", identity_baseline_path, legacy_candidate_path, "--format", "json"))
+        assert coverage_comparison["baseline"]["identity"] == "compiler_stable_ids"
+        assert coverage_comparison["candidate"]["identity"] == "source_name_fallback"
+        assert any("stable identity coverage" in warning for warning in coverage_comparison["warnings"])
+        run(
+            "compare", identity_baseline_path, legacy_candidate_path, "--format", "json",
+            "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
+        )
         assert comparison["metrics"]["execution_ms_mean"]["baseline"] == 1.25
         report["locations"] = [{
             "kind": "value", "function": "main", "line": 1, "count": 1,
