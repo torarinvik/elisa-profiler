@@ -36,9 +36,9 @@ extend ProfilerNative:
             return false
 
 
-        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, identity_mismatch: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
+        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, identity_mismatch: bool, identity_ambiguity: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
             return false if not comparison_policy_requested(policy)
-            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or target_failure or evidence_loss
+            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or target_failure or evidence_loss
             return true if (policy.max_cpu_regression_percent >= NATIVE_ZERO or policy.max_cpu_micros >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
             return true if (policy.max_rss_regression_percent >= NATIVE_ZERO or policy.max_rss_bytes >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
             return true if policy.max_function_self_regression_percent >= NATIVE_ZERO and not comparison_has_shared_function(baseline.functions, candidate.functions)
@@ -186,6 +186,27 @@ extend ProfilerNative:
             return matched
 
 
+        def comparison_function_match_is_ambiguous(records: darray[ComparisonFunctionRecord]&, subject: ComparisonFunctionRecord) -> bool can[Abort.Panic]:
+            matched: mutable bool = false
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonFunctionRecord = records[index]
+                same: bool = false
+                if subject.identity_id.count > NATIVE_ZERO.usize():
+                    same <- candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id)
+                else:
+                    same <- candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function)
+                if same:
+                    return true if matched
+                    matched <- true
+            return false
+
+
+        def comparison_functions_have_ambiguous_matches(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> bool can[Abort.Panic]:
+            for index in 0..<records.count |index, records, other|:
+                return true if comparison_function_match_is_ambiguous(other, records[index])
+            return false
+
+
         def comparison_missing_function_count(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
@@ -321,6 +342,27 @@ extend ProfilerNative:
             return matched
 
 
+        def comparison_call_edge_match_is_ambiguous(records: darray[ComparisonCallEdgeRecord]&, subject: ComparisonCallEdgeRecord) -> bool can[Abort.Panic]:
+            matched: mutable bool = false
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonCallEdgeRecord = records[index]
+                same: bool = false
+                if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
+                    same <- candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id)
+                else:
+                    same <- candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee)
+                if same:
+                    return true if matched
+                    matched <- true
+            return false
+
+
+        def comparison_call_edges_have_ambiguous_matches(records: darray[ComparisonCallEdgeRecord]&, other: darray[ComparisonCallEdgeRecord]&) -> bool can[Abort.Panic]:
+            for index in 0..<records.count |index, records, other|:
+                return true if comparison_call_edge_match_is_ambiguous(other, records[index])
+            return false
+
+
         def append_comparison_call_edge_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonCallEdgeRecord]&, baseline_index: i64, candidate: darray[ComparisonCallEdgeRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
             baseline_available: bool = baseline_index >= NATIVE_ZERO
             candidate_available: bool = candidate_index >= NATIVE_ZERO
@@ -435,6 +477,27 @@ extend ProfilerNative:
             return matched
 
 
+        def comparison_stack_match_is_ambiguous(records: darray[ComparisonStackRecord]&, subject: ComparisonStackRecord) -> bool can[Abort.Panic]:
+            matched: mutable bool = false
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonStackRecord = records[index]
+                same: bool = false
+                if subject.identity_path.count > NATIVE_ZERO.usize():
+                    same <- candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path)
+                else:
+                    same <- candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path)
+                if same:
+                    return true if matched
+                    matched <- true
+            return false
+
+
+        def comparison_stacks_have_ambiguous_matches(records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&) -> bool can[Abort.Panic]:
+            for index in 0..<records.count |index, records, other|:
+                return true if comparison_stack_match_is_ambiguous(other, records[index])
+            return false
+
+
         def comparison_missing_stack_count(records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
@@ -540,6 +603,38 @@ extend ProfilerNative:
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
+
+
+        def comparison_location_match_is_ambiguous(records: darray[ComparisonLocationRecord]&, subject: ComparisonLocationRecord) -> bool can[Abort.Panic]:
+            matched: mutable bool = false
+            for index in 0..<records.count |index, records, subject, matched|:
+                record: ComparisonLocationRecord = records[index]
+                same: bool = false
+                if subject.identity_id.count > NATIVE_ZERO.usize():
+                    same <- record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
+                else:
+                    same <- record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
+                if same:
+                    return true if matched
+                    matched <- true
+            return false
+
+
+        def comparison_locations_have_ambiguous_matches(records: darray[ComparisonLocationRecord]&, other: darray[ComparisonLocationRecord]&) -> bool can[Abort.Panic]:
+            for index in 0..<records.count |index, records, other|:
+                return true if comparison_location_match_is_ambiguous(other, records[index])
+            return false
+
+
+        def comparison_identity_has_ambiguous_matches(baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
+            return true if comparison_functions_have_ambiguous_matches(baseline.functions, candidate.functions)
+            return true if comparison_functions_have_ambiguous_matches(candidate.functions, baseline.functions)
+            return true if comparison_call_edges_have_ambiguous_matches(baseline.call_edges, candidate.call_edges)
+            return true if comparison_call_edges_have_ambiguous_matches(candidate.call_edges, baseline.call_edges)
+            return true if comparison_stacks_have_ambiguous_matches(baseline.stacks, candidate.stacks)
+            return true if comparison_stacks_have_ambiguous_matches(candidate.stacks, baseline.stacks)
+            return true if comparison_locations_have_ambiguous_matches(baseline.location_records, candidate.location_records)
+            return comparison_locations_have_ambiguous_matches(candidate.location_records, baseline.location_records)
 
 
         def comparison_missing_location_count(records: darray[ComparisonLocationRecord]&, other: darray[ComparisonLocationRecord]&) -> i64 can[Abort.Panic]:
@@ -685,6 +780,7 @@ extend ProfilerNative:
             if baseline.stable_ids_available and candidate.stable_ids_available:
                 identity_mismatch <- true if baseline.stable_id_namespace.count != candidate.stable_id_namespace.count or not byte_arrays_equal(baseline.stable_id_namespace, candidate.stable_id_namespace) or baseline.stable_id_version != candidate.stable_id_version
                 identity_mismatch <- true if not baseline.stable_id_contract_known or not candidate.stable_id_contract_known
+            identity_ambiguity: bool = comparison_identity_has_ambiguous_matches(baseline, candidate)
             resource_metrics_mismatch: bool = baseline.resource_metrics_available != candidate.resource_metrics_available
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
             evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.frame_dropped > NATIVE_ZERO or candidate.frame_dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
@@ -697,7 +793,7 @@ extend ProfilerNative:
             rss_percent_failed: bool = comparison_percent_exceeded(baseline.peak_rss_bytes, candidate.peak_rss_bytes, policy.max_rss_regression_percent, rss_available)
             rss_absolute_failed: bool = comparison_absolute_exceeded(candidate.peak_rss_bytes, policy.max_rss_bytes, rss_available)
             function_failed: bool = comparison_function_self_exceeded(baseline.functions, candidate.functions, policy.max_function_self_regression_percent)
-            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, identity_mismatch, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
+            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, identity_mismatch, identity_ambiguity, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
             gate_failed: bool = wall_percent_failed or wall_absolute_failed or cpu_percent_failed or cpu_absolute_failed or rss_percent_failed or rss_absolute_failed or function_failed
             if format_html:
                 json_details: mutable darray[u8] = []
@@ -758,7 +854,7 @@ extend ProfilerNative:
                 append_text(buffer, "<p><strong>Gate:</strong> ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
                 append_text(buffer, "</p>")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "<section class='warning' aria-labelledby='comparison-warnings'><h2 id='comparison-warnings'>Warnings</h2><ul>")
                     append_text(buffer, "<li>Source paths or contents differ.</li>" if source_mismatch else "")
                     append_text(buffer, "<li>Workload metadata differs.</li>" if workload_mismatch else "")
@@ -766,6 +862,7 @@ extend ProfilerNative:
                     append_text(buffer, "<li>Compiler commits differ.</li>" if compiler_mismatch else "")
                     append_text(buffer, "<li>Optimization levels differ.</li>" if optimization_mismatch else "")
                     append_text(buffer, "<li>Stable identity coverage or contract differs; readable-name fallback is unsafe for a gated comparison.</li>" if identity_mismatch else "")
+                    append_text(buffer, "<li>One or more readable or stable identities match multiple records; affected entries are shown as ambiguous additions/removals.</li>" if identity_ambiguity else "")
                     append_text(buffer, "<li>Resource metrics are not comparable.</li>" if resource_metrics_mismatch else "")
                     append_text(buffer, "<li>One or both target executions failed.</li>" if target_failure else "")
                     append_text(buffer, "<li>One or both captures contain incomplete or bounded evidence.</li>" if evidence_loss else "")
@@ -855,7 +952,7 @@ extend ProfilerNative:
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.location_records.count.i64())
                 append_text(buffer, "\n")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or identity_ambiguity or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
                     append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different workload metadata", workload_mismatch)
@@ -863,6 +960,7 @@ extend ProfilerNative:
                     append_comparison_warning_text(buffer, "baseline and candidate use different compiler commits", compiler_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different optimization levels", optimization_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate differ in stable identity coverage or contract; readable-name fallback is unsafe for a gated comparison", identity_mismatch)
+                    append_comparison_warning_text(buffer, "one or more identities match multiple records; affected entries are shown as ambiguous additions/removals", identity_ambiguity)
                     append_comparison_warning_text(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch)
                     append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
                     append_comparison_warning_text(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss)
@@ -997,6 +1095,7 @@ extend ProfilerNative:
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different compiler commits", compiler_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different optimization levels", optimization_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in stable identity coverage or contract; readable-name fallback is unsafe for a gated comparison", identity_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "one or more identities match multiple records; affected entries are shown as ambiguous additions/removals", identity_ambiguity, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline or candidate target execution failed", target_failure, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss, &warning_first)

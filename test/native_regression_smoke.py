@@ -131,6 +131,22 @@ def main():
             "compare", identity_baseline_path, identity_baseline_path, "--format", "json",
             "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
         )
+        legacy_identity = copy.deepcopy(report)
+        legacy_identity["functions"] = [
+            {key: value for key, value in identity_function.items() if key != "identity_id"}
+        ]
+        ambiguous_candidate = copy.deepcopy(legacy_identity)
+        ambiguous_candidate["functions"].append(copy.deepcopy(ambiguous_candidate["functions"][0]))
+        legacy_identity_path = work / "identity-legacy.json"
+        ambiguous_candidate_path = work / "identity-ambiguous-candidate.json"
+        legacy_identity_path.write_text(json.dumps(legacy_identity), encoding="utf-8")
+        ambiguous_candidate_path.write_text(json.dumps(ambiguous_candidate), encoding="utf-8")
+        ambiguity_comparison = json.loads(run("compare", legacy_identity_path, ambiguous_candidate_path, "--format", "json"))
+        assert any("ambiguous additions/removals" in warning for warning in ambiguity_comparison["warnings"])
+        run(
+            "compare", legacy_identity_path, ambiguous_candidate_path, "--format", "json",
+            "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
+        )
         mixed_identity = copy.deepcopy(identity_baseline)
         mixed_identity["functions"].append({key: value for key, value in identity_function.items() if key != "identity_id"})
         mixed_identity_path = work / "identity-mixed.json"
