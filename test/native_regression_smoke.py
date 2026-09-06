@@ -157,10 +157,12 @@ def main():
         run("report", work / "missing", "--format", "text", ok=False)
         run("report", capture, "--format", "text", "--output", work, ok=False)
         live_html_path = work / "live.html"
-        run("profile", ROOT / "examples/hot_loop.elisa", "--format", "html", "--output", live_html_path, "--", "--fixture")
+        run("profile", ROOT / "examples/hot_loop.elisa", "--env", "ELISA_FIXTURE=supersecret", "--format", "html", "--output", live_html_path, "--", "--fixture")
         live_html = live_html_path.read_bytes()
         assert b"Workload reproducibility" in live_html
         assert b"--fixture" in live_html
+        assert b"ELISA_FIXTURE" in live_html
+        assert b"supersecret" not in live_html
         assert b"Diagnostics" in live_html
         assert b"No recorded capture-quality degradations" in live_html
 
