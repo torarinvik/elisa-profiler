@@ -1,0 +1,11 @@
+# Two concrete instantiations of one source declaration. The profiler must keep
+# their compiler-issued identities separate even though the readable name and
+# source line are shared.
+
+def identity[T](value: T) -> T:
+    return value
+
+def main() -> i64:
+    integer: i64 = identity[i64](1)
+    decimal: f64 = identity[f64](2.0)
+    return 0 if integer == 1 and decimal > 0.0 else 1

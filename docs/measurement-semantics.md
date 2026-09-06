@@ -156,6 +156,12 @@ must apply the same arbitrary-precision policy or they may round values above
 - `thread_count` is the maximum number of registered collector threads seen in
   the capture. It is not the operating system's final thread count.
 
+Compiler-issued identity IDs are unsigned decimal `u64` values. A generic
+function specialization includes its deterministic compiler symbol suffix in
+the identity, so concrete instantiations with the same readable name and
+source line remain separate records. Readable names are presentation labels;
+they are never sufficient to merge stable-identity records.
+
 ## Comparison gates
 
 The comparison command always emits optional `thresholds` and `gate` objects.

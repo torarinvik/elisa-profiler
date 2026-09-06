@@ -478,6 +478,18 @@ def main():
             for item in repetitions
         )
         assert measured["thread_loss"]
+
+        generic_identity_output = work / "generic-identity.json"
+        run("profile", ROOT / "examples/generic_identity.elisa",
+            "--format", "json", "--output", generic_identity_output)
+        generic_identity = json.loads(generic_identity_output.read_text())
+        generic_records = [
+            record for record in generic_identity["functions"]
+            if record["function"] == "identity"
+        ]
+        assert len(generic_records) == 2, generic_identity["functions"]
+        assert len({record["identity_id"] for record in generic_records}) == 2
+        assert all(record["completed_calls"] == 1 for record in generic_records)
         assert all(
             set(record)
             == {
