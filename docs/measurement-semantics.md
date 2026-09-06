@@ -78,6 +78,12 @@ that can still be serialized; normal live capture rejects that condition before
 emitting a report. The observed numeric exit/signal fields remain alongside the
 classification.
 
+The native text and HTML renderers preserve this distinction when a JSON report
+is regenerated offline: they show the outcome and whether capture completeness
+is `complete`, `partial`, or not recorded by an older report. HTML also exposes
+the source SHA-256 and host provenance so a visual report does not hide the
+identity or limitations of its evidence.
+
 ## Units and clocks
 
 - `events`, `locations`, `statement_events`, `value_events`, and

@@ -137,7 +137,10 @@ request fails with an actionable error. The selected mode is recorded in
 `run.capabilities`, including retained event classes, trace/path policy, wall
 timing, the unsupported sampling status, and the active detail limits.
 
-The text report lists hot source locations and event totals. JSON reports have
+The text report lists the structured run outcome, capture completeness, hot
+source locations, and event totals. HTML summary cards additionally show the
+source SHA-256, host identity, inherited-affinity policy, explicit thermal
+availability, and the same completeness classification. JSON reports have
 schema version 1, compiler provenance, selected optimization level,
 execution status/timing, all locations
 with source snippets, function call-event counts, aggregate caller-to-callee
