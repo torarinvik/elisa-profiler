@@ -76,8 +76,30 @@ def main() -> int:
         baseline = root / "baseline.json"
         candidate = root / "candidate.json"
         output = root / "comparison.json"
-        baseline.write_text(json.dumps(capture(["--alpha"])), encoding="utf-8")
-        candidate.write_text(json.dumps(capture(["--beta"], exit_code=None)), encoding="utf-8")
+        baseline_capture = capture(["--alpha"])
+        baseline_capture["functions"] = [{
+            "function": "alpha",
+            "events": 7,
+            "call_events": 7,
+            "completed_calls": 7,
+            "inclusive_ns": 700,
+            "self_ns": 500,
+            "interval_ns": 700,
+            "max_interval_ns": 200,
+        }]
+        candidate_capture = capture(["--beta"], exit_code=None)
+        candidate_capture["functions"] = [{
+            "function": "beta",
+            "events": 9,
+            "call_events": 9,
+            "completed_calls": 8,
+            "inclusive_ns": 900,
+            "self_ns": 600,
+            "interval_ns": 900,
+            "max_interval_ns": 300,
+        }]
+        baseline.write_text(json.dumps(baseline_capture), encoding="utf-8")
+        candidate.write_text(json.dumps(candidate_capture), encoding="utf-8")
         result = run_command(
             [str(profiler), "compare", str(baseline), str(candidate), "--format", "json", "--output", str(output)],
             "native comparison",
@@ -109,6 +131,13 @@ def main() -> int:
             raise SystemExit("native comparison omitted peak RSS")
         if any("resource-metric availability" in warning for warning in comparison.get("warnings", [])):
             raise SystemExit("native comparison reported a false resource-availability mismatch")
+        function_changes = {item["function"]: item for item in comparison["functions"]}
+        if set(function_changes) != {"alpha", "beta"}:
+            raise SystemExit("native comparison did not retain added and removed functions")
+        if function_changes["alpha"]["inclusive_ns"]["candidate"] is not None:
+            raise SystemExit("native comparison did not mark the removed function as unavailable")
+        if function_changes["beta"]["inclusive_ns"]["baseline"] is not None:
+            raise SystemExit("native comparison did not mark the added function as unavailable")
         if comparison["candidate"]["exit_code"] is not None:
             raise SystemExit("native comparison did not preserve a signaled null exit code")
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):

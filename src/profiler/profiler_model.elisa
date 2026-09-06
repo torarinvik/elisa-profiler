@@ -276,6 +276,16 @@ module ProfilerNative:
             malformed: mutable bool
             malformed_code: mutable i64
 
+        struct ComparisonFunctionRecord:
+            function: mutable darray[u8]
+            events: mutable i64
+            call_events: mutable i64
+            completed_calls: mutable i64
+            inclusive_ns: mutable i64
+            self_ns: mutable i64
+            interval_ns: mutable i64
+            max_interval_ns: mutable i64
+
         struct ComparisonCapture:
             source: mutable darray[u8]
             workload_identity: mutable darray[u8]
@@ -299,3 +309,4 @@ module ProfilerNative:
             resource_metrics_available: mutable bool
             exit_code: mutable i64
             detail_budget_exceeded: mutable bool
+            functions: mutable darray[ComparisonFunctionRecord]

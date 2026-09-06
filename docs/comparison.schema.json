@@ -4,7 +4,7 @@
   "title": "Elisa profiler comparison",
   "description": "Summary comparison emitted by the Elisa-native profiler compare command.",
   "type": "object",
-  "required": ["kind", "schema_version", "baseline", "candidate", "workload_metadata_match", "collection_mode_match", "metrics", "warnings", "status"],
+  "required": ["kind", "schema_version", "baseline", "candidate", "workload_metadata_match", "collection_mode_match", "functions", "metrics", "warnings", "status"],
   "properties": {
     "kind": { "const": "profile_comparison" },
     "schema_version": { "const": 1 },
@@ -12,6 +12,10 @@
     "candidate": { "$ref": "#/$defs/identity" },
     "workload_metadata_match": { "type": "boolean" },
     "collection_mode_match": { "type": "boolean" },
+    "functions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/function_change" }
+    },
     "metrics": {
       "type": "object",
       "required": [
@@ -95,6 +99,21 @@
         "baseline": { "type": "integer", "minimum": 0 },
         "candidate": { "type": "integer", "minimum": 0 },
         "delta": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "function_change": {
+      "type": "object",
+      "required": ["function", "events", "call_events", "completed_calls", "inclusive_ns", "self_ns", "interval_ns", "max_interval_ns"],
+      "properties": {
+        "function": { "type": "string", "minLength": 1 },
+        "events": { "$ref": "#/$defs/resource_count_metric" },
+        "call_events": { "$ref": "#/$defs/resource_count_metric" },
+        "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
+        "inclusive_ns": { "$ref": "#/$defs/resource_count_metric" },
+        "self_ns": { "$ref": "#/$defs/resource_count_metric" },
+        "interval_ns": { "$ref": "#/$defs/resource_count_metric" },
+        "max_interval_ns": { "$ref": "#/$defs/resource_count_metric" }
       },
       "additionalProperties": false
     }

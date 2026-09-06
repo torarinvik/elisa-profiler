@@ -47,6 +47,88 @@ extend ProfilerNative:
             append_text(buffer, "}")
 
 
+        def comparison_function_index(records: darray[ComparisonFunctionRecord]&, name: darray[u8]&) -> i64 can[Abort.Panic]:
+            for index in 0..<records.count |index, records, name|:
+                return index.i64() if byte_arrays_equal(records[index].function, name)
+            return NATIVE_NEGATIVE_ONE
+
+
+        def append_comparison_function_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonFunctionRecord]&, baseline_index: i64, candidate: darray[ComparisonFunctionRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            baseline_available: bool = baseline_index >= NATIVE_ZERO
+            candidate_available: bool = candidate_index >= NATIVE_ZERO
+            baseline_name: mutable darray[u8] = []
+            candidate_name: mutable darray[u8] = []
+            baseline_events: mutable i64 = NATIVE_ZERO
+            candidate_events: mutable i64 = NATIVE_ZERO
+            baseline_call_events: mutable i64 = NATIVE_ZERO
+            candidate_call_events: mutable i64 = NATIVE_ZERO
+            baseline_completed_calls: mutable i64 = NATIVE_ZERO
+            candidate_completed_calls: mutable i64 = NATIVE_ZERO
+            baseline_inclusive_ns: mutable i64 = NATIVE_ZERO
+            candidate_inclusive_ns: mutable i64 = NATIVE_ZERO
+            baseline_self_ns: mutable i64 = NATIVE_ZERO
+            candidate_self_ns: mutable i64 = NATIVE_ZERO
+            baseline_interval_ns: mutable i64 = NATIVE_ZERO
+            candidate_interval_ns: mutable i64 = NATIVE_ZERO
+            baseline_max_interval_ns: mutable i64 = NATIVE_ZERO
+            candidate_max_interval_ns: mutable i64 = NATIVE_ZERO
+            if baseline_available:
+                baseline_record: ComparisonFunctionRecord = baseline[baseline_index.usize()]
+                baseline_name <- baseline_record.function
+                baseline_events <- baseline_record.events
+                baseline_call_events <- baseline_record.call_events
+                baseline_completed_calls <- baseline_record.completed_calls
+                baseline_inclusive_ns <- baseline_record.inclusive_ns
+                baseline_self_ns <- baseline_record.self_ns
+                baseline_interval_ns <- baseline_record.interval_ns
+                baseline_max_interval_ns <- baseline_record.max_interval_ns
+            if candidate_available:
+                candidate_record: ComparisonFunctionRecord = candidate[candidate_index.usize()]
+                candidate_name <- candidate_record.function
+                candidate_events <- candidate_record.events
+                candidate_call_events <- candidate_record.call_events
+                candidate_completed_calls <- candidate_record.completed_calls
+                candidate_inclusive_ns <- candidate_record.inclusive_ns
+                candidate_self_ns <- candidate_record.self_ns
+                candidate_interval_ns <- candidate_record.interval_ns
+                candidate_max_interval_ns <- candidate_record.max_interval_ns
+            function_name: darray[u8] = baseline_name if baseline_available else candidate_name
+            append_text(buffer, "{\"function\":")
+            append_json_string(buffer, function_name)
+            append_text(buffer, ",\"events\":")
+            append_comparison_nullable_count_metric(buffer, baseline_events, candidate_events, baseline_available, candidate_available)
+            append_text(buffer, ",\"call_events\":")
+            append_comparison_nullable_count_metric(buffer, baseline_call_events, candidate_call_events, baseline_available, candidate_available)
+            append_text(buffer, ",\"completed_calls\":")
+            append_comparison_nullable_count_metric(buffer, baseline_completed_calls, candidate_completed_calls, baseline_available, candidate_available)
+            append_text(buffer, ",\"inclusive_ns\":")
+            append_comparison_nullable_count_metric(buffer, baseline_inclusive_ns, candidate_inclusive_ns, baseline_available, candidate_available)
+            append_text(buffer, ",\"self_ns\":")
+            append_comparison_nullable_count_metric(buffer, baseline_self_ns, candidate_self_ns, baseline_available, candidate_available)
+            append_text(buffer, ",\"interval_ns\":")
+            append_comparison_nullable_count_metric(buffer, baseline_interval_ns, candidate_interval_ns, baseline_available, candidate_available)
+            append_text(buffer, ",\"max_interval_ns\":")
+            append_comparison_nullable_count_metric(buffer, baseline_max_interval_ns, candidate_max_interval_ns, baseline_available, candidate_available)
+            append_text(buffer, "}")
+
+
+        def append_comparison_functions_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "[")
+            first: mutable bool = true
+            for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, buffer|:
+                candidate_index: i64 = comparison_function_index(candidate, baseline[baseline_index].function)
+                append_text(buffer, ",") if not first
+                append_comparison_function_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
+                first <- false
+            for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, buffer|:
+                baseline_index: i64 = comparison_function_index(baseline, candidate[candidate_index].function)
+                continue if baseline_index >= NATIVE_ZERO
+                append_text(buffer, ",") if not first
+                append_comparison_function_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
+                first <- false
+            append_text(buffer, "]")
+
+
         def append_comparison_report(
             buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool
         ) -> void can[Abort.Panic, Memory.Allocate]:
@@ -124,6 +206,11 @@ extend ProfilerNative:
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.stack_overflow_entries)
                 append_text(buffer, "\n")
+                append_text(buffer, "functions compared: ")
+                append_i64(buffer, baseline.functions.count.i64())
+                append_text(buffer, " baseline, ")
+                append_i64(buffer, candidate.functions.count.i64())
+                append_text(buffer, " candidate\n")
                 if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
                     append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
@@ -171,6 +258,8 @@ extend ProfilerNative:
             append_text(buffer, "false" if workload_mismatch else "true")
             append_text(buffer, ",\"collection_mode_match\":")
             append_text(buffer, "false" if collection_mode_mismatch else "true")
+            append_text(buffer, ",\"functions\":")
+            append_comparison_functions_json(buffer, baseline.functions, candidate.functions)
             append_text(buffer, ",\"metrics\":{\"execution_ms_mean\":{\"baseline\":")
             append_micros_as_millis(buffer, baseline.execution_mean_micros)
             append_text(buffer, ",\"candidate\":")
@@ -279,12 +368,12 @@ extend ProfilerNative:
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: []
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: []
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)
