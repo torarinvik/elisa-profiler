@@ -61,7 +61,8 @@ def main() -> int:
         )
         wrapper.chmod(0o755)
         environment = os.environ.copy()
-        environment["ELISA_STAGE1_BIN"] = str(wrapper)
+        environment["ELISA_COMPILER_SCRIPT"] = str(wrapper)
+        environment["ELISA_STAGE1_BIN"] = str(compiler)
         status, stdout, stderr = run_profile(
             profiler,
             ["profile", str(source), "--format", "json", "--output", str(output)],
