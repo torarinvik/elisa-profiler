@@ -8,30 +8,33 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-3e06208d Merge branch 'work' into codex/profiler
+1cf1815f Merge branch 'work' into codex/profiler
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
 found across the compiler worktrees, including the packed-header, nested-module,
 qualified-`usize`, stage0-path, qualified-error-recovery, lexical-error-family,
-stable-module-identity, bounded self-host, scope-binding, and machine-start
-fallback fixes. All 11 local compiler branch tips are reachable from the
-dedicated branch.
+stable-module-identity, bounded self-host, scope-binding, machine-start
+fallback, lmut-threading/parity, region-owned-return, storage-invalidation,
+and process-tree termination fixes. All 11 local compiler branch tips are
+reachable from the dedicated branch.
 
 The audit is authoritative for branch/worktree provenance. The latest offline
-ledger records 11 local branches, 11 registered worktrees, eight dirty
-worktrees, and three pending source-bearing worktrees. The three source candidates
-were reviewed path-by-path against the dedicated checkout: the transpiler
-stage1 checkout, the Neural Workshop checkout, and the structpy checkout. Compatible deltas were imported where they
+ledger records 11 local branches, 11 registered worktrees, nine dirty
+worktrees, and four pending source-bearing worktrees. The source candidates
+were reviewed path-by-path against the dedicated checkout: the main `work`
+checkout, the transpiler stage1 checkout, the Neural Workshop checkout, and
+the structpy checkout. Compatible deltas were imported where they
 were independently verifiable; the remaining dirty portions are either already
 superseded or AST-incompatible. All owner worktrees remain untouched.
 
-The stage1 product was freshly reseeded from `3e06208d` with the canonical
-stage0 compiler and its usable build manifest was regenerated. The current
-`compiler-manifest-smoke`, `compiler-smoke`, `profiler-native-smoke`, and full
-profiler gates pass against that artifact. The separate fixed-point gate also
-passes: stage A is 5/5, gen2 compiles the full compiler, gen3 and gen4 are
-byte-identical, and 40 repeated gen3 emissions are identical.
+The stage1 product was freshly reseeded from `1cf1815f` with the canonical
+stage0 compiler and its usable build manifest was regenerated. The audit and
+manifest are current, and focused workload-comparison plus artifact/profile
+schema smokes pass against that artifact. Rerun the full native gate when the
+host's concurrent compiler corpus jobs release macOS dynamic-loader
+contention; a bounded native regression attempt stalled in `_dyld_start`
+before the profiler entered its main code.
 
 Historical checkpoints below retain earlier commit and test evidence for the
 build pipeline, but must not be read as proof of the current stage1 identity.
@@ -101,7 +104,10 @@ checkout. Independent content review found that the Neural Workshop
 scope-binding test is already present in the dedicated checkout; the structpy
 parser-machine changes are represented by the newer machine-parser implementation;
 the compatible machine-start fallback and storage-invalidation diagnostic fixture
-were imported as `2dbf556c`, while the remaining dirty patch references AST
+were imported as `2dbf556c`, the region-return checker was imported as
+`321527c0`, the default-storage diagnostic correction was committed as
+`f8b7474e`, and the process-tree termination fix was merged from `6052bf65`.
+The remaining dirty patch references AST
 variants absent from the dedicated compiler and was not copied. The transpiler-
 stage1 source deltas are already represented by newer or equivalent dedicated
 implementations. The remaining main-checkout path differences were likewise either superseded in the dedicated
@@ -159,8 +165,8 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `3e06208d` integration, the audit, ledger, manifest, compiler,
-native profiler, and full profiler gates pass. Keep the self-host gate in the
+For the current `1cf1815f` integration, the audit, ledger, and manifest pass;
+the full native gate remains to be rerun after host contention clears. Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
 remains a fixed point and deterministic after future compiler changes.
 
