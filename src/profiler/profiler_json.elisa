@@ -21,7 +21,19 @@ extend ProfilerNative:
             while cursor < stop |cursor, escaped, data|:
                 byte: u8 = data[cursor]
                 if escaped:
-                    escaped <- false
+                    if byte == NATIVE_BYTE_ESCAPE_UNICODE:
+                        return NATIVE_NEGATIVE_ONE if cursor + NATIVE_JSON_UNICODE_DIGITS >= stop
+                        valid_unicode: mutable bool = true
+                        for offset in NATIVE_ONE.usize()..<(NATIVE_JSON_UNICODE_DIGITS + NATIVE_ONE.usize()) |offset, cursor, data, valid_unicode|:
+                            digit: u8 = data[cursor + offset]
+                            valid_unicode <- false if not (digit >= NATIVE_BYTE_ASCII_ZERO and digit <= NATIVE_BYTE_ASCII_NINE) and not (digit >= NATIVE_BYTE_ASCII_UPPER_A and digit <= NATIVE_BYTE_ASCII_UPPER_F) and not (digit >= NATIVE_BYTE_ASCII_LOWER_A and digit <= NATIVE_BYTE_ASCII_LOWER_F)
+                        return NATIVE_NEGATIVE_ONE if not valid_unicode
+                        cursor <- cursor + NATIVE_JSON_UNICODE_DIGITS
+                        escaped <- false
+                    elif byte == NATIVE_BYTE_DOUBLE_QUOTE or byte == NATIVE_BYTE_BACKSLASH or byte == NATIVE_BYTE_SLASH or byte == NATIVE_BYTE_ESCAPE_BACKSPACE or byte == NATIVE_BYTE_ESCAPE_FORMFEED or byte == NATIVE_BYTE_ESCAPE_NEWLINE or byte == NATIVE_BYTE_ESCAPE_CARRIAGE_RETURN or byte == NATIVE_BYTE_ESCAPE_TAB:
+                        escaped <- false
+                    else:
+                        return NATIVE_NEGATIVE_ONE
                 elif byte == NATIVE_BYTE_BACKSLASH:
                     escaped <- true
                 elif byte < NATIVE_BYTE_CONTROL_LIMIT:
@@ -72,22 +84,14 @@ extend ProfilerNative:
             return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != opening
             delimiters: mutable darray[u8] = []
             delimiters.push(opening)
-            in_string: mutable bool = false
-            escaped: mutable bool = false
             cursor: mutable usize = start + NATIVE_ONE.usize()
-            while cursor < stop |cursor, in_string, escaped, delimiters, data|:
+            while cursor < stop |cursor, delimiters, data|:
                 byte: u8 = data[cursor]
-                if in_string:
-                    if escaped:
-                        escaped <- false
-                    elif byte == NATIVE_BYTE_BACKSLASH:
-                        escaped <- true
-                    elif byte < NATIVE_BYTE_CONTROL_LIMIT:
-                        return NATIVE_NEGATIVE_ONE
-                    elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
-                        in_string <- false
-                elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
-                    in_string <- true
+                if byte == NATIVE_BYTE_DOUBLE_QUOTE:
+                    string_stop: i64 = json_string_end(data, cursor, stop)
+                    return NATIVE_NEGATIVE_ONE if string_stop < NATIVE_ZERO
+                    cursor <- string_stop.usize()
+                    continue
                 elif byte == NATIVE_BYTE_LEFT_BRACE or byte == NATIVE_BYTE_LEFT_BRACKET:
                     return NATIVE_NEGATIVE_ONE if delimiters.count >= NATIVE_MAX_JSON_NESTING_DEPTH.usize()
                     delimiters.push(byte)
