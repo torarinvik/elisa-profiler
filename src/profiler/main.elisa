@@ -622,12 +622,6 @@ extend ProfilerNative:
             return NATIVE_NEGATIVE_ONE if status < NATIVE_ZERO or status % NATIVE_EXIT_STATUS_BASE == NATIVE_ZERO else status % NATIVE_SIGNAL_STATUS_BASE
 
 
-        def append_optional_signal(buffer: mutable darray[u8]&, status: i64) -> void can[Abort.Panic, Memory.Allocate]:
-            signal: i64 = system_signal(status)
-            append_text(buffer, "null") if signal < NATIVE_ZERO
-            append_i64(buffer, signal) if signal >= NATIVE_ZERO
-
-
         def observed_signal(status: i64, summary: CaptureSummary) -> i64:
             signal: i64 = system_signal(status)
             return summary.crash_signal if signal < NATIVE_ZERO and summary.crash_signal > NATIVE_ZERO
