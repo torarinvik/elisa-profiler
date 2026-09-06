@@ -910,7 +910,7 @@ extend ProfilerNative:
             append_millis(buffer, execution_mean_ns)
             append_text(buffer, " ms</dd></div><div><dt>CPU</dt><dd>")
             if resource_metrics_available:
-                append_millis(buffer, cpu_user_ns + cpu_system_ns)
+                append_millis(buffer, native_saturating_add(cpu_user_ns, cpu_system_ns))
                 append_text(buffer, " ms")
             else:
                 append_text(buffer, "unavailable")
@@ -1198,7 +1198,7 @@ extend ProfilerNative:
                 append_text(buffer, "null")
             append_text(buffer, ",\"cpu_ms\":")
             if resource_metrics_available:
-                append_millis(buffer, cpu_user_ns + cpu_system_ns)
+                append_millis(buffer, native_saturating_add(cpu_user_ns, cpu_system_ns))
             else:
                 append_text(buffer, "null")
             append_text(buffer, ",\"peak_rss_bytes\":")
