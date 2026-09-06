@@ -110,6 +110,8 @@ the program, and reports function-entry, statement, and scalar-value events:
         -o profiles/hot-loop-functions.json
     bin/elisa-profiler profile examples/hot_loop.elisa --mode diagnostic --format html \
         -o profiles/hot-loop-diagnostic.html
+    bin/elisa-profiler profile examples/hot_loop.elisa --progress profiles/hot-loop.progress.json \
+        --format json -o profiles/hot-loop.json
     bin/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
     bin/elisa-profiler recover profiles/hot-loop.json.manifest.json \
@@ -143,6 +145,9 @@ identity and per-thread detail/trace-drop counters; text and HTML reports expose
 the same diagnostics for offline inspection.
 The machine-readable contract is published at
 [`docs/profile.schema.json`](docs/profile.schema.json).
+Use `--progress PATH` for an atomic machine-readable status snapshot on a
+separate channel; its contract and stage semantics are documented in
+[`docs/progress.md`](docs/progress.md).
 Pass `--embed-source` when a portable JSON report should carry the exact source
 bytes used for the capture; the snapshot includes its SHA-256 digest and is
 opt-in because it can make reports substantially larger.
@@ -214,6 +219,7 @@ Useful controls:
     -O0|-O1|-O2|-O3        choose the compiler optimization level (default: -O0)
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
+    --progress PATH        atomically publish machine-readable stage status
     --timeout SECONDS      terminate a runaway execution and retain its partial report
     --recent-path          include the last 256 trace events in each measured run
     --event-trace          include every trace event in each measured JSON run

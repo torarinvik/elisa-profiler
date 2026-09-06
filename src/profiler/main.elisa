@@ -536,6 +536,35 @@ extend ProfilerNative:
             return write_file(path, manifest)
 
 
+        def write_progress(path: darray[u8]&, state: sview, repetition: i64, requested: i64, elapsed_ns: i64, summary: CaptureSummary) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            return true if path.count == NATIVE_ZERO.usize()
+            progress: mutable darray[u8] = []
+            state_value: mutable darray[u8] = []
+            append_text(state_value, state)
+            append_text(progress, "{\"kind\":\"elisa_profile_progress\",\"schema_version\":")
+            append_i64(progress, NATIVE_PROGRESS_SCHEMA_VERSION)
+            append_text(progress, ",\"state\":")
+            append_json_string(progress, state_value)
+            append_text(progress, ",\"repetition\":")
+            append_i64(progress, repetition)
+            append_text(progress, ",\"requested_repetitions\":")
+            append_i64(progress, requested)
+            append_text(progress, ",\"elapsed_ns\":")
+            append_i64(progress, elapsed_ns)
+            append_text(progress, ",\"events\":")
+            append_i64(progress, summary.events)
+            append_text(progress, ",\"capture_bytes\":")
+            append_i64(progress, summary.capture_bytes_used)
+            append_text(progress, ",\"valid_frames\":")
+            append_i64(progress, summary.valid_frames)
+            append_text(progress, ",\"capture_started\":")
+            append_text(progress, "true" if summary.capture_started else "false")
+            append_text(progress, ",\"capture_complete\":")
+            append_text(progress, "true" if summary.capture_complete else "false")
+            append_text(progress, "}\n")
+            return write_file(path, progress)
+
+
         def unwrap_profile_artifact(data: darray[u8]&, capture: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             artifact_start: i64 = json_key_value_start(data, "artifact_version", NATIVE_ZERO.usize(), data.count)
             if artifact_start < NATIVE_ZERO:
@@ -1384,10 +1413,11 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--progress PATH] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
+            progress_path: mutable darray[u8] = []
             artifact_output: mutable darray[u8] = []
             embed_source: mutable bool = false
             opt_level: mutable i64 = NATIVE_ZERO
@@ -1412,7 +1442,7 @@ extend ProfilerNative:
             target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1460,6 +1490,11 @@ extend ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
                     return report_error("--output requires a path") if index + NATIVE_ONE >= argc
                     copy_cstr(output, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--progress") == NATIVE_ZERO:
+                    return report_error("--progress requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(progress_path, slots[index + NATIVE_ONE].cast[cstr])
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--artifact-output") == NATIVE_ZERO:
@@ -1625,6 +1660,8 @@ extend ProfilerNative:
             temporary_cstr_pointer: cstr = (&temporary_cstr[0]).cast[cstr] can Unsafe.PointerCast
             return report_error("could not create native profiler temporary directory") if profiler_ffi_mkdir(temporary_cstr_pointer, NATIVE_DIRECTORY_MODE) != NATIVE_ZERO
             build_start: ProfilerNativeTimespec = read_monotonic()
+            progress_summary: CaptureSummary = empty_capture_summary()
+            return report_error("could not write profiler progress") if not write_progress(progress_path, "compile_started", NATIVE_ZERO, requested_repetitions, NATIVE_ZERO, progress_summary)
 
             command_arguments: mutable darray[darray[u8]] = []
             append_command_argument(command_arguments, "-g")
@@ -1736,8 +1773,8 @@ extend ProfilerNative:
                 append_text(compiler_commit, "unknown")
             dirty_metadata: darray[u8] = read_git_metadata(compiler_root, "dirty", compiler_dirty_path, compiler_metadata_error_path, git_tool)
             compiler_dirty: bool = dirty_metadata.count > NATIVE_ZERO.usize()
-        
             summary: mutable CaptureSummary = empty_capture_summary()
+            return report_error("could not write profiler progress") if not write_progress(progress_path, "compile_complete", NATIVE_ZERO, requested_repetitions, compile_elapsed_ns, summary)
             repetition_records: mutable darray[u8] = []
             all_execution_times: mutable darray[i64] = []
             measurement_execution_times: mutable darray[i64] = []
@@ -1766,6 +1803,9 @@ extend ProfilerNative:
                 if warmup_result.status != NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("native profiler warmup failed")
+                if not write_progress(progress_path, "warmup_complete", warmup_index, warmup_repetitions, warmup_result.elapsed_ns, summary):
+                    cleanup_temp(temporary)
+                    return report_error("could not write profiler progress")
                 warmup_index <- warmup_index + 1
 
             program_stderr: mutable darray[u8] = []
@@ -1776,6 +1816,9 @@ extend ProfilerNative:
             overall_timed_out: mutable bool = false
             repetition: mutable i64 = NATIVE_ONE
             while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, all_cpu_user_times, all_cpu_system_times, all_peak_rss_values, all_resource_availability, measurement_cpu_user_times, measurement_cpu_system_times, measurement_peak_rss_values, measurement_resource_availability, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out, last_capture_bytes, last_valid_frames, last_valid_capture_bytes|:
+                if not write_progress(progress_path, "capture_started", repetition, requested_repetitions, NATIVE_ZERO, summary):
+                    cleanup_temp(temporary)
+                    return report_error("could not write profiler progress")
                 capture_fd: i64 = open_output_file(capture_path)
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
@@ -1823,6 +1866,9 @@ extend ProfilerNative:
                     failed_repetitions <- failed_repetitions + 1
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
                 overall_timed_out <- true if run_result.timed_out
+                if not write_progress(progress_path, "repetition_complete", repetition, requested_repetitions, run_result.elapsed_ns, summary):
+                    cleanup_temp(temporary)
+                    return report_error("could not write profiler progress")
                 if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, "running", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes):
                     cleanup_temp(temporary)
                     return report_error("could not update capture manifest")
@@ -1832,6 +1878,9 @@ extend ProfilerNative:
             if not byte_arrays_equal(source_check, source_after_run):
                 cleanup_temp(temporary)
                 return report_error("source changed during profiling; retry with a stable source file")
+            if not write_progress(progress_path, "rendering", completed_repetitions, requested_repetitions, NATIVE_ZERO, summary):
+                cleanup_temp(temporary)
+                return report_error("could not write profiler progress")
             metric_times: mutable darray[i64] = []
             if measurement_execution_times.count > 0:
                 metric_times.extend(measurement_execution_times)
@@ -1906,6 +1955,7 @@ extend ProfilerNative:
             if output.count > NATIVE_ZERO.usize():
                 return report_error("could not write native profile report") if not write_file(output, report)
             return report_error("could not complete capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, manifest_state, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)
+            return report_error("could not write profiler progress") if not write_progress(progress_path, "complete", completed_repetitions, requested_repetitions, total_execution_ns, summary)
             return final_exit_code if output.count > NATIVE_ZERO.usize()
             _ = write_all_fd(NATIVE_STANDARD_OUTPUT, report) can Console
             return final_exit_code

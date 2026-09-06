@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://elisa-lang.org/profiler/progress.schema.json",
+  "title": "Elisa profiler progress status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schema_version",
+    "state",
+    "repetition",
+    "requested_repetitions",
+    "elapsed_ns",
+    "events",
+    "capture_bytes",
+    "valid_frames",
+    "capture_started",
+    "capture_complete"
+  ],
+  "properties": {
+    "kind": { "const": "elisa_profile_progress" },
+    "schema_version": { "const": 1 },
+    "state": {
+      "type": "string",
+      "enum": [
+        "compile_started",
+        "compile_complete",
+        "warmup_complete",
+        "capture_started",
+        "repetition_complete",
+        "rendering",
+        "complete"
+      ]
+    },
+    "repetition": { "type": "integer", "minimum": 0 },
+    "requested_repetitions": { "type": "integer", "minimum": 1 },
+    "elapsed_ns": { "type": "integer", "minimum": 0 },
+    "events": { "type": "integer", "minimum": 0 },
+    "capture_bytes": { "type": "integer", "minimum": 0 },
+    "valid_frames": { "type": "integer", "minimum": 0 },
+    "capture_started": { "type": "boolean" },
+    "capture_complete": { "type": "boolean" }
+  }
+}
