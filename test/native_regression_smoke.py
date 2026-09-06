@@ -224,6 +224,12 @@ def main():
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))
             run("compare", capture, capture, "--format", "json", ok=False)
         valid_report_json = json.dumps(report)
+        capture.write_text(valid_report_json + "\n", encoding="utf-8")
+        assert run("report", capture, "--format", "folded") == b"root 1\nroot;work 6\n"
+        capture.write_text(valid_report_json + " trailing", encoding="utf-8")
+        run("report", capture, "--format", "folded", ok=False)
+        capture.write_text("[]", encoding="utf-8")
+        run("report", capture, "--format", "folded", ok=False)
         mismatched_array_json = valid_report_json.replace('"stacks": [', '"stacks": [{"broken":]', 1)
         capture.write_text(mismatched_array_json, encoding="utf-8")
         run("report", capture, "--format", "folded", ok=False)

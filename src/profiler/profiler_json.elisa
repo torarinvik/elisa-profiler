@@ -33,6 +33,7 @@ extend ProfilerNative:
 
 
         def json_key_value_start(data: darray[u8]&, key: sview, start: usize, stop: usize) -> i64 can[Abort.Panic]:
+            return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != NATIVE_BYTE_LEFT_BRACE
             key_length: usize = profiler_ffi_sview_len(key)
             cursor: mutable usize = start
             object_depth: mutable i64 = NATIVE_ZERO
@@ -106,6 +107,13 @@ extend ProfilerNative:
 
         def json_array_end(data: darray[u8]&, start: usize, stop: usize) -> i64 can[Abort.Panic, Memory.Allocate]:
             return json_compound_end(data, start, stop, NATIVE_BYTE_LEFT_BRACKET, NATIVE_BYTE_RIGHT_BRACKET)
+
+
+        def json_document_is_object(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            document_stop: i64 = json_object_end(data, NATIVE_ZERO.usize(), data.count)
+            return false if document_stop < NATIVE_ZERO
+            cursor: usize = json_skip_whitespace(data, document_stop.usize(), data.count)
+            return cursor == data.count
 
 
         def json_hex_digit(byte: u8) -> i64:
@@ -798,6 +806,7 @@ extend ProfilerNative:
 
 
         def read_comparison_capture(data: darray[u8]&, capture: mutable ComparisonCapture&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
             schema_version: mutable i64 = NATIVE_ZERO
             return false if not json_read_number_field(data, "schema_version", NATIVE_ZERO.usize(), data.count, &schema_version)
             return false if schema_version != NATIVE_REPORT_SCHEMA_VERSION

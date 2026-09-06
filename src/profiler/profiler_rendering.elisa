@@ -147,6 +147,7 @@ extend ProfilerNative:
 
 
         def append_offline_folded_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
             timing: mutable bool = false
             return false if not json_read_location_timing(data, &timing)
             return false if not json_read_stacks_to_folded(data, buffer, timing)
@@ -155,6 +156,7 @@ extend ProfilerNative:
 
 
         def append_offline_speedscope_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
             source: mutable darray[u8] = []
             timing: mutable bool = false
             source_start: i64 = json_source_value_start(data)
@@ -291,6 +293,7 @@ extend ProfilerNative:
 
 
         def append_offline_html_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
             source: mutable darray[u8] = []
             source_start: i64 = json_source_value_start(data)
             return false if source_start < NATIVE_ZERO
@@ -474,6 +477,7 @@ extend ProfilerNative:
 
 
         def append_offline_text_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
             source: mutable darray[u8] = []
             source_start: i64 = json_source_value_start(data)
             return false if source_start < NATIVE_ZERO

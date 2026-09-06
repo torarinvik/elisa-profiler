@@ -646,6 +646,7 @@ extend ProfilerNative:
 
 
         def unwrap_profile_artifact(data: darray[u8]&, capture: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not json_document_is_object(data)
             artifact_start: i64 = json_key_value_start(data, "artifact_version", NATIVE_ZERO.usize(), data.count)
             if artifact_start < NATIVE_ZERO:
                 capture.extend(data)
