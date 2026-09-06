@@ -49,6 +49,13 @@ int main(void) {
     assert(profile_saturating_add_signed_sum(INT64_MAX, 1) == signed_sum_high);
     assert(profile_saturating_add_signed_sum(signed_sum_high, -1) == signed_sum_high);
     assert(profile_saturating_add_signed_sum(-4, 5) == 1);
+    const uint64_t stable_function_id = UINT64_C(42);
+    assert(profile_named_identity_matches("left", "right", stable_function_id,
+                                          stable_function_id));
+    assert(!profile_named_identity_matches("left", "right", PROFILE_ID_UNSET,
+                                           PROFILE_ID_UNSET));
+    assert(profile_hash_identity(PROFILE_FNV_OFFSET_BASIS, "left", stable_function_id) ==
+           profile_hash_identity(PROFILE_FNV_OFFSET_BASIS, "right", stable_function_id));
     assert(!profile_next_capacity(SIZE_MAX, PROFILE_INITIAL_LOCATION_CAPACITY,
                                    &next_capacity));
     assert(!profile_allocation_bytes(SIZE_MAX, sizeof(profile_entry),

@@ -99,6 +99,7 @@ enum {
     PROFILE_COUNTER_INCREMENT = 1,
     PROFILE_NANOS_PER_SECOND = 1000000000,
     PROFILE_HASH_NULL_MARKER = 255,
+    PROFILE_HASH_ID_MARKER = 254,
     PROFILE_SIGNAL_MARKER_BUFFER_BYTES = 64 * 1024,
     PROFILE_SIGNAL_EXIT_BASE = 128,
     PROFILE_EXIT_CODE_MASK = 0xff,
@@ -556,6 +557,20 @@ static uint64_t profile_hash_string(uint64_t hash, const char *value) {
     return hash;
 }
 
+/* Compiler-issued IDs are the hot-path identity. Names remain a compatibility
+ * fallback for legacy callbacks and are retained for human-readable output. */
+static uint64_t profile_hash_identity(uint64_t hash, const char *name,
+                                      uint64_t identity_id) {
+    if (identity_id != PROFILE_ID_UNSET) {
+        hash ^= PROFILE_HASH_ID_MARKER;
+        hash *= PROFILE_FNV_PRIME;
+        hash ^= identity_id;
+        hash *= PROFILE_FNV_PRIME;
+        return hash;
+    }
+    return profile_hash_string(hash, name);
+}
+
 typedef struct {
     const char *function_name;
     const char *caller_name;
@@ -645,7 +660,7 @@ static uint64_t profile_hash(const char *function_name, const char *variable_nam
                              uint32_t line, uint8_t kind, uint8_t is_signed,
                              uint64_t identity_id) {
     uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
-    hash = profile_hash_string(hash, function_name);
+    hash = profile_hash_identity(hash, function_name, identity_id);
     hash = profile_hash_string(hash, variable_name);
     hash ^= line;
     hash *= PROFILE_FNV_PRIME;
@@ -664,13 +679,23 @@ static int profile_identity_matches(uint64_t left, uint64_t right) {
                : left != PROFILE_ID_UNSET && left == right;
 }
 
+static int profile_named_identity_matches(const char *left_name, const char *right_name,
+                                          uint64_t left_id, uint64_t right_id) {
+    if (!profile_identity_matches(left_id, right_id)) {
+        return 0;
+    }
+    return left_id != PROFILE_ID_UNSET && right_id != PROFILE_ID_UNSET
+               ? 1
+               : profile_strings_equal(left_name, right_name);
+}
+
 static int profile_key_matches(const profile_entry *entry, const char *function_name,
                                const char *variable_name, uint32_t line, uint8_t kind,
                                uint8_t is_signed, uint64_t identity_id) {
-    return profile_strings_equal(entry->function_name, function_name) &&
+    return profile_named_identity_matches(entry->function_name, function_name,
+                                          entry->identity_id, identity_id) &&
            profile_strings_equal(entry->variable_name, variable_name) &&
-           entry->line == line && entry->kind == kind && entry->is_signed == is_signed &&
-           profile_identity_matches(entry->identity_id, identity_id);
+           entry->line == line && entry->kind == kind && entry->is_signed == is_signed;
 }
 
 static profile_entry *profile_find_locked(const char *function_name,
@@ -699,8 +724,8 @@ static profile_entry *profile_find_locked(const char *function_name,
 static uint64_t profile_call_edge_hash(const char *caller_name, const char *callee_name,
                                        uint64_t caller_id, uint64_t callee_id) {
     uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
-    hash = profile_hash_string(hash, caller_name);
-    hash = profile_hash_string(hash, callee_name);
+    hash = profile_hash_identity(hash, caller_name, caller_id);
+    hash = profile_hash_identity(hash, callee_name, callee_id);
     hash ^= caller_id;
     hash *= PROFILE_FNV_PRIME;
     hash ^= callee_id;
@@ -722,10 +747,10 @@ static profile_call_edge *profile_find_call_edge_locked(const char *caller_name,
         if (edge->caller_name == NULL) {
             return NULL;
         }
-        if (profile_strings_equal(edge->caller_name, caller_name) &&
-            profile_strings_equal(edge->callee_name, callee_name) &&
-            profile_identity_matches(edge->caller_id, caller_id) &&
-            profile_identity_matches(edge->callee_id, callee_id)) {
+        if (profile_named_identity_matches(edge->caller_name, caller_name,
+                                           edge->caller_id, caller_id) &&
+            profile_named_identity_matches(edge->callee_name, callee_name,
+                                           edge->callee_id, callee_id)) {
             return edge;
         }
         slot = (slot + 1) & (profile_call_edge_capacity - 1);
@@ -815,10 +840,10 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
     size_t slot = profile_call_edge_hash(caller_name, callee_name, caller_id, callee_id) &
                   (profile_call_edge_capacity - 1);
     while (profile_call_edges[slot].caller_name != NULL &&
-           !(profile_strings_equal(profile_call_edges[slot].caller_name, caller_name) &&
-             profile_strings_equal(profile_call_edges[slot].callee_name, callee_name) &&
-             profile_identity_matches(profile_call_edges[slot].caller_id, caller_id) &&
-             profile_identity_matches(profile_call_edges[slot].callee_id, callee_id))) {
+           !(profile_named_identity_matches(profile_call_edges[slot].caller_name, caller_name,
+                                            profile_call_edges[slot].caller_id, caller_id) &&
+             profile_named_identity_matches(profile_call_edges[slot].callee_name, callee_name,
+                                            profile_call_edges[slot].callee_id, callee_id))) {
         slot = (slot + 1) & (profile_call_edge_capacity - 1);
     }
     profile_call_edge *edge = &profile_call_edges[slot];
@@ -871,9 +896,7 @@ static uint64_t profile_call_path_hash(const profile_call_path *parent,
     uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash ^= (uint64_t)(uintptr_t)parent;
     hash *= PROFILE_FNV_PRIME;
-    hash = profile_hash_string(hash, function_name);
-    hash ^= function_id;
-    hash *= PROFILE_FNV_PRIME;
+    hash = profile_hash_identity(hash, function_name, function_id);
     return hash;
 }
 
@@ -931,10 +954,10 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
     if (profile_call_path_capacity != 0) {
         while (profile_call_paths[existing_slot] != NULL &&
                !(profile_call_paths[existing_slot]->parent == parent &&
-                 profile_strings_equal(profile_call_paths[existing_slot]->function_name,
-                                       function_name) &&
-                 profile_identity_matches(profile_call_paths[existing_slot]->function_id,
-                                          function_id))) {
+                 profile_named_identity_matches(profile_call_paths[existing_slot]->function_name,
+                                                function_name,
+                                                profile_call_paths[existing_slot]->function_id,
+                                                function_id))) {
             existing_slot = (existing_slot + 1) & (profile_call_path_capacity - 1);
         }
         if (profile_call_paths[existing_slot] != NULL) {
@@ -974,8 +997,10 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
                   (profile_call_path_capacity - 1);
     while (profile_call_paths[slot] != NULL &&
            !(profile_call_paths[slot]->parent == parent &&
-             profile_strings_equal(profile_call_paths[slot]->function_name, function_name) &&
-             profile_identity_matches(profile_call_paths[slot]->function_id, function_id))) {
+             profile_named_identity_matches(profile_call_paths[slot]->function_name,
+                                            function_name,
+                                            profile_call_paths[slot]->function_id,
+                                            function_id))) {
         slot = (slot + 1) & (profile_call_path_capacity - 1);
     }
     profile_call_path *path = profile_call_paths[slot];
@@ -1373,8 +1398,7 @@ static void profile_record(const char *function_name, uint32_t line,
 
 static int profile_function_matches(const char *expected_name, uint64_t expected_id,
                                     const char *actual_name, uint64_t actual_id) {
-    return profile_strings_equal(expected_name, actual_name) &&
-           profile_identity_matches(expected_id, actual_id);
+    return profile_named_identity_matches(expected_name, actual_name, expected_id, actual_id);
 }
 
 static void profile_record_function_entry(const char *function_name, uint32_t line,
