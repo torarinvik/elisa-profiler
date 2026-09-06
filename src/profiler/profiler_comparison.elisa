@@ -178,6 +178,51 @@ extend ProfilerNative:
             return NATIVE_NEGATIVE_ONE
 
 
+        def comparison_missing_function_count(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> i64 can[Abort.Panic]:
+            missing: mutable i64 = NATIVE_ZERO
+            for index in 0..<records.count |index, records, other, missing|:
+                missing <- missing + NATIVE_ONE if comparison_function_index(other, records[index].function) < NATIVE_ZERO
+            return missing
+
+
+        def append_comparison_function_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<records.count |index, records, other, label, emitted, buffer|:
+                continue if comparison_function_index(other, records[index].function) >= NATIVE_ZERO
+                if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
+                    append_text(buffer, "<tr><th scope='row'>")
+                    append_text(buffer, label)
+                    append_text(buffer, "</th><td><code>")
+                    append_html_escaped(buffer, records[index].function)
+                    append_text(buffer, "</code></td></tr>")
+                    emitted <- emitted + NATIVE_ONE
+
+
+        def append_comparison_function_changes_html(buffer: mutable darray[u8]&, baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            removed: i64 = comparison_missing_function_count(baseline, candidate)
+            added: i64 = comparison_missing_function_count(candidate, baseline)
+            append_text(buffer, "<details><summary>Function identity changes</summary>")
+            if removed == NATIVE_ZERO and added == NATIVE_ZERO:
+                append_text(buffer, "<p>No added or removed function identities.</p>")
+            else:
+                append_text(buffer, "<p>Removed: ")
+                append_i64(buffer, removed)
+                append_text(buffer, "; added: ")
+                append_i64(buffer, added)
+                append_text(buffer, ". Matching uses the readable function identity available in this capture.</p><div class='table-scroll'><table><thead><tr><th scope='col'>Change</th><th scope='col'>Function</th></tr></thead><tbody>")
+                emitted: mutable i64 = NATIVE_ZERO
+                append_comparison_function_change_rows_html(buffer, baseline, candidate, "Removed", emitted)
+                append_comparison_function_change_rows_html(buffer, candidate, baseline, "Added", emitted)
+                append_text(buffer, "</tbody></table></div>")
+                total_changes: i64 = removed + added
+                if total_changes > emitted:
+                    append_text(buffer, "<p>Showing the first ")
+                    append_i64(buffer, emitted)
+                    append_text(buffer, " of ")
+                    append_i64(buffer, total_changes)
+                    append_text(buffer, " changes; the raw comparison JSON retains the complete bounded detail.</p>")
+            append_text(buffer, "</details>")
+
+
         def append_comparison_function_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonFunctionRecord]&, baseline_index: i64, candidate: darray[ComparisonFunctionRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
             baseline_available: bool = baseline_index >= NATIVE_ZERO
             candidate_available: bool = candidate_index >= NATIVE_ZERO
@@ -520,7 +565,9 @@ extend ProfilerNative:
                 append_i64(buffer, candidate.locations)
                 append_text(buffer, "</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.locations, baseline.locations))
-                append_text(buffer, "</td></tr></tbody></table><p><strong>Gate:</strong> ")
+                append_text(buffer, "</td></tr></tbody></table>")
+                append_comparison_function_changes_html(buffer, baseline.functions, candidate.functions)
+                append_text(buffer, "<p><strong>Gate:</strong> ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
                 append_text(buffer, "</p>")
                 if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:

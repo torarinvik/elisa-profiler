@@ -191,9 +191,20 @@ def main() -> int:
         if html_result.returncode != 0:
             raise SystemExit(f"native comparison html failed: {html_result.stderr or html_result.stdout}")
         html = html_output.read_bytes()
-        for marker in (b"Elisa profile comparison", b"Mean execution", b"Workload identity", b"Warnings", b"Raw comparison JSON"):
+        for marker in (
+            b"Elisa profile comparison",
+            b"Mean execution",
+            b"Workload identity",
+            b"Warnings",
+            b"Function identity changes",
+            b">Removed<",
+            b">Added<",
+            b"Raw comparison JSON",
+        ):
             if marker not in html:
                 raise SystemExit(f"native comparison html omitted {marker!r}")
+        if b"<code>alpha</code>" not in html or b"<code>beta</code>" not in html:
+            raise SystemExit("native comparison html omitted added/removed function identities")
         if b"baseline and candidate use different workload metadata" not in html:
             raise SystemExit("native comparison html omitted its workload warning")
         function_changes = {item["function"]: item for item in comparison["functions"]}

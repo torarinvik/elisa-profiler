@@ -331,8 +331,11 @@ rendered as zero:
         --format json --output comparison.json
 
 Use `--format html` for a self-contained side-by-side comparison view with
-identity cards, baseline/candidate metric deltas, gate status, warnings, and a
-raw JSON disclosure for machine-readable detail.
+identity cards, baseline/candidate metric deltas, gate status, warnings, a
+bounded escaped function-identity change table, and a raw JSON disclosure for
+machine-readable detail. Added and removed functions are labeled explicitly;
+the table is capped so a pathological capture cannot expand the HTML without
+bound.
 
 Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
