@@ -189,6 +189,7 @@
       ],
       "properties": {
         "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "diagnostic"] },
+        "outcome": { "type": "string", "enum": ["success", "target_exit", "target_signal", "timeout", "profiler_failure", "incomplete_capture", "incomplete_artifact"] },
         "capabilities": {
           "type": "object",
           "required": ["event_classes", "trace", "recent_path", "timing", "sampling", "detail_limits"],

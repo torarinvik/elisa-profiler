@@ -166,6 +166,7 @@ def main():
         run("profile", target, "--format", "json", "--output", output, expected=7)
         failed_report = json.loads(output.read_text())
         assert failed_report["run"]["exit_code"] == 7
+        assert failed_report["run"]["outcome"] == "target_exit"
         assert failed_report["workload"]["source_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
         assert failed_report["run"]["signal"] is None
         assert failed_report["quality"] == {
@@ -186,6 +187,7 @@ def main():
         run("profile", target, "--format", "json", "--output", output, ok=False)
         run("profile", ROOT / "examples/crash.elisa", "--format", "json", "--output", output, expected=134)
         crash_report = json.loads(output.read_text())
+        assert crash_report["run"]["outcome"] == "target_signal"
         assert crash_report["run"]["signal"] == 6
         assert crash_report["summary"]["crash_signal"] == 6
         assert crash_report["quality"]["capture"] == "target_signal"
@@ -194,6 +196,7 @@ def main():
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
+        assert measured["run"]["outcome"] == "success"
         host = measured["host"]
         assert host["os"] in {"Darwin", "Linux"}, host
         assert host["architecture"], host

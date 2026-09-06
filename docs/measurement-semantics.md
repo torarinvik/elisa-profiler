@@ -63,6 +63,16 @@ quality controls for a valid capture. A complete capture that exceeds a reader
 limit is rejected as malformed, while recovery may stop at a final truncated
 tail after the last validated frame.
 
+`run.outcome` is the stable machine-readable termination classification. It is
+`success` for a complete zero-exit target, `target_exit` for a non-zero target
+exit, `target_signal` for an observed signal, `timeout` for deadline
+termination, `profiler_failure` for launcher/wait failure, and
+`incomplete_artifact` for a report reconstructed by `recover`. The
+`incomplete_capture` value is reserved for a structurally incomplete capture
+that can still be serialized; normal live capture rejects that condition before
+emitting a report. The observed numeric exit/signal fields remain alongside the
+classification.
+
 ## Units and clocks
 
 - `events`, `locations`, `statement_events`, `value_events`, and

@@ -71,6 +71,7 @@ def main() -> int:
         )
         assert process.returncode == 0, (process.returncode, process.stdout, process.stderr)
         payload = json.loads(output.read_text(encoding="utf-8"))
+        assert payload["run"]["outcome"] == "incomplete_artifact", payload
         assert payload["quality"]["capture"] == "recovered", payload
         assert "recovered_partial" in payload["quality"]["reasons"], payload
         assert payload["summary"]["capture_started"] is True, payload

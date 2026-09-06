@@ -683,6 +683,18 @@ extend ProfilerNative:
             append_i64(buffer, system_exit_code(status)) if status >= NATIVE_ZERO and signal < NATIVE_ZERO
 
 
+        def append_run_outcome(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            signal: i64 = observed_signal(status, summary)
+            target_exit: i64 = system_exit_code(status)
+            append_text(buffer, "\"incomplete_artifact\"") if recovered
+            append_text(buffer, "\"profiler_failure\"") if not recovered and status < NATIVE_ZERO
+            append_text(buffer, "\"timeout\"") if not recovered and status >= NATIVE_ZERO and timed_out
+            append_text(buffer, "\"target_signal\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "\"target_exit\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit != NATIVE_ZERO
+            append_text(buffer, "\"success\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and summary.capture_complete
+            append_text(buffer, "\"incomplete_capture\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and not summary.capture_complete
+
+
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
@@ -1001,6 +1013,8 @@ extend ProfilerNative:
             append_i64(buffer, summary.locations)
             append_text(buffer, "},\"run\":{\"collection_mode\":")
             append_json_string(buffer, mode)
+            append_text(buffer, ",\"outcome\":")
+            append_run_outcome(buffer, summary, status, timed_out, recovered)
             append_collection_capabilities(buffer, mode, event_trace, recent_path, summary)
             append_text(buffer, ",\"exit_code\":")
             append_observed_exit_code(buffer, status, summary)
