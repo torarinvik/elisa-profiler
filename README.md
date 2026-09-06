@@ -307,9 +307,12 @@ Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
 Comparisons warn when source, workload metadata, collection mode, compiler
 commit, optimization level, target exit status, or evidence quality differs.
-Threshold-based CI failure and compiler-stable cross-build identity matching
-remain planned extensions; the current comparison reports explicit keyed
-location changes without pretending that readable names are stable identities.
+Comparison gates support relative and absolute wall, CPU, RSS, and shared
+function self-time budgets; requested gates return stable regression or
+inconclusive exit statuses and serialize their policy and violations. Compiler-
+stable cross-build identity matching remains a planned extension; current
+comparisons report explicit keyed location changes without pretending that
+readable names are stable identities.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target

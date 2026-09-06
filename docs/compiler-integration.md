@@ -30,15 +30,16 @@ the dedicated branch already contains a newer/superseding implementation, or
 the dirty patch is an older, reverting, or AST-incompatible variant. All owner
 worktrees remain untouched.
 
-The retained stage1 binary and compiler manifest are from the older `88f09c8d`
-product and are correctly marked unusable against `c15c4918`. A fresh direct
-stage0 build and a fresh build through the existing self-host image both receive
-SIGTERM during active compilation at roughly 1.9 GB RSS, without a compiler
-diagnostic or object output. This reproduces independently of the new
-qualified-return fix; it is currently a host/process-supervisor blocker, not a
-reason to falsify the manifest or weaken freshness checks. The audit and ledger
-smokes pass, while compiler-manifest, compiler-smoke, and the new
-cross-module parity check remain pending a successful fresh seed.
+The stage1 product was reseeded directly from `c15c4918` with the installed
+stage0 compiler at `-O0`, using an explicit 16 GiB seed ceiling. The seed
+completed successfully and the regenerated content manifest reports
+`freshness.usable: true`; no timestamp or identity bypass was used. The earlier
+SIGTERM therefore was not evidence of insufficient host memory. The current
+`compiler-manifest-smoke`, `compiler-smoke`, and `profiler-native-smoke` gates
+all pass against the fresh product. The separate gen2/gen3 fixed-point script
+still terminates during its gen2 construction phase before it produces a usable
+gen2, so that bootstrap gate remains pending and is not conflated with the
+passing stage1/native gates.
 
 Historical checkpoints below retain the earlier commit and test evidence for
 the build pipeline, but must not be read as proof that the current stage1
@@ -155,10 +156,11 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `c15c4918` integration, the first two audit commands pass.
-`make compiler-manifest-smoke`, `make compiler-smoke`, and native rebuild gates
-must remain pending until the fresh stage1 seed succeeds; the retained
-`88f09c8d` product is intentionally rejected as stale.
+For the current `c15c4918` integration, the audit, manifest, compiler-smoke, and
+native rebuild gates pass against the freshly reseeded stage1 product. Keep
+`make compiler-self-host-smoke` as a separate pending gate until its gen2
+construction phase completes and the gen3/gen4 fixed-point evidence is
+available.
 
 The native profiler itself remains Elisa code. The C collector is only the explicit
 low-level ABI/runtime component used by the generated target and is not an alternate
