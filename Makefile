@@ -224,4 +224,4 @@ bootstrap-path-smoke: profiler-native
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke progress-smoke path-remap-smoke source-mapping-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke profile-workload-compare-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke progress-smoke path-remap-smoke source-mapping-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
