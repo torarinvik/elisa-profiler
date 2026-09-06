@@ -695,6 +695,15 @@ extend ProfilerNative:
             append_text(buffer, "\"incomplete_capture\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and not summary.capture_complete
 
 
+        def append_html_outcome(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            signal: i64 = observed_signal(status, summary)
+            append_text(buffer, "profiler failure") if status < NATIVE_ZERO
+            append_text(buffer, "timeout") if status >= NATIVE_ZERO and timed_out
+            append_text(buffer, "target signal") if status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "target exit") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
+            append_text(buffer, "success") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO
+
+
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
@@ -796,6 +805,8 @@ extend ProfilerNative:
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
             append_text(buffer, "ok" if exit_code == NATIVE_ZERO else "target failed")
+            append_text(buffer, "</dd></div><div><dt>Outcome</dt><dd>")
+            append_html_outcome(buffer, summary, status, timed_out)
             append_text(buffer, "</dd></div><div><dt>Signal</dt><dd>")
             append_observed_signal(buffer, status, summary)
             append_text(buffer, "</dd></div><div><dt>Execution</dt><dd>")

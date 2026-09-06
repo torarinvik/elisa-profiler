@@ -210,6 +210,7 @@ extend ProfilerNative:
             peak_rss_available: mutable bool = false
             completed_repetitions: mutable i64 = NATIVE_ZERO
             successful_repetitions: mutable i64 = NATIVE_ZERO
+            outcome: mutable darray[u8] = []
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
@@ -227,6 +228,11 @@ extend ProfilerNative:
             successful_start: i64 = json_key_value_start(data, "successful_repetitions", run_start.usize(), run_stop.usize())
             if successful_start >= NATIVE_ZERO:
                 return false if not json_read_number_field(data, "successful_repetitions", run_start.usize(), run_stop.usize(), &successful_repetitions)
+            outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
+            if outcome_start >= NATIVE_ZERO:
+                return false if json_string_into(data, outcome_start.usize(), run_stop.usize(), &outcome) < NATIVE_ZERO
+            if outcome.count == NATIVE_ZERO.usize():
+                append_text(outcome, "success" if exit_code == NATIVE_ZERO else "target exit")
             timing: mutable bool = false
             return false if not json_read_location_timing(data, &timing)
             folded: mutable darray[u8] = []
@@ -263,6 +269,8 @@ extend ProfilerNative:
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
             append_text(buffer, "ok" if exit_code == NATIVE_ZERO else "target failed")
+            append_text(buffer, "</dd></div><div><dt>Outcome</dt><dd>")
+            append_html_escaped(buffer, outcome)
             append_text(buffer, "</dd></div><div><dt>Mean execution</dt><dd>")
             if execution_mean_available:
                 append_micros_as_millis(buffer, execution_mean_micros)

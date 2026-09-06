@@ -109,6 +109,7 @@ profiler-native-smoke: profiler-native
 		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format html --output "$$native_work/offline.html"; \
 		grep -Fq '<!doctype html>' "$$native_work/offline.html"; \
 		grep -Fq 'Native Elisa offline renderer' "$$native_work/offline.html"; \
+		grep -Fq 'Outcome' "$$native_work/offline.html"; \
 		grep -Fq 'Mean execution' "$$native_work/offline.html"; \
 		grep -Fq 'Peak RSS' "$$native_work/offline.html"; \
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --recent-path --format json --output "$$native_work/recent.json"; \
