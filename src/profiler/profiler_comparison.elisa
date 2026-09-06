@@ -339,6 +339,55 @@ extend ProfilerNative:
             append_text(buffer, "}")
 
 
+        def comparison_missing_call_edge_count(records: darray[ComparisonCallEdgeRecord]&, other: darray[ComparisonCallEdgeRecord]&) -> i64 can[Abort.Panic]:
+            missing: mutable i64 = NATIVE_ZERO
+            for index in 0..<records.count |index, records, other, missing|:
+                record: ComparisonCallEdgeRecord = records[index]
+                missing <- missing + NATIVE_ONE if comparison_call_edge_index(other, record.caller, record.callee) < NATIVE_ZERO
+            return missing
+
+
+        def append_comparison_call_edge_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonCallEdgeRecord]&, other: darray[ComparisonCallEdgeRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<records.count |index, records, other, label, emitted, buffer|:
+                record: ComparisonCallEdgeRecord = records[index]
+                continue if comparison_call_edge_index(other, record.caller, record.callee) >= NATIVE_ZERO
+                if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
+                    append_text(buffer, "<tr><th scope='row'>")
+                    append_text(buffer, label)
+                    append_text(buffer, "</th><td><code>")
+                    append_html_escaped(buffer, record.caller)
+                    append_text(buffer, "</code> -&gt; <code>")
+                    append_html_escaped(buffer, record.callee)
+                    append_text(buffer, "</code></td></tr>")
+                    emitted <- emitted + NATIVE_ONE
+
+
+        def append_comparison_call_edge_changes_html(buffer: mutable darray[u8]&, baseline: darray[ComparisonCallEdgeRecord]&, candidate: darray[ComparisonCallEdgeRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            removed: i64 = comparison_missing_call_edge_count(baseline, candidate)
+            added: i64 = comparison_missing_call_edge_count(candidate, baseline)
+            append_text(buffer, "<details><summary>Call-edge identity changes</summary>")
+            if removed == NATIVE_ZERO and added == NATIVE_ZERO:
+                append_text(buffer, "<p>No added or removed caller-to-callee identities.</p>")
+            else:
+                append_text(buffer, "<p>Removed: ")
+                append_i64(buffer, removed)
+                append_text(buffer, "; added: ")
+                append_i64(buffer, added)
+                append_text(buffer, ".</p><div class='table-scroll'><table><thead><tr><th scope='col'>Change</th><th scope='col'>Caller -&gt; callee</th></tr></thead><tbody>")
+                emitted: mutable i64 = NATIVE_ZERO
+                append_comparison_call_edge_change_rows_html(buffer, baseline, candidate, "Removed", emitted)
+                append_comparison_call_edge_change_rows_html(buffer, candidate, baseline, "Added", emitted)
+                append_text(buffer, "</tbody></table></div>")
+                total_changes: i64 = removed + added
+                if total_changes > emitted:
+                    append_text(buffer, "<p>Showing the first ")
+                    append_i64(buffer, emitted)
+                    append_text(buffer, " of ")
+                    append_i64(buffer, total_changes)
+                    append_text(buffer, " changes; the raw comparison JSON retains the complete bounded detail.</p>")
+            append_text(buffer, "</details>")
+
+
         def append_comparison_call_edges_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonCallEdgeRecord]&, candidate: darray[ComparisonCallEdgeRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "[")
             first: mutable bool = true
@@ -360,6 +409,51 @@ extend ProfilerNative:
             for index in 0..<records.count |index, records, path|:
                 return index.i64() if byte_arrays_equal(records[index].path, path)
             return NATIVE_NEGATIVE_ONE
+
+
+        def comparison_missing_stack_count(records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&) -> i64 can[Abort.Panic]:
+            missing: mutable i64 = NATIVE_ZERO
+            for index in 0..<records.count |index, records, other, missing|:
+                missing <- missing + NATIVE_ONE if comparison_stack_index(other, records[index].path) < NATIVE_ZERO
+            return missing
+
+
+        def append_comparison_stack_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<records.count |index, records, other, label, emitted, buffer|:
+                continue if comparison_stack_index(other, records[index].path) >= NATIVE_ZERO
+                if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
+                    append_text(buffer, "<tr><th scope='row'>")
+                    append_text(buffer, label)
+                    append_text(buffer, "</th><td><code>")
+                    append_html_escaped(buffer, records[index].path)
+                    append_text(buffer, "</code></td></tr>")
+                    emitted <- emitted + NATIVE_ONE
+
+
+        def append_comparison_stack_changes_html(buffer: mutable darray[u8]&, baseline: darray[ComparisonStackRecord]&, candidate: darray[ComparisonStackRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            removed: i64 = comparison_missing_stack_count(baseline, candidate)
+            added: i64 = comparison_missing_stack_count(candidate, baseline)
+            append_text(buffer, "<details><summary>Stack identity changes</summary>")
+            if removed == NATIVE_ZERO and added == NATIVE_ZERO:
+                append_text(buffer, "<p>No added or removed folded stack identities.</p>")
+            else:
+                append_text(buffer, "<p>Removed: ")
+                append_i64(buffer, removed)
+                append_text(buffer, "; added: ")
+                append_i64(buffer, added)
+                append_text(buffer, ".</p><div class='table-scroll'><table><thead><tr><th scope='col'>Change</th><th scope='col'>Folded stack</th></tr></thead><tbody>")
+                emitted: mutable i64 = NATIVE_ZERO
+                append_comparison_stack_change_rows_html(buffer, baseline, candidate, "Removed", emitted)
+                append_comparison_stack_change_rows_html(buffer, candidate, baseline, "Added", emitted)
+                append_text(buffer, "</tbody></table></div>")
+                total_changes: i64 = removed + added
+                if total_changes > emitted:
+                    append_text(buffer, "<p>Showing the first ")
+                    append_i64(buffer, emitted)
+                    append_text(buffer, " of ")
+                    append_i64(buffer, total_changes)
+                    append_text(buffer, " changes; the raw comparison JSON retains the complete bounded detail.</p>")
+            append_text(buffer, "</details>")
 
 
         def append_comparison_stack_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonStackRecord]&, baseline_index: i64, candidate: darray[ComparisonStackRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
@@ -415,6 +509,62 @@ extend ProfilerNative:
                 record: ComparisonLocationRecord = records[index]
                 return index.i64() if record.line == line and record.signed == signed and record.source_available == source_available and record.variable_available == variable_available and byte_arrays_equal(record.source, source) and byte_arrays_equal(record.kind, kind) and byte_arrays_equal(record.function, function) and byte_arrays_equal(record.variable, variable)
             return NATIVE_NEGATIVE_ONE
+
+
+        def comparison_missing_location_count(records: darray[ComparisonLocationRecord]&, other: darray[ComparisonLocationRecord]&) -> i64 can[Abort.Panic]:
+            missing: mutable i64 = NATIVE_ZERO
+            for index in 0..<records.count |index, records, other, missing|:
+                record: ComparisonLocationRecord = records[index]
+                other_index: i64 = comparison_location_index(other, record.source, record.kind, record.function, record.variable, record.line, record.signed, record.source_available, record.variable_available)
+                missing <- missing + NATIVE_ONE if other_index < NATIVE_ZERO
+            return missing
+
+
+        def append_comparison_location_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonLocationRecord]&, other: darray[ComparisonLocationRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
+            for index in 0..<records.count |index, records, other, label, emitted, buffer|:
+                record: ComparisonLocationRecord = records[index]
+                other_index: i64 = comparison_location_index(other, record.source, record.kind, record.function, record.variable, record.line, record.signed, record.source_available, record.variable_available)
+                continue if other_index >= NATIVE_ZERO
+                if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
+                    append_text(buffer, "<tr><th scope='row'>")
+                    append_text(buffer, label)
+                    append_text(buffer, "</th><td><code>")
+                    append_html_escaped(buffer, record.source)
+                    append_text(buffer, ":")
+                    append_i64(buffer, record.line)
+                    append_text(buffer, "</code> <span>")
+                    append_html_escaped(buffer, record.function)
+                    if record.variable_available:
+                        append_text(buffer, " · ")
+                        append_html_escaped(buffer, record.variable)
+                    append_text(buffer, "</span></td></tr>")
+                    emitted <- emitted + NATIVE_ONE
+
+
+        def append_comparison_location_changes_html(buffer: mutable darray[u8]&, baseline: darray[ComparisonLocationRecord]&, candidate: darray[ComparisonLocationRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            removed: i64 = comparison_missing_location_count(baseline, candidate)
+            added: i64 = comparison_missing_location_count(candidate, baseline)
+            append_text(buffer, "<details><summary>Source-location identity changes</summary>")
+            if removed == NATIVE_ZERO and added == NATIVE_ZERO:
+                append_text(buffer, "<p>No added or removed source-location identities.</p>")
+            else:
+                append_text(buffer, "<p>Removed: ")
+                append_i64(buffer, removed)
+                append_text(buffer, "; added: ")
+                append_i64(buffer, added)
+                append_text(buffer, ".</p><div class='table-scroll'><table><thead><tr><th scope='col'>Change</th><th scope='col'>Source location</th></tr></thead><tbody>")
+                emitted: mutable i64 = NATIVE_ZERO
+                append_comparison_location_change_rows_html(buffer, baseline, candidate, "Removed", emitted)
+                append_comparison_location_change_rows_html(buffer, candidate, baseline, "Added", emitted)
+                append_text(buffer, "</tbody></table></div>")
+                total_changes: i64 = removed + added
+                if total_changes > emitted:
+                    append_text(buffer, "<p>Showing the first ")
+                    append_i64(buffer, emitted)
+                    append_text(buffer, " of ")
+                    append_i64(buffer, total_changes)
+                    append_text(buffer, " changes; the raw comparison JSON retains the complete bounded detail.</p>")
+            append_text(buffer, "</details>")
 
 
         def append_comparison_location_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonLocationRecord]&, baseline_index: i64, candidate: darray[ComparisonLocationRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
@@ -567,6 +717,9 @@ extend ProfilerNative:
                 append_i64(buffer, native_signed_delta(candidate.locations, baseline.locations))
                 append_text(buffer, "</td></tr></tbody></table>")
                 append_comparison_function_changes_html(buffer, baseline.functions, candidate.functions)
+                append_comparison_call_edge_changes_html(buffer, baseline.call_edges, candidate.call_edges)
+                append_comparison_stack_changes_html(buffer, baseline.stacks, candidate.stacks)
+                append_comparison_location_changes_html(buffer, baseline.location_records, candidate.location_records)
                 append_text(buffer, "<p><strong>Gate:</strong> ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
                 append_text(buffer, "</p>")
