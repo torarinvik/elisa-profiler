@@ -223,6 +223,21 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
 - Tail-call elimination and inlining are compiler transformations. The
   instrumentation report only claims what the emitted callbacks observe; it
   does not infer removed frames.
+- Exceptional exits and runtime panics follow the same evidence rule as an
+  interrupted signal: an entry without an observed exit is not completed, and
+  the resulting target exit/signal, active-stack evidence, and partial quality
+  state are reported independently. The profiler never synthesizes a return
+  from a panic message or from a missing callback.
+- Thread identity is capture-local. A thread-loss record belongs to the
+  repetition and thread identity that emitted it, but the current protocol does
+  not claim that an OS thread identifier remains unique after reuse. Aggregate
+  function and location totals may combine threads; cross-thread chronology is
+  not reconstructed from per-thread CPU clocks.
+- Fork and exec are boundary events, not implicit profiling expansion. The
+  launched target owns the capture descriptor; ordinary descendants receive
+  neither the descriptor nor profiler transport variables. A child is included
+  only when the explicit child-profiling opt-in is configured, and that child
+  policy remains subject to the same bounded capture and cleanup rules.
 - Native offline readers reject normalized detail records whose accounting is
   impossible: completed calls cannot exceed observed calls, self time cannot
   exceed inclusive time, and a maximum interval cannot exceed its aggregate
