@@ -528,6 +528,75 @@ extend ProfilerNative:
             return true
 
 
+        def json_read_call_edge_records(data: darray[u8]&, records: mutable darray[ComparisonCallEdgeRecord]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            records <- []
+            array_start: i64 = json_key_value_start(data, "call_edges", NATIVE_ZERO.usize(), data.count)
+            return true if array_start < NATIVE_ZERO
+            return false if data[array_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            array_stop: i64 = json_array_end(data, array_start.usize(), data.count)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
+            content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            record_count: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, content_stop, data, records, record_count|:
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                break if cursor >= content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if record_count >= NATIVE_MAX_PROTOCOL_DETAIL_RECORDS or data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, content_stop)
+                return false if object_stop < NATIVE_ZERO
+                record: mutable ComparisonCallEdgeRecord = ComparisonCallEdgeRecord{
+                    caller: [], callee: [], call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO, inclusive_ns: NATIVE_ZERO
+                }
+                return false if not json_read_string_field(data, "caller", cursor, object_stop.usize(), &record.caller) or record.caller.count == NATIVE_ZERO.usize()
+                return false if not json_read_string_field(data, "callee", cursor, object_stop.usize(), &record.callee) or record.callee.count == NATIVE_ZERO.usize()
+                return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &record.call_events)
+                return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &record.completed_calls)
+                return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &record.inclusive_ns)
+                return false if record.completed_calls > record.call_events
+                records.push(record)
+                record_count <- record_count + NATIVE_ONE
+                cursor <- object_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
+            return true
+
+
+        def json_read_stack_records(data: darray[u8]&, records: mutable darray[ComparisonStackRecord]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            records <- []
+            array_start: i64 = json_key_value_start(data, "stacks", NATIVE_ZERO.usize(), data.count)
+            return true if array_start < NATIVE_ZERO
+            return false if data[array_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+            array_stop: i64 = json_array_end(data, array_start.usize(), data.count)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = array_start.usize() + NATIVE_ONE.usize()
+            content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            record_count: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, content_stop, data, records, record_count|:
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                break if cursor >= content_stop or data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return false if record_count >= NATIVE_MAX_PROTOCOL_DETAIL_RECORDS or data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, content_stop)
+                return false if object_stop < NATIVE_ZERO
+                record: mutable ComparisonStackRecord = ComparisonStackRecord{
+                    path: [], call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO, self_ns: NATIVE_ZERO
+                }
+                return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &record.path) or record.path.count == NATIVE_ZERO.usize()
+                return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &record.call_events)
+                return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &record.completed_calls)
+                return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &record.self_ns)
+                return false if record.completed_calls > record.call_events
+                records.push(record)
+                record_count <- record_count + NATIVE_ONE
+                cursor <- object_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
+            return true
+
+
         def json_validate_detail_arrays(data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             return false if not json_read_detail_array(data, "functions", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_FUNCTIONS)
             return false if not json_read_detail_array(data, "call_edges", NATIVE_ZERO.usize(), data.count, NATIVE_DETAIL_ARRAY_CALL_EDGES)
@@ -652,6 +721,8 @@ extend ProfilerNative:
             return false if peak_rss_available != capture.resource_metrics_available
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &capture.exit_code)
             return false if not json_read_function_records(data, &capture.functions)
+            return false if not json_read_call_edge_records(data, &capture.call_edges)
+            return false if not json_read_stack_records(data, &capture.stacks)
             return true
 
 

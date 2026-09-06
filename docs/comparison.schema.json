@@ -4,7 +4,7 @@
   "title": "Elisa profiler comparison",
   "description": "Summary comparison emitted by the Elisa-native profiler compare command.",
   "type": "object",
-  "required": ["kind", "schema_version", "baseline", "candidate", "workload_metadata_match", "collection_mode_match", "functions", "metrics", "warnings", "status"],
+  "required": ["kind", "schema_version", "baseline", "candidate", "workload_metadata_match", "collection_mode_match", "functions", "call_edges", "stacks", "metrics", "warnings", "status"],
   "properties": {
     "kind": { "const": "profile_comparison" },
     "schema_version": { "const": 1 },
@@ -15,6 +15,14 @@
     "functions": {
       "type": "array",
       "items": { "$ref": "#/$defs/function_change" }
+    },
+    "call_edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/call_edge_change" }
+    },
+    "stacks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stack_change" }
     },
     "metrics": {
       "type": "object",
@@ -114,6 +122,29 @@
         "self_ns": { "$ref": "#/$defs/resource_count_metric" },
         "interval_ns": { "$ref": "#/$defs/resource_count_metric" },
         "max_interval_ns": { "$ref": "#/$defs/resource_count_metric" }
+      },
+      "additionalProperties": false
+    },
+    "call_edge_change": {
+      "type": "object",
+      "required": ["caller", "callee", "call_events", "completed_calls", "inclusive_ns"],
+      "properties": {
+        "caller": { "type": "string", "minLength": 1 },
+        "callee": { "type": "string", "minLength": 1 },
+        "call_events": { "$ref": "#/$defs/resource_count_metric" },
+        "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
+        "inclusive_ns": { "$ref": "#/$defs/resource_count_metric" }
+      },
+      "additionalProperties": false
+    },
+    "stack_change": {
+      "type": "object",
+      "required": ["stack", "call_events", "completed_calls", "self_ns"],
+      "properties": {
+        "stack": { "type": "string", "minLength": 1 },
+        "call_events": { "$ref": "#/$defs/resource_count_metric" },
+        "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
+        "self_ns": { "$ref": "#/$defs/resource_count_metric" }
       },
       "additionalProperties": false
     }

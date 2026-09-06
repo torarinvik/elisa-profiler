@@ -87,6 +87,19 @@ def main() -> int:
             "interval_ns": 700,
             "max_interval_ns": 200,
         }]
+        baseline_capture["call_edges"] = [{
+            "caller": "root",
+            "callee": "alpha",
+            "call_events": 7,
+            "completed_calls": 7,
+            "inclusive_ns": 700,
+        }]
+        baseline_capture["stacks"] = [{
+            "stack": "root;alpha",
+            "call_events": 7,
+            "completed_calls": 7,
+            "self_ns": 500,
+        }]
         candidate_capture = capture(["--beta"], exit_code=None)
         candidate_capture["functions"] = [{
             "function": "beta",
@@ -97,6 +110,19 @@ def main() -> int:
             "self_ns": 600,
             "interval_ns": 900,
             "max_interval_ns": 300,
+        }]
+        candidate_capture["call_edges"] = [{
+            "caller": "root",
+            "callee": "beta",
+            "call_events": 9,
+            "completed_calls": 8,
+            "inclusive_ns": 900,
+        }]
+        candidate_capture["stacks"] = [{
+            "stack": "root;beta",
+            "call_events": 9,
+            "completed_calls": 8,
+            "self_ns": 600,
         }]
         baseline.write_text(json.dumps(baseline_capture), encoding="utf-8")
         candidate.write_text(json.dumps(candidate_capture), encoding="utf-8")
@@ -138,6 +164,16 @@ def main() -> int:
             raise SystemExit("native comparison did not mark the removed function as unavailable")
         if function_changes["beta"]["inclusive_ns"]["baseline"] is not None:
             raise SystemExit("native comparison did not mark the added function as unavailable")
+        edge_changes = {(item["caller"], item["callee"]): item for item in comparison["call_edges"]}
+        if set(edge_changes) != {("root", "alpha"), ("root", "beta")}:
+            raise SystemExit("native comparison did not retain added and removed call edges")
+        if edge_changes[("root", "alpha")]["inclusive_ns"]["candidate"] is not None:
+            raise SystemExit("native comparison did not mark the removed call edge as unavailable")
+        stack_changes = {item["stack"]: item for item in comparison["stacks"]}
+        if set(stack_changes) != {"root;alpha", "root;beta"}:
+            raise SystemExit("native comparison did not retain added and removed stacks")
+        if stack_changes["root;beta"]["self_ns"]["baseline"] is not None:
+            raise SystemExit("native comparison did not mark the added stack as unavailable")
         if comparison["candidate"]["exit_code"] is not None:
             raise SystemExit("native comparison did not preserve a signaled null exit code")
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):

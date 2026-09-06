@@ -288,8 +288,9 @@ it has no network or runtime dependencies.
 The `compare` command accepts two JSON reports and emits a machine-readable or
 text comparison of execution/compile timing, nullable CPU/RSS metrics, event
 and location counts, thread counts, trace-quality counters, and per-function
-count/timing deltas. Added or removed functions retain `null` on the missing
-side instead of being rendered as zero:
+count/timing deltas, caller→callee edge changes, and folded stack-path changes.
+Added or removed records retain `null` on the missing side instead of being
+rendered as zero:
 
     bin/elisa-profiler compare baseline.json candidate.json \
         --format json --output comparison.json
@@ -298,9 +299,9 @@ Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
 Comparisons warn when source, workload metadata, collection mode, compiler
 commit, optimization level, target exit status, or evidence quality differs.
-Location/call-edge/stack regression ranking and threshold-based CI failure are
-planned extensions; the current comparison intentionally claims only the
-function-level records it emits.
+Location regression ranking and threshold-based CI failure are planned
+extensions; the current comparison intentionally claims only the function,
+edge, and stack records it emits.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target
