@@ -353,6 +353,25 @@ extend ProfilerNative:
             return true
 
 
+        def path_has_prefix(path: darray[u8]&, prefix: darray[u8]&) -> bool can[Abort.Panic]:
+            return false if prefix.count == NATIVE_ZERO.usize() or path.count < prefix.count
+            for index in 0..<prefix.count |path, prefix|:
+                return false if path[index] != prefix[index]
+            return true if path.count == prefix.count
+            return path[prefix.count] == NATIVE_BYTE_SLASH
+
+
+        def remap_display_path(path: darray[u8]&, prefix: darray[u8]&, replacement: darray[u8]&) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            result: mutable darray[u8] = []
+            if not path_has_prefix(path, prefix):
+                result.extend(path)
+                return result
+            result.extend(replacement)
+            for index in prefix.count..<path.count |result, path|:
+                result.push(path[index])
+            return result
+
+
         def environment_or_executable(name: sview, fallback: sview, argv_zero: cstr, suffix: sview, destination: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             destination <- []
             return if copy_environment(name, destination)
@@ -1418,6 +1437,8 @@ extend ProfilerNative:
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
             progress_path: mutable darray[u8] = []
+            path_map_from: mutable darray[u8] = []
+            path_map_to: mutable darray[u8] = []
             artifact_output: mutable darray[u8] = []
             embed_source: mutable bool = false
             opt_level: mutable i64 = NATIVE_ZERO
@@ -1442,7 +1463,7 @@ extend ProfilerNative:
             target_arguments: mutable darray[darray[u8]] = []
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_map_from, path_map_to, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1495,6 +1516,23 @@ extend ProfilerNative:
                 if profiler_ffi_strcmp(argument, "--progress") == NATIVE_ZERO:
                     return report_error("--progress requires a path") if index + NATIVE_ONE >= argc
                     copy_cstr(progress_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--path-map") == NATIVE_ZERO:
+                    return report_error("--path-map requires FROM=TO") if index + NATIVE_ONE >= argc
+                    mapping: mutable darray[u8] = []
+                    copy_cstr(mapping, slots[index + NATIVE_ONE].cast[cstr])
+                    separator: mutable usize = mapping.count
+                    while separator > NATIVE_ZERO.usize() |separator, mapping|:
+                        separator <- separator - NATIVE_ONE.usize()
+                        break if mapping[separator] == NATIVE_BYTE_EQUALS
+                    return report_error("--path-map requires FROM=TO") if separator == NATIVE_ZERO.usize() or separator + NATIVE_ONE.usize() >= mapping.count
+                    path_map_from <- []
+                    path_map_to <- []
+                    for mapping_index in 0..<separator |path_map_from, mapping|:
+                        path_map_from.push(mapping[mapping_index])
+                    for mapping_index in separator + NATIVE_ONE.usize()..<mapping.count |path_map_to, mapping|:
+                        path_map_to.push(mapping[mapping_index])
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--artifact-output") == NATIVE_ZERO:
@@ -1609,6 +1647,7 @@ extend ProfilerNative:
             return report_error("--artifact-output requires --format json") if artifact_output.count > NATIVE_ZERO.usize() and (format_text or format_folded or format_html or format_speedscope)
             source_check: darray[u8] = read_file(source)
             return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
+            display_source: darray[u8] = remap_display_path(source, path_map_from, path_map_to)
         
             compiler_root: mutable darray[u8] = []
             argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
@@ -1832,7 +1871,7 @@ extend ProfilerNative:
                         cleanup_temp(temporary)
                         return report_error("native target produced no collector capture")
                 else:
-                    current_summary <- parse_capture(capture, source, run_result.timed_out, repetition)
+                    current_summary <- parse_capture(capture, display_source, run_result.timed_out, repetition)
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)
@@ -1934,15 +1973,15 @@ extend ProfilerNative:
             final_exit_code: i64 = system_exit_code(overall_status)
             report: mutable darray[u8] = []
             if format_text:
-                append_text_report(report, source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
+                append_text_report(report, display_source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, event_trace, recent_path, total_execution_ns, compile_elapsed_ns)
             elif format_folded:
                 append_folded_report(report, summary)
             elif format_speedscope:
-                append_speedscope_report(report, source, summary.folded_records, true)
+                append_speedscope_report(report, display_source, summary.folded_records, true)
             elif format_html:
-                append_html_report(report, source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
+                append_html_report(report, display_source, mode, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, compile_elapsed_ns)
             else:
-                append_report(report, source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

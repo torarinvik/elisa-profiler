@@ -148,6 +148,9 @@ The machine-readable contract is published at
 Use `--progress PATH` for an atomic machine-readable status snapshot on a
 separate channel; its contract and stage semantics are documented in
 [`docs/progress.md`](docs/progress.md).
+Use `--path-map FROM=TO` to replace one boundary-aware source-path prefix in
+report display fields; the raw path remains in the local capture manifest for
+recovery. See [`docs/path-remapping.md`](docs/path-remapping.md).
 Pass `--embed-source` when a portable JSON report should carry the exact source
 bytes used for the capture; the snapshot includes its SHA-256 digest and is
 opt-in because it can make reports substantially larger.
@@ -220,6 +223,7 @@ Useful controls:
     --warmup N             execute N unreported startup runs (default: 0)
     --repeat N             execute and merge N measured runs (default: 1)
     --progress PATH        atomically publish machine-readable stage status
+    --path-map FROM=TO     remap one source-path prefix in report display fields
     --timeout SECONDS      terminate a runaway execution and retain its partial report
     --recent-path          include the last 256 trace events in each measured run
     --event-trace          include every trace event in each measured JSON run
