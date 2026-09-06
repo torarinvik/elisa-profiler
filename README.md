@@ -280,6 +280,9 @@ strict sequence numbers, byte lengths, and FNV-1a-64 checksums, followed by
 begin/end markers; successful runs require a complete marker pair, while
 timeout and signal captures retain explicit partial-capture state. Framed
 transport loss is reported separately from aggregate event loss.
+Internal collector environment variables and the capture descriptor are cleared
+before an ordinary descendant `exec`; set `ELISA_PROFILE_CHILD=1` explicitly
+when a child process is intentionally part of the profiled capture.
 The folded format is compatible with flamegraph tooling: timing runs use
 function self nanoseconds as weights, while count-only runs use observed call
 entries as weights.
