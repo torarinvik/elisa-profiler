@@ -225,6 +225,15 @@ def main():
         }]
         capture.write_text(json.dumps(invalid_function), encoding="utf-8")
         run("report", capture, "--format", "folded", ok=False)
+        invalid_function_location = copy.deepcopy(report)
+        invalid_function_location["locations"] = [{
+            "kind": "function", "function": "broken", "line": 1, "count": 1,
+            "interval_ns": 10, "max_interval_ns": 10, "compiler_line": 1,
+            "source": invalid_function_location["source"], "source_text": None,
+            "inclusive_ns": 10, "self_ns": 10, "completed_calls": 2,
+        }]
+        capture.write_text(json.dumps(invalid_function_location), encoding="utf-8")
+        run("report", capture, "--format", "folded", ok=False)
         invalid_thread = copy.deepcopy(report)
         invalid_thread["thread_loss"] = [{
             "thread_id": 0,

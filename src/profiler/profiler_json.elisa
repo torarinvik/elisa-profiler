@@ -558,7 +558,7 @@ extend ProfilerNative:
                         return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &inclusive_ns)
                         return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &self_ns)
                         return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &completed_calls)
-                        return false if self_ns > inclusive_ns
+                        return false if self_ns > inclusive_ns or completed_calls > count
                 else:
                     return false
                 record_count <- record_count + NATIVE_ONE
@@ -711,6 +711,14 @@ extend ProfilerNative:
                 return false if record.max_interval_ns > record.interval_ns
                 if protocol_field_is(record.kind, "value"):
                     return false if not json_validate_value_statistics(data, cursor, object_stop.usize())
+                elif protocol_field_is(record.kind, "function"):
+                    inclusive_ns: mutable i64 = NATIVE_ZERO
+                    self_ns: mutable i64 = NATIVE_ZERO
+                    completed_calls: mutable i64 = NATIVE_ZERO
+                    return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &inclusive_ns)
+                    return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &self_ns)
+                    return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &completed_calls)
+                    return false if self_ns > inclusive_ns or completed_calls > record.count
                 records.push(record)
                 record_count <- record_count + NATIVE_ONE
                 cursor <- object_stop.usize()
