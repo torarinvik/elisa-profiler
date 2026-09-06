@@ -30,11 +30,14 @@ superseded or AST-incompatible. All owner worktrees remain untouched.
 
 The stage1 product was freshly reseeded from `1cf1815f` with the canonical
 stage0 compiler and its usable build manifest was regenerated. The audit and
-manifest are current, and focused workload-comparison plus artifact/profile
-schema smokes pass against that artifact. Rerun the full native gate when the
-host's concurrent compiler corpus jobs release macOS dynamic-loader
-contention; a bounded native regression attempt stalled in `_dyld_start`
-before the profiler entered its main code.
+manifest are current. The full gate passes as
+`DYLD_SHARED_REGION=avoid TMPDIR=/tmp make test`, including self-host stages
+A through D, compiler smoke, native profiler/report/artifact/comparison
+smokes, collector/ABI checks, timeout/recovery checks, and cleanup checks. A
+normal run under concurrent compiler corpus jobs can hit a macOS dynamic-loader
+stall in `_dyld_start` before the profiler enters its main code; the explicit
+`DYLD_SHARED_REGION=avoid` setting is a verification workaround for that host
+condition and is not part of the profiler contract.
 
 Historical checkpoints below retain earlier commit and test evidence for the
 build pipeline, but must not be read as proof of the current stage1 identity.
@@ -165,8 +168,9 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `1cf1815f` integration, the audit, ledger, and manifest pass;
-the full native gate remains to be rerun after host contention clears. Keep the self-host gate in the
+For the current `1cf1815f` integration, the audit, ledger, manifest, compiler,
+native profiler, and full profiler gates pass with the loader workaround above.
+Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
 remains a fixed point and deterministic after future compiler changes.
 
