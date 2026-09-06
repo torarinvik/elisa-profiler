@@ -100,6 +100,7 @@ enum {
     PROFILE_DECIMAL_BASE = 10,
     PROFILE_COUNTER_INCREMENT = 1,
     PROFILE_NANOS_PER_SECOND = 1000000000,
+    PROFILE_MICROSECONDS_PER_SECOND = 1000000,
     PROFILE_HASH_NULL_MARKER = 255,
     PROFILE_HASH_ID_MARKER = 254,
     PROFILE_SIGNAL_MARKER_BUFFER_BYTES = 64 * 1024,
@@ -212,6 +213,10 @@ static uint64_t profile_sample_period_microseconds;
 static int profile_sampling_setup_failed;
 static char profile_sample_marker_buffer[PROFILE_SAMPLE_MARKER_BUFFER_BYTES];
 static char profile_sample_frame_header[PROFILE_SAMPLE_FRAME_HEADER_BYTES];
+#if defined(__APPLE__) || defined(__linux__)
+static struct sigaction profile_previous_sample_action;
+static int profile_previous_sample_action_valid;
+#endif
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
 
@@ -2174,21 +2179,30 @@ static int profile_start_sampling(uint64_t period_microseconds) {
         profile_sampling_setup_failed = 1;
         return 0;
     }
-    if (signal(PROFILE_SAMPLE_SIGNAL, profile_sampling_handler) == SIG_ERR) {
+    struct sigaction sample_action = {0};
+    sample_action.sa_handler = profile_sampling_handler;
+    if (sigemptyset(&sample_action.sa_mask) != 0 ||
+        sigaction(PROFILE_SAMPLE_SIGNAL, &sample_action,
+                  &profile_previous_sample_action) != 0) {
         profile_sampling_setup_failed = 1;
         return 0;
     }
     struct itimerval timer = {0};
-    timer.it_value.tv_sec = (time_t)(period_microseconds / 1000000);
-    timer.it_value.tv_usec = (suseconds_t)(period_microseconds % 1000000);
+    timer.it_value.tv_sec =
+        (time_t)(period_microseconds / PROFILE_MICROSECONDS_PER_SECOND);
+    timer.it_value.tv_usec =
+        (suseconds_t)(period_microseconds % PROFILE_MICROSECONDS_PER_SECOND);
     timer.it_interval = timer.it_value;
     profile_sample_period_microseconds = period_microseconds;
     profile_sampling_enabled = 1;
     if (setitimer(ITIMER_PROF, &timer, NULL) != 0) {
         profile_sampling_enabled = 0;
+        (void)sigaction(PROFILE_SAMPLE_SIGNAL,
+                        &profile_previous_sample_action, NULL);
         profile_sampling_setup_failed = 1;
         return 0;
     }
+    profile_previous_sample_action_valid = 1;
     return 1;
 #else
     (void)period_microseconds;
@@ -2205,6 +2219,13 @@ static void profile_stop_sampling(void) {
     }
 #endif
     profile_sampling_enabled = 0;
+#if defined(__APPLE__) || defined(__linux__)
+    if (profile_previous_sample_action_valid) {
+        (void)sigaction(PROFILE_SAMPLE_SIGNAL,
+                        &profile_previous_sample_action, NULL);
+        profile_previous_sample_action_valid = 0;
+    }
+#endif
 }
 
 static void profile_write_crash_marker(int signal_number) {
