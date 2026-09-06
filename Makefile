@@ -132,6 +132,7 @@ profiler-native-smoke: profiler-native
 		grep -Fq 'Flame graph' "$$native_work/hot-loop.html"; \
 		grep -Fq 'flame-filter' "$$native_work/hot-loop.html"; \
 		grep -Fq 'function-filter' "$$native_work/hot-loop.html"; \
+		! grep -Fq "row.addEventListener(" "$$native_work/hot-loop.html"; \
 		grep -Fq 'observed folded root self time' "$$native_work/hot-loop.html"; \
 		grep -Fq 'edge-filter' "$$native_work/hot-loop.html"; \
 		grep -Fq 'location-filter' "$$native_work/hot-loop.html"; \
