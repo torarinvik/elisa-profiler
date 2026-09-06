@@ -20,6 +20,7 @@ int64_t elisa_profile_target_main(void) {
     elisa_trace_record(main_name_b, 2);
     elisa_trace_record_value(main_name_a, 4, value_name_a, 1, 0);
     elisa_trace_record_value(main_name_b, 4, value_name_b, 2, 0);
+    elisa_trace_record_value(main_name_a, 4, value_name_a, UINT64_MAX, 0);
     elisa_trace_function_entry(worker_name_a, 3);
     elisa_trace_function_exit(worker_name_b, 3);
     elisa_trace_function_exit(main_name_b, 1);

@@ -38,6 +38,17 @@ int main(void) {
     uint64_t allocation_bytes = 0;
     assert(profile_saturating_increment_u64(UINT64_MAX) == UINT64_MAX);
     assert(profile_saturating_increment_size(SIZE_MAX) == SIZE_MAX);
+    const __uint128_t unsigned_sum_overflow = (__uint128_t)UINT64_MAX + 1;
+    assert(profile_saturating_add_unsigned_sum(UINT64_MAX, 1) == unsigned_sum_overflow);
+    assert(profile_saturating_add_unsigned_sum(unsigned_sum_overflow, 1) == unsigned_sum_overflow);
+    assert(profile_saturating_add_unsigned_sum(4, 5) == 9);
+    const __int128_t signed_sum_low = (__int128_t)INT64_MIN - 1;
+    const __int128_t signed_sum_high = (__int128_t)INT64_MAX + 1;
+    assert(profile_saturating_add_signed_sum(INT64_MIN, -1) == signed_sum_low);
+    assert(profile_saturating_add_signed_sum(signed_sum_low, 1) == signed_sum_low);
+    assert(profile_saturating_add_signed_sum(INT64_MAX, 1) == signed_sum_high);
+    assert(profile_saturating_add_signed_sum(signed_sum_high, -1) == signed_sum_high);
+    assert(profile_saturating_add_signed_sum(-4, 5) == 1);
     assert(!profile_next_capacity(SIZE_MAX, PROFILE_INITIAL_LOCATION_CAPACITY,
                                    &next_capacity));
     assert(!profile_allocation_bytes(SIZE_MAX, sizeof(profile_entry),

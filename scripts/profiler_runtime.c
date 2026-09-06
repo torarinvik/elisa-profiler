@@ -158,6 +158,31 @@ static int profile_frame_overflowed;
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
 
+static __uint128_t profile_saturating_add_unsigned_sum(__uint128_t left,
+                                                       uint64_t right) {
+    const __uint128_t overflow = (__uint128_t)UINT64_MAX + 1;
+    if (left >= overflow || (__uint128_t)right > overflow - left) {
+        return overflow;
+    }
+    return left + right;
+}
+
+static __int128_t profile_saturating_add_signed_sum(__int128_t left,
+                                                    int64_t right) {
+    const __int128_t low = (__int128_t)INT64_MIN - 1;
+    const __int128_t high = (__int128_t)INT64_MAX + 1;
+    if (left <= low || left >= high) {
+        return left <= low ? low : high;
+    }
+    if (right > 0 && left > high - (__int128_t)right) {
+        return high;
+    }
+    if (right < 0 && left < low - (__int128_t)right) {
+        return low;
+    }
+    return left + (__int128_t)right;
+}
+
 static uint64_t profile_saturating_increment_u64(uint64_t value) {
     return profile_saturating_add_u64(value, PROFILE_COUNTER_INCREMENT);
 }
@@ -1200,7 +1225,8 @@ static void profile_record(const char *function_name, uint32_t line,
             if (signed_value > (int64_t)entry->maximum) {
                 entry->maximum = value;
             }
-            entry->signed_sum += (__int128_t)signed_value;
+            entry->signed_sum = profile_saturating_add_signed_sum(
+                entry->signed_sum, signed_value);
         } else {
             if (value < entry->minimum) {
                 entry->minimum = value;
@@ -1208,7 +1234,7 @@ static void profile_record(const char *function_name, uint32_t line,
             if (value > entry->maximum) {
                 entry->maximum = value;
             }
-            entry->sum += value;
+            entry->sum = profile_saturating_add_unsigned_sum(entry->sum, value);
         }
         entry->last = value;
     }

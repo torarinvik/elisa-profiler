@@ -66,8 +66,10 @@ def check_report(path: str, framed: bool = False) -> None:
     assert statement_locations[0][6] == "2"
     value_locations = [line for line in locations if line[3] == "2"]
     assert len(value_locations) == 1
-    assert value_locations[0][4:8] == ["main", "4", "2", "value"]
-    assert value_locations[0][12] == "2"
+    assert value_locations[0][4:8] == ["main", "4", "3", "value"]
+    assert value_locations[0][6] == "3"
+    assert value_locations[0][11] == "overflow"
+    assert value_locations[0][12] == str(MASK)
     assert len(function_locations) == 2
     assert all(location[6] == "1" for location in function_locations)
     assert all(location[11] == "1" for location in function_locations)
