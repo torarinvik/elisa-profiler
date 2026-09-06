@@ -90,11 +90,16 @@ enum {
     PROFILE_TABLE_LOAD_NUMERATOR = 10,
     PROFILE_TABLE_LOAD_DENOMINATOR = 7,
     PROFILE_DECIMAL_DIGITS = 20,
+    PROFILE_DECIMAL_BASE = 10,
+    PROFILE_NANOS_PER_SECOND = 1000000000,
+    PROFILE_HASH_NULL_MARKER = 255,
+    PROFILE_SIGNAL_MARKER_BUFFER_BYTES = 128,
+    PROFILE_SIGNAL_EXIT_BASE = 128,
     PROFILE_EXIT_CODE_MASK = 0xff,
 };
 
-static const uint64_t PROFILE_FRAME_FNV_OFFSET = UINT64_C(14695981039346656037);
-static const uint64_t PROFILE_FRAME_FNV_PRIME = UINT64_C(1099511628211);
+static const uint64_t PROFILE_FNV_OFFSET_BASIS = UINT64_C(14695981039346656037);
+static const uint64_t PROFILE_FNV_PRIME = UINT64_C(1099511628211);
 
 typedef struct {
     const char *function_name;
@@ -233,10 +238,10 @@ static void profile_record_append_field(const char *value) {
 }
 
 static uint64_t profile_frame_checksum(const char *bytes, size_t length) {
-    uint64_t checksum = PROFILE_FRAME_FNV_OFFSET;
+    uint64_t checksum = PROFILE_FNV_OFFSET_BASIS;
     for (size_t index = 0; index < length; ++index) {
         checksum ^= (unsigned char)bytes[index];
-        checksum *= PROFILE_FRAME_FNV_PRIME;
+        checksum *= PROFILE_FNV_PRIME;
     }
     return checksum;
 }
@@ -394,18 +399,18 @@ static int profile_strings_equal(const char *left, const char *right) {
 
 static uint64_t profile_hash_string(uint64_t hash, const char *value) {
     if (value == NULL) {
-        hash ^= UINT64_C(255);
-        hash *= UINT64_C(1099511628211);
+        hash ^= PROFILE_HASH_NULL_MARKER;
+        hash *= PROFILE_FNV_PRIME;
         return hash;
     }
     for (const unsigned char *cursor = (const unsigned char *)value;
          *cursor != 0;
          ++cursor) {
         hash ^= *cursor;
-        hash *= UINT64_C(1099511628211);
+        hash *= PROFILE_FNV_PRIME;
     }
     /* Apply one FNV step for the NUL terminator as a field separator. */
-    hash *= UINT64_C(1099511628211);
+    hash *= PROFILE_FNV_PRIME;
     return hash;
 }
 
@@ -483,20 +488,20 @@ static uint64_t profile_now_ns(void) {
 #endif
         return 0;
     }
-    return (uint64_t)timestamp.tv_sec * UINT64_C(1000000000) +
+    return (uint64_t)timestamp.tv_sec * PROFILE_NANOS_PER_SECOND +
            (uint64_t)timestamp.tv_nsec;
 }
 #endif
 
 static uint64_t profile_hash(const char *function_name, const char *variable_name,
                              uint32_t line, uint8_t kind, uint8_t is_signed) {
-    uint64_t hash = UINT64_C(1469598103934665603);
+    uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash = profile_hash_string(hash, function_name);
     hash = profile_hash_string(hash, variable_name);
     hash ^= line;
-    hash *= UINT64_C(1099511628211);
+    hash *= PROFILE_FNV_PRIME;
     hash ^= kind;
-    hash *= UINT64_C(1099511628211);
+    hash *= PROFILE_FNV_PRIME;
     hash ^= is_signed;
     return hash;
 }
@@ -531,7 +536,7 @@ static profile_entry *profile_find_locked(const char *function_name,
 }
 
 static uint64_t profile_call_edge_hash(const char *caller_name, const char *callee_name) {
-    uint64_t hash = UINT64_C(1469598103934665603);
+    uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash = profile_hash_string(hash, caller_name);
     hash = profile_hash_string(hash, callee_name);
     return hash;
@@ -671,9 +676,9 @@ static uint64_t profile_saturating_add(uint64_t left, uint64_t right) {
 
 static uint64_t profile_call_path_hash(const profile_call_path *parent,
                                        const char *function_name) {
-    uint64_t hash = UINT64_C(1469598103934665603);
+    uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash ^= (uint64_t)(uintptr_t)parent;
-    hash *= UINT64_C(1099511628211);
+    hash *= PROFILE_FNV_PRIME;
     return profile_hash_string(hash, function_name);
 }
 
@@ -1536,8 +1541,8 @@ static size_t profile_signal_append_uint(char *buffer, size_t offset,
     char digits[PROFILE_DECIMAL_DIGITS];
     size_t count = 0;
     do {
-        digits[count++] = (char)('0' + value % 10U);
-        value /= 10U;
+        digits[count++] = (char)('0' + value % PROFILE_DECIMAL_BASE);
+        value /= PROFILE_DECIMAL_BASE;
     } while (value != 0U && count < sizeof(digits));
     while (count > 0 && offset < capacity) {
         buffer[offset++] = digits[--count];
@@ -1546,7 +1551,7 @@ static size_t profile_signal_append_uint(char *buffer, size_t offset,
 }
 
 static void profile_write_crash_marker(int signal_number) {
-    char buffer[128];
+    char buffer[PROFILE_SIGNAL_MARKER_BUFFER_BYTES];
     size_t offset = 0;
     offset = profile_signal_append_literal(
         buffer, offset, sizeof(buffer), "ELISA_PROFILE\t1\tcrash\t");
@@ -1564,7 +1569,7 @@ static void profile_crash_handler(int signal_number) {
     (void)signal(signal_number, SIG_DFL);
     (void)kill(getpid(), signal_number);
     (void)raise(signal_number);
-    _exit(128 + signal_number);
+    _exit(PROFILE_SIGNAL_EXIT_BASE + signal_number);
 }
 
 static void profile_install_crash_handlers(void) {
