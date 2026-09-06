@@ -35,6 +35,9 @@ that compiler source/configuration is newer than the stage1 binary. Foreground,
 detached, and launchd-staged seed attempts—including an isolated `-O0` run with
 an 8 GiB guard—ended before publishing an object; the wrapper emitted no
 memory-guard diagnostic, and the latest staged run ended with signal 15. The
+memory-guard diagnostic, and the latest staged run ended with signal 15. A
+subsequent isolated foreground `-O0` attempt with a 16 GiB ceiling ended at
+the same stage0 start point with signal 15 and also published no object. The
 dedicated global seed lock was cleaned up. Consequently the current
 `compiler-manifest-smoke`, `compiler-smoke`, and `profiler-native-smoke` gates
 must not be reported as passing for `c6948142`; the earlier successful gates are
