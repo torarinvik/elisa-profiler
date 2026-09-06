@@ -2165,7 +2165,7 @@ extend ProfilerNative:
             source_after_compile: darray[u8] = read_file(source)
             if not byte_arrays_equal(source_check, source_after_compile):
                 cleanup_temp(temporary)
-                return report_error("source changed while the target was being built; retry with a stable source file")
+                return report_error("source changed while the target was compiling; retry with a stable source file")
             dependency_after_compile: darray[u8] = collect_dependency_digest(compiler_binary, source, dependency_path, compile_output_path, compile_error_path)
             if dependency_after_compile.count == NATIVE_ZERO.usize() or not byte_arrays_equal(dependency_digest, dependency_after_compile):
                 cleanup_temp(temporary)
