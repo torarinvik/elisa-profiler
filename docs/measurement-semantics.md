@@ -86,6 +86,16 @@ identity or limitations of its evidence.
 
 ## Units and clocks
 
+Every native report includes a `capture` contract describing the observation
+scope. The process is one profiled child from launch through the launcher's
+wait; thread identities are local to that capture and the thread count is the
+maximum number of registered collector threads observed. Repetitions live in
+`run.repetitions` and exclude warmups. Logical tasks are explicitly marked
+`not_recorded` until the runtime exposes task lifecycle events. The current
+instrumented timing clock is `CLOCK_MONOTONIC` wall time in integer
+nanoseconds; `run.timing_clock` and the capability vector remain authoritative
+for future clock domains.
+
 - `events`, `locations`, `statement_events`, `value_events`, and
   `function_events` are callback observations. They count collector records,
   not function invocations unless the field is explicitly named

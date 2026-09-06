@@ -311,6 +311,10 @@ extend ProfilerNative:
             append_text(buffer, "]}")
 
 
+        def append_capture_contract(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, ",\"capture\":{\"process\":{\"scope\":\"single_profiled_child\",\"lifetime\":\"launch_to_wait\"},\"threads\":{\"scope\":\"registered_collector_threads\",\"lifetime\":\"capture_only\",\"identity\":\"local_capture_thread_id\"},\"tasks\":{\"status\":\"not_recorded\"},\"repetition\":{\"scope\":\"run.repetitions\",\"warmups_excluded\":true},\"clock\":{\"domain\":\"wall\",\"unit\":\"ns\",\"source\":\"CLOCK_MONOTONIC\"}}")
+
+
         def append_json_f64(buffer: mutable darray[u8]&, value: f64) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             scratch: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_HOST_FLOAT_BUFFER_BYTES]
             written: i64 = profiler_ffi_snprintf(&scratch[0], scratch.count, NATIVE_HOST_LOAD_FORMAT, value)
@@ -1157,6 +1161,7 @@ extend ProfilerNative:
             else:
                 append_text(buffer, "true" if summary.trace_omitted == NATIVE_ZERO and summary.trace_captured == summary.events else "false")
             append_text(buffer, "}")
+            append_capture_contract(buffer)
             append_active_stack(buffer, summary)
             append_text(buffer, ",")
             append_quality(buffer, summary, status, event_trace, timed_out, recovered)

@@ -351,6 +351,17 @@ def main():
         assert measured["run"]["collection_mode"] == "full"
         assert measured["run"]["capabilities"]["event_classes"] == ["function", "statement", "value"]
         assert measured["run"]["capabilities"]["sampling"] == "unsupported"
+        assert measured["capture"] == {
+            "process": {"scope": "single_profiled_child", "lifetime": "launch_to_wait"},
+            "threads": {
+                "scope": "registered_collector_threads",
+                "lifetime": "capture_only",
+                "identity": "local_capture_thread_id",
+            },
+            "tasks": {"status": "not_recorded"},
+            "repetition": {"scope": "run.repetitions", "warmups_excluded": True},
+            "clock": {"domain": "wall", "unit": "ns", "source": "CLOCK_MONOTONIC"},
+        }
         assert measured["run"]["capabilities"]["timing"] == "wall"
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True

@@ -115,6 +115,57 @@
       },
       "additionalProperties": true
     },
+    "capture": {
+      "type": "object",
+      "required": ["process", "threads", "tasks", "repetition", "clock"],
+      "properties": {
+        "process": {
+          "type": "object",
+          "required": ["scope", "lifetime"],
+          "properties": {
+            "scope": { "const": "single_profiled_child" },
+            "lifetime": { "const": "launch_to_wait" }
+          },
+          "additionalProperties": false
+        },
+        "threads": {
+          "type": "object",
+          "required": ["scope", "lifetime", "identity"],
+          "properties": {
+            "scope": { "const": "registered_collector_threads" },
+            "lifetime": { "const": "capture_only" },
+            "identity": { "const": "local_capture_thread_id" }
+          },
+          "additionalProperties": false
+        },
+        "tasks": {
+          "type": "object",
+          "required": ["status"],
+          "properties": { "status": { "const": "not_recorded" } },
+          "additionalProperties": false
+        },
+        "repetition": {
+          "type": "object",
+          "required": ["scope", "warmups_excluded"],
+          "properties": {
+            "scope": { "const": "run.repetitions" },
+            "warmups_excluded": { "const": true }
+          },
+          "additionalProperties": false
+        },
+        "clock": {
+          "type": "object",
+          "required": ["domain", "unit", "source"],
+          "properties": {
+            "domain": { "const": "wall" },
+            "unit": { "const": "ns" },
+            "source": { "const": "CLOCK_MONOTONIC" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "quality": {
       "type": "object",
       "required": ["capture", "detail", "event_counts", "completeness", "reasons"],
