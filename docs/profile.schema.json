@@ -50,6 +50,26 @@
       },
       "additionalProperties": true
     },
+    "host": {
+      "type": ["object", "null"],
+      "properties": {
+        "os": { "type": ["string", "null"] },
+        "architecture": { "type": ["string", "null"] },
+        "load_average_1m": { "type": ["number", "null"] },
+        "load_average_source": { "type": ["string", "null"] },
+        "affinity": {
+          "type": "object",
+          "required": ["policy", "changed"],
+          "properties": {
+            "policy": { "type": "string", "enum": ["inherited"] },
+            "changed": { "const": false }
+          },
+          "additionalProperties": false
+        },
+        "power_thermal": { "type": ["object", "null"], "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
     "summary": {
       "type": "object",
       "required": [

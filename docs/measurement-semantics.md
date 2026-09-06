@@ -11,6 +11,16 @@ digests for readable source/stdin bytes. It is descriptive provenance, not a
 claim that paths or stdin contents remain available after a capture is moved;
 an unreadable optional input digest is represented as `null`.
 
+The optional top-level `host` object records the observation context captured by
+the native launcher. `os` and `architecture` come from `uname`; the
+`load_average_1m` value is the host's one-minute load average sampled before
+compilation and is formatted to three decimal places. `load_average_source`
+identifies the host API used. Affinity is explicitly reported as inherited and
+unchanged because this profiler does not silently alter machine-wide CPU
+settings. Power and thermal telemetry is currently `null` when no portable host
+API is available; absence is intentional and must not be interpreted as a
+measurement of a cool or unconstrained machine.
+
 ## Collection modes
 
 `run.collection_mode` records the event policy used for the capture:

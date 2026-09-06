@@ -66,6 +66,13 @@ module ProfilerNative:
         const NATIVE_MAX_PROTOCOL_EVENT_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_THREAD_RECORDS: i64 = 1000000
         const NATIVE_UNAME_BUFFER_BYTES: usize = 4096
+        const NATIVE_UNAME_LINUX_FIELD_BYTES: usize = 65
+        const NATIVE_UNAME_DARWIN_FIELD_BYTES: usize = 256
+        const NATIVE_UNAME_SYSTEM_FIELD_INDEX: usize = 0
+        const NATIVE_UNAME_MACHINE_FIELD_INDEX: usize = 4
+        const NATIVE_HOST_LOAD_SAMPLE_COUNT: i64 = 1
+        const NATIVE_HOST_FLOAT_BUFFER_BYTES: usize = 64
+        const NATIVE_HOST_LOAD_FORMAT: cstr = "%.3f"
         const NATIVE_LINUX_RSS_UNIT_BYTES: i64 = 1024
         const NATIVE_SHA256_BLOCK_BYTES: usize = 64
         const NATIVE_SHA256_LENGTH_BYTES: usize = 8
@@ -238,6 +245,13 @@ module ProfilerNative:
             cpu_user_ns: i64
             cpu_system_ns: i64
             peak_rss_bytes: i64
+
+        struct NativeHostMetadata:
+            available: mutable bool
+            os: mutable darray[u8]
+            architecture: mutable darray[u8]
+            load_average_1m: mutable f64
+            load_average_available: mutable bool
 
         struct CaptureSummary:
             events: mutable i64

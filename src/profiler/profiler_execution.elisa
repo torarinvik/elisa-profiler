@@ -203,6 +203,44 @@ extend ProfilerNative:
             return host_name[0] == NATIVE_BYTE_ASCII_UPPER_L and host_name[1] == NATIVE_BYTE_ASCII_LOWER_I and host_name[2] == NATIVE_BYTE_ASCII_LOWER_N and host_name[3] == NATIVE_BYTE_ASCII_LOWER_U and host_name[4] == NATIVE_BYTE_ASCII_LOWER_X
 
 
+        def native_uname_field(uname: darray[u8]&, field_index: usize, field_width: usize) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            result: mutable darray[u8] = []
+            field_start: usize = field_index * field_width
+            return result if field_start >= uname.count
+            field_stop: mutable usize = field_start + field_width
+            field_stop <- uname.count if field_stop > uname.count
+            cursor: mutable usize = field_start
+            while cursor < field_stop |cursor, field_stop, uname, result|:
+                break if uname[cursor] == NATIVE_BYTE_NUL
+                result.push(uname[cursor])
+                cursor <- cursor + NATIVE_ONE.usize()
+            return result
+
+
+        def empty_native_host_metadata() -> NativeHostMetadata:
+            return NativeHostMetadata{
+                available: false,
+                os: [],
+                architecture: [],
+                load_average_1m: 0.0,
+                load_average_available: false,
+            }
+
+
+        def native_host_metadata() -> NativeHostMetadata can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            metadata: mutable NativeHostMetadata = empty_native_host_metadata()
+            uname: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_UNAME_BUFFER_BYTES]
+            if profiler_ffi_uname(&uname[0]) == NATIVE_ZERO:
+                linux_host: bool = native_host_is_linux()
+                field_width: mutable usize = NATIVE_UNAME_DARWIN_FIELD_BYTES
+                field_width <- NATIVE_UNAME_LINUX_FIELD_BYTES if linux_host
+                metadata.os <- native_uname_field(uname, NATIVE_UNAME_SYSTEM_FIELD_INDEX, field_width)
+                metadata.architecture <- native_uname_field(uname, NATIVE_UNAME_MACHINE_FIELD_INDEX, field_width)
+            metadata.load_average_available <- profiler_ffi_getloadavg(&metadata.load_average_1m, NATIVE_HOST_LOAD_SAMPLE_COUNT) == NATIVE_HOST_LOAD_SAMPLE_COUNT
+            metadata.available <- metadata.os.count > NATIVE_ZERO.usize() or metadata.load_average_available
+            return metadata
+
+
         def peak_rss_bytes(raw_value: i64) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             return NATIVE_ZERO if raw_value < NATIVE_ZERO
             return native_saturating_mul_nonnegative(raw_value, NATIVE_LINUX_RSS_UNIT_BYTES) if native_host_is_linux()

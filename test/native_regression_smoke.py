@@ -194,6 +194,13 @@ def main():
             "--event-trace", "--max-event-trace-events", "10",
             "--format", "json", "--output", output)
         measured = json.loads(output.read_text())
+        host = measured["host"]
+        assert host["os"] in {"Darwin", "Linux"}, host
+        assert host["architecture"], host
+        assert host["affinity"] == {"policy": "inherited", "changed": False}, host
+        assert host["power_thermal"] is None, host
+        assert host["load_average_source"] == "getloadavg", host
+        assert isinstance(host["load_average_1m"], float), host
         assert measured["run"]["collection_mode"] == "full"
         assert measured["run"]["capabilities"]["event_classes"] == ["function", "statement", "value"]
         assert measured["run"]["capabilities"]["sampling"] == "unsupported"

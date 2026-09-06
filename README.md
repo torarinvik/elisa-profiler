@@ -91,6 +91,10 @@ argv-aware Elisa targets while remaining compatible with the legacy
 `main() -> i64` entry form. Native JSON captures also preserve the source size,
 launch directory, stdin path, environment-key names, and exact target argument
 vector as workload metadata.
+Each native capture also records host provenance when the platform exposes it:
+`uname` OS/architecture, a one-minute load-average sample, inherited affinity
+policy, and an explicit null for power/thermal telemetry that is unavailable.
+The launcher never changes machine-wide affinity or power settings.
 
 ## Profile a program
 
