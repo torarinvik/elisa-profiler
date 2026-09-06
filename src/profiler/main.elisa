@@ -1040,11 +1040,14 @@ extend ProfilerNative:
                 append_text(buffer, "</pre></section>")
             append_html_source_view(buffer, source, source_bytes, summary.location_records, false)
             append_html_function_browser(buffer, summary.function_records, summary.folded_records)
+            append_html_function_explorer(buffer)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
+            append_html_function_explorer_behavior(buffer)
             append_html_flame_graph(buffer, summary.folded_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
             append_html_section(buffer, "Thread loss", summary.thread_loss_records)
             append_html_view_state(buffer)
+            append_html_function_explorer_rebind(buffer)
             append_text(buffer, "</main></body></html>\n")
 
 
