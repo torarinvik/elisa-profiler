@@ -48,6 +48,11 @@ int main(void) {
     profile_capture_bytes_used = 0;
     profile_capture_bytes_dropped = 0;
     profile_budget_exceeded = 0;
+    profile_frame_length = PROFILE_FRAME_BUFFER_BYTES + 1;
+    profile_frame_overflowed = 0;
+    profile_record_append_char('x');
+    assert(profile_frame_overflowed);
+    profile_record_reset();
 
     const uint32_t repeat_line = 1;
     const size_t entries_before_growth =

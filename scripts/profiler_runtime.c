@@ -186,7 +186,8 @@ static void profile_record_reset(void) {
 }
 
 static void profile_record_append_bytes(const char *bytes, size_t length) {
-    if (profile_frame_overflowed || length > PROFILE_FRAME_BUFFER_BYTES - profile_frame_length) {
+    if (profile_frame_overflowed || profile_frame_length > PROFILE_FRAME_BUFFER_BYTES ||
+        length > PROFILE_FRAME_BUFFER_BYTES - profile_frame_length) {
         profile_frame_overflowed = 1;
         return;
     }
