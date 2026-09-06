@@ -61,6 +61,19 @@ extend ProfilerNative:
             return result
 
 
+        def protocol_identity_path(value: darray[u8]&) -> bool can[Abort.Panic]:
+            false return if value.count == NATIVE_ZERO.usize()
+            digits: mutable usize = NATIVE_ZERO.usize()
+            for index in 0..<value.count |value, digits|:
+                if value[index] == NATIVE_BYTE_SEMICOLON:
+                    false return if digits == NATIVE_ZERO.usize()
+                    digits <- NATIVE_ZERO.usize()
+                else:
+                    false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
+                    digits <- digits + NATIVE_ONE.usize()
+            return digits > NATIVE_ZERO.usize()
+
+
         def frame_checksum(data: darray[u8]&, start: usize, stop: usize) -> u64 can[Abort.Panic]:
             checksum: mutable u64 = NATIVE_FRAME_FNV_OFFSET
             for index in start..<stop |checksum, data|:
@@ -129,6 +142,7 @@ extend ProfilerNative:
             field_last: mutable darray[u8] = []
             field_interval: mutable darray[u8] = []
             field_max_interval: mutable darray[u8] = []
+            identity_field: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &kind_field)
             cursor <- protocol_field_into(data, cursor, stop, &function_field)
             cursor <- protocol_field_into(data, cursor, stop, &line_field)
@@ -141,6 +155,8 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &field_last)
             cursor <- protocol_field_into(data, cursor, stop, &field_interval)
             cursor <- protocol_field_into(data, cursor, stop, &field_max_interval)
+            if cursor < stop:
+                cursor <- protocol_field_into(data, cursor, stop, &identity_field)
             if cursor != stop:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_LOCATION
@@ -157,6 +173,7 @@ extend ProfilerNative:
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_LOCATION
                 return
             valid: mutable bool = function_field.count > NATIVE_ZERO.usize() and protocol_unsigned(line_field) and protocol_unsigned(count_field)
+            valid <- valid and (identity_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(identity_field))
             valid <- valid and (protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_FALSE or protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE)
             valid <- valid and protocol_unsigned(field_interval) and protocol_unsigned(field_max_interval)
             if kind_name == "function":
@@ -232,6 +249,10 @@ extend ProfilerNative:
             append_protocol_number(location_records, field_interval)
             append_text(location_records, ",\"max_interval_ns\":")
             append_protocol_number(location_records, field_max_interval)
+            if identity_field.count > NATIVE_ZERO.usize() and protocol_u64_number_field(identity_field) != NATIVE_ZERO.u64():
+                summary.stable_ids_available <- true
+                append_text(location_records, ",\"identity_id\":")
+                append_protocol_number(location_records, identity_field)
             append_text(location_records, ",\"compiler_line\":")
             append_protocol_number(location_records, line_field)
             append_text(location_records, ",\"source\":")
@@ -263,6 +284,9 @@ extend ProfilerNative:
                 append_protocol_number(function_records, field_max)
                 append_text(function_records, ",\"completed_calls\":")
                 append_protocol_number(function_records, field_sum)
+                if identity_field.count > NATIVE_ZERO.usize() and protocol_u64_number_field(identity_field) != NATIVE_ZERO.u64():
+                    append_text(function_records, ",\"identity_id\":")
+                    append_protocol_number(function_records, identity_field)
                 append_text(function_records, ",\"definitions\":[],\"mean_inclusive_ns\":")
                 append_i64(function_records, NATIVE_ZERO)
                 append_text(function_records, ",\"mean_self_ns\":")
@@ -281,16 +305,26 @@ extend ProfilerNative:
             calls_field: mutable darray[u8] = []
             completed_field: mutable darray[u8] = []
             inclusive_field: mutable darray[u8] = []
+            caller_id_field: mutable darray[u8] = []
+            callee_id_field: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &caller_field)
             cursor <- protocol_field_into(data, cursor, stop, &callee_field)
             cursor <- protocol_field_into(data, cursor, stop, &calls_field)
             cursor <- protocol_field_into(data, cursor, stop, &completed_field)
             cursor <- protocol_field_into(data, cursor, stop, &inclusive_field)
+            if cursor < stop:
+                cursor <- protocol_field_into(data, cursor, stop, &caller_id_field)
+                if cursor < stop:
+                    cursor <- protocol_field_into(data, cursor, stop, &callee_id_field)
             if cursor != stop:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
                 return
             if caller_field.count == NATIVE_ZERO.usize() or callee_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(inclusive_field):
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
+                return
+            if caller_id_field.count != NATIVE_ZERO.usize() and (not protocol_unsigned_u64(caller_id_field) or callee_id_field.count == NATIVE_ZERO.usize() or not protocol_unsigned_u64(callee_id_field)):
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_CALL
                 return
@@ -311,6 +345,12 @@ extend ProfilerNative:
             append_protocol_number(call_edge_records, completed_field)
             append_text(call_edge_records, ",\"inclusive_ns\":")
             append_protocol_number(call_edge_records, inclusive_field)
+            if caller_id_field.count > NATIVE_ZERO.usize() and (protocol_u64_number_field(caller_id_field) != NATIVE_ZERO.u64() or protocol_u64_number_field(callee_id_field) != NATIVE_ZERO.u64()):
+                summary.stable_ids_available <- true
+                append_text(call_edge_records, ",\"caller_id\":")
+                append_protocol_number(call_edge_records, caller_id_field)
+                append_text(call_edge_records, ",\"callee_id\":")
+                append_protocol_number(call_edge_records, callee_id_field)
             append_text(call_edge_records, "}")
             summary.call_edge_record_count <- native_saturating_add(summary.call_edge_record_count, NATIVE_ONE)
 
@@ -321,15 +361,22 @@ extend ProfilerNative:
             calls_field: mutable darray[u8] = []
             completed_field: mutable darray[u8] = []
             self_field: mutable darray[u8] = []
+            stack_ids_field: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &stack_field)
             cursor <- protocol_field_into(data, cursor, stop, &calls_field)
             cursor <- protocol_field_into(data, cursor, stop, &completed_field)
             cursor <- protocol_field_into(data, cursor, stop, &self_field)
+            if cursor < stop:
+                cursor <- protocol_field_into(data, cursor, stop, &stack_ids_field)
             if cursor != stop:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
                 return
             if stack_field.count == NATIVE_ZERO.usize() or not protocol_unsigned(calls_field) or not protocol_unsigned(completed_field) or not protocol_unsigned(self_field):
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
+                return
+            if stack_ids_field.count > NATIVE_ZERO.usize() and not protocol_identity_path(stack_ids_field):
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_STACK
                 return
@@ -348,6 +395,10 @@ extend ProfilerNative:
             append_protocol_number(stack_records, completed_field)
             append_text(stack_records, ",\"self_ns\":")
             append_protocol_number(stack_records, self_field)
+            if stack_ids_field.count > NATIVE_ZERO.usize():
+                summary.stable_ids_available <- true
+                append_text(stack_records, ",\"stack_ids\":")
+                append_json_string(stack_records, stack_ids_field)
             append_text(stack_records, "}")
             append_folded_separator(folded_records)
             for index in 0..<stack_field.count |folded_records, stack_field|:
@@ -369,6 +420,7 @@ extend ProfilerNative:
             variable_field: mutable darray[u8] = []
             signed_field: mutable darray[u8] = []
             value_field: mutable darray[u8] = []
+            identity_field: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
             cursor <- protocol_field_into(data, cursor, stop, &kind_field)
             cursor <- protocol_field_into(data, cursor, stop, &function_field)
@@ -376,6 +428,8 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &variable_field)
             cursor <- protocol_field_into(data, cursor, stop, &signed_field)
             cursor <- protocol_field_into(data, cursor, stop, &value_field)
+            if cursor < stop:
+                cursor <- protocol_field_into(data, cursor, stop, &identity_field)
             if cursor != stop:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_EVENT
@@ -393,6 +447,7 @@ extend ProfilerNative:
                 return
             signed_value: bool = protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE
             valid: mutable bool = protocol_unsigned(sequence_field) and function_field.count > NATIVE_ZERO.usize() and protocol_unsigned(line_field)
+            valid <- valid and (identity_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(identity_field))
             valid <- valid and (protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_FALSE or signed_value)
             valid <- valid and protocol_signed(value_field, false)
             if not signed_value:
@@ -419,6 +474,10 @@ extend ProfilerNative:
             append_text(event_records, "true" if signed_value else "false")
             append_text(event_records, ",\"value\":")
             append_protocol_number(event_records, value_field)
+            if identity_field.count > NATIVE_ZERO.usize() and protocol_u64_number_field(identity_field) != NATIVE_ZERO.u64():
+                summary.stable_ids_available <- true
+                append_text(event_records, ",\"identity_id\":")
+                append_protocol_number(event_records, identity_field)
             append_text(event_records, ",\"compiler_line\":")
             append_protocol_number(event_records, line_field)
             append_text(event_records, ",\"source\":")
@@ -545,6 +604,7 @@ extend ProfilerNative:
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO,
+                stable_ids_available: false,
                 active_stack_available: false,
                 active_stack_tracked_depth: NATIVE_ZERO,
                 active_stack_overflow_depth: NATIVE_ZERO,

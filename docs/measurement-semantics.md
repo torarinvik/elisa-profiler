@@ -46,8 +46,10 @@ Every report also carries an explicit capability matrix. In the current build,
 `sampling_detail`, `allocation`, and `tasks` are marked unsupported with stable
 reasons because the compiler/runtime exposes instrumentation callbacks but no
 native sampler, allocator-lifecycle stream, or task scheduler lifecycle stream.
-`identity` is marked `source_name_fallback` until compiler-issued stable IDs are
-available. These fields are declarations of evidence coverage, not estimates.
+`identity` is `compiler_stable_ids` when compiler-issued function and location
+identity callbacks are observed, and `source_name_fallback` for legacy
+compiler/collector streams. These fields are declarations of evidence
+coverage, not estimates.
 
 Native collector streams begin with a capture marker and finish with a
 completion marker. Successful target runs require both markers; timeout and
@@ -209,15 +211,13 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
   exceed inclusive time, and a maximum interval cannot exceed its aggregate
   interval. These checks protect every renderer and comparison from accepting
   a syntactically valid but semantically corrupt capture.
-- Function comparison records use the readable function key for the current
-  version-1 contract. A function present on only one side has `null` metrics on
+- Function records expose an optional compiler-issued `identity_id`; legacy
+  captures omit it. A function present on only one side has `null` metrics on
   the missing side; the comparison never treats absence as a measured zero.
-- Caller→callee, folded stack-path, and source-location comparison records use
-  the same rule. Location identity includes source availability/value, event
-  kind, readable function, source line, variable availability/value, and
-  signedness so distinct scalar observations are not merged accidentally.
-  Stable compiler-issued identities remain reserved for a later schema
-  evolution.
+- Caller→callee records expose optional `caller_id` and `callee_id`, stack
+  records expose optional semicolon-delimited `stack_ids`, and source/event
+  location records expose optional `identity_id`. Readable names and source
+  metadata remain in every record for diagnostics and legacy compatibility.
 
 ## Completeness and failure states
 

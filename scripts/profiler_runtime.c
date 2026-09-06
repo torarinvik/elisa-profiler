@@ -33,6 +33,7 @@ typedef struct {
     uint32_t line;
     uint8_t kind;
     uint8_t is_signed;
+    uint64_t identity_id;
     uint64_t count;
     uint64_t minimum;
     uint64_t maximum;
@@ -49,6 +50,8 @@ typedef struct {
 typedef struct {
     const char *caller_name;
     const char *callee_name;
+    uint64_t caller_id;
+    uint64_t callee_id;
     uint64_t call_events;
     uint64_t completed_calls;
     uint64_t inclusive_ns;
@@ -59,6 +62,7 @@ typedef struct profile_call_path profile_call_path;
 struct profile_call_path {
     profile_call_path *parent;
     const char *function_name;
+    uint64_t function_id;
     uint64_t call_events;
     uint64_t completed_calls;
     uint64_t self_ns;
@@ -68,6 +72,7 @@ enum {
     PROFILE_KIND_STATEMENT = 1,
     PROFILE_KIND_VALUE = 2,
     PROFILE_KIND_FUNCTION = 3,
+    PROFILE_ID_UNSET = 0,
     PROFILE_PROTOCOL_VERSION = 1,
     PROFILE_MODE_FULL = 0,
     PROFILE_MODE_FUNCTIONS = 1,
@@ -133,6 +138,7 @@ typedef struct {
     uint32_t line;
     uint8_t kind;
     uint8_t is_signed;
+    uint64_t identity_id;
     uint64_t value;
 } profile_recent_entry;
 
@@ -449,6 +455,7 @@ struct profile_thread_state {
     uint32_t timing_line;
     uint8_t timing_kind;
     uint8_t timing_is_signed;
+    uint64_t timing_identity_id;
     uint64_t timing_last_ns;
     int timing_have_last;
 #endif
@@ -553,6 +560,8 @@ typedef struct {
     const char *function_name;
     const char *caller_name;
     profile_call_path *path;
+    uint64_t function_id;
+    uint64_t caller_id;
 #if ELISA_PROFILE_TIMING
     uint64_t start_ns;
     uint64_t child_ns;
@@ -564,6 +573,7 @@ typedef struct profile_overflow_frame profile_overflow_frame;
 struct profile_overflow_frame {
     const char *function_name;
     uint32_t line;
+    uint64_t function_id;
     profile_overflow_frame *previous;
 };
 
@@ -575,7 +585,8 @@ static _Thread_local size_t profile_call_overflow_untracked_depth;
 static _Thread_local profile_thread_state *profile_current_thread;
 static profile_thread_state *profile_get_thread_locked(void);
 
-static void profile_push_overflow_frame(const char *function_name, uint32_t line) {
+static void profile_push_overflow_frame(const char *function_name, uint32_t line,
+                                        uint64_t function_id) {
     /* Once one allocation fails, keep later overflow entries untracked so a
      * known frame can never be placed above an unknown one. */
     if (profile_call_overflow_untracked_depth > 0) {
@@ -591,6 +602,7 @@ static void profile_push_overflow_frame(const char *function_name, uint32_t line
     *frame = (profile_overflow_frame){
         .function_name = function_name,
         .line = line,
+        .function_id = function_id,
         .previous = profile_call_overflow_stack,
     };
     profile_call_overflow_stack = frame;
@@ -630,7 +642,8 @@ static uint64_t profile_now_ns(void) {
 #endif
 
 static uint64_t profile_hash(const char *function_name, const char *variable_name,
-                             uint32_t line, uint8_t kind, uint8_t is_signed) {
+                             uint32_t line, uint8_t kind, uint8_t is_signed,
+                             uint64_t identity_id) {
     uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash = profile_hash_string(hash, function_name);
     hash = profile_hash_string(hash, variable_name);
@@ -639,31 +652,43 @@ static uint64_t profile_hash(const char *function_name, const char *variable_nam
     hash ^= kind;
     hash *= PROFILE_FNV_PRIME;
     hash ^= is_signed;
+    hash *= PROFILE_FNV_PRIME;
+    hash ^= identity_id;
+    hash *= PROFILE_FNV_PRIME;
     return hash;
+}
+
+static int profile_identity_matches(uint64_t left, uint64_t right) {
+    return left == PROFILE_ID_UNSET && right == PROFILE_ID_UNSET
+               ? 1
+               : left != PROFILE_ID_UNSET && left == right;
 }
 
 static int profile_key_matches(const profile_entry *entry, const char *function_name,
                                const char *variable_name, uint32_t line, uint8_t kind,
-                               uint8_t is_signed) {
+                               uint8_t is_signed, uint64_t identity_id) {
     return profile_strings_equal(entry->function_name, function_name) &&
            profile_strings_equal(entry->variable_name, variable_name) &&
-           entry->line == line && entry->kind == kind && entry->is_signed == is_signed;
+           entry->line == line && entry->kind == kind && entry->is_signed == is_signed &&
+           profile_identity_matches(entry->identity_id, identity_id);
 }
 
 static profile_entry *profile_find_locked(const char *function_name,
                                           const char *variable_name, uint32_t line,
-                                          uint8_t kind, uint8_t is_signed) {
+                                          uint8_t kind, uint8_t is_signed,
+                                          uint64_t identity_id) {
     if (profile_capacity == 0) {
         return NULL;
     }
-    size_t slot = profile_hash(function_name, variable_name, line, kind, is_signed) &
-                  (profile_capacity - 1);
+    size_t slot = profile_hash(function_name, variable_name, line, kind, is_signed,
+                               identity_id) & (profile_capacity - 1);
     for (size_t probes = 0; probes < profile_capacity; ++probes) {
         profile_entry *entry = &profile_table[slot];
         if (entry->function_name == NULL) {
             return NULL;
         }
-        if (profile_key_matches(entry, function_name, variable_name, line, kind, is_signed)) {
+        if (profile_key_matches(entry, function_name, variable_name, line, kind,
+                                is_signed, identity_id)) {
             return entry;
         }
         slot = (slot + 1) & (profile_capacity - 1);
@@ -671,19 +696,26 @@ static profile_entry *profile_find_locked(const char *function_name,
     return NULL;
 }
 
-static uint64_t profile_call_edge_hash(const char *caller_name, const char *callee_name) {
+static uint64_t profile_call_edge_hash(const char *caller_name, const char *callee_name,
+                                       uint64_t caller_id, uint64_t callee_id) {
     uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash = profile_hash_string(hash, caller_name);
     hash = profile_hash_string(hash, callee_name);
+    hash ^= caller_id;
+    hash *= PROFILE_FNV_PRIME;
+    hash ^= callee_id;
+    hash *= PROFILE_FNV_PRIME;
     return hash;
 }
 
 static profile_call_edge *profile_find_call_edge_locked(const char *caller_name,
-                                                         const char *callee_name) {
+                                                         const char *callee_name,
+                                                         uint64_t caller_id,
+                                                         uint64_t callee_id) {
     if (profile_call_edge_capacity == 0) {
         return NULL;
     }
-    size_t slot = profile_call_edge_hash(caller_name, callee_name) &
+    size_t slot = profile_call_edge_hash(caller_name, callee_name, caller_id, callee_id) &
                   (profile_call_edge_capacity - 1);
     for (size_t probes = 0; probes < profile_call_edge_capacity; ++probes) {
         profile_call_edge *edge = &profile_call_edges[slot];
@@ -691,7 +723,9 @@ static profile_call_edge *profile_find_call_edge_locked(const char *caller_name,
             return NULL;
         }
         if (profile_strings_equal(edge->caller_name, caller_name) &&
-            profile_strings_equal(edge->callee_name, callee_name)) {
+            profile_strings_equal(edge->callee_name, callee_name) &&
+            profile_identity_matches(edge->caller_id, caller_id) &&
+            profile_identity_matches(edge->callee_id, callee_id)) {
             return edge;
         }
         slot = (slot + 1) & (profile_call_edge_capacity - 1);
@@ -720,7 +754,8 @@ static int profile_grow_call_edges_locked(void) {
         if (edge.caller_name == NULL) {
             continue;
         }
-        size_t slot = profile_call_edge_hash(edge.caller_name, edge.callee_name) &
+        size_t slot = profile_call_edge_hash(edge.caller_name, edge.callee_name,
+                                             edge.caller_id, edge.callee_id) &
                       (new_capacity - 1);
         while (new_edges[slot].caller_name != NULL) {
             slot = (slot + 1) & (new_capacity - 1);
@@ -737,13 +772,15 @@ static int profile_grow_call_edges_locked(void) {
     return 1;
 }
 
-static void profile_record_call_edge(const char *caller_name, const char *callee_name) {
+static void profile_record_call_edge(const char *caller_name, const char *callee_name,
+                                     uint64_t caller_id, uint64_t callee_id) {
     if (caller_name == NULL || callee_name == NULL) {
         return;
     }
     pthread_mutex_lock(&profile_lock);
     profile_thread_state *thread = profile_get_thread_locked();
-    profile_call_edge *existing = profile_find_call_edge_locked(caller_name, callee_name);
+    profile_call_edge *existing = profile_find_call_edge_locked(
+        caller_name, callee_name, caller_id, callee_id);
     if (existing != NULL) {
         existing->call_events =
             profile_saturating_increment_u64(existing->call_events);
@@ -775,17 +812,21 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
             return;
         }
     }
-    size_t slot = profile_call_edge_hash(caller_name, callee_name) &
+    size_t slot = profile_call_edge_hash(caller_name, callee_name, caller_id, callee_id) &
                   (profile_call_edge_capacity - 1);
     while (profile_call_edges[slot].caller_name != NULL &&
            !(profile_strings_equal(profile_call_edges[slot].caller_name, caller_name) &&
-             profile_strings_equal(profile_call_edges[slot].callee_name, callee_name))) {
+             profile_strings_equal(profile_call_edges[slot].callee_name, callee_name) &&
+             profile_identity_matches(profile_call_edges[slot].caller_id, caller_id) &&
+             profile_identity_matches(profile_call_edges[slot].callee_id, callee_id))) {
         slot = (slot + 1) & (profile_call_edge_capacity - 1);
     }
     profile_call_edge *edge = &profile_call_edges[slot];
     if (edge->caller_name == NULL) {
         edge->caller_name = caller_name;
         edge->callee_name = callee_name;
+        edge->caller_id = caller_id;
+        edge->callee_id = callee_id;
         profile_call_edge_size =
             profile_saturating_increment_size(profile_call_edge_size);
     }
@@ -795,12 +836,15 @@ static void profile_record_call_edge(const char *caller_name, const char *callee
 
 static void profile_record_completed_call_edge(const char *caller_name,
                                                 const char *callee_name,
+                                                uint64_t caller_id,
+                                                uint64_t callee_id,
                                                 uint64_t inclusive_ns) {
     if (caller_name == NULL || callee_name == NULL) {
         return;
     }
     pthread_mutex_lock(&profile_lock);
-    profile_call_edge *edge = profile_find_call_edge_locked(caller_name, callee_name);
+    profile_call_edge *edge = profile_find_call_edge_locked(
+        caller_name, callee_name, caller_id, callee_id);
     if (edge != NULL) {
         edge->completed_calls =
             profile_saturating_increment_u64(edge->completed_calls);
@@ -822,11 +866,15 @@ static uint64_t profile_saturating_add(uint64_t left, uint64_t right) {
 #endif
 
 static uint64_t profile_call_path_hash(const profile_call_path *parent,
-                                       const char *function_name) {
+                                       const char *function_name,
+                                       uint64_t function_id) {
     uint64_t hash = PROFILE_FNV_OFFSET_BASIS;
     hash ^= (uint64_t)(uintptr_t)parent;
     hash *= PROFILE_FNV_PRIME;
-    return profile_hash_string(hash, function_name);
+    hash = profile_hash_string(hash, function_name);
+    hash ^= function_id;
+    hash *= PROFILE_FNV_PRIME;
+    return hash;
 }
 
 static int profile_grow_call_paths_locked(void) {
@@ -850,7 +898,8 @@ static int profile_grow_call_paths_locked(void) {
         if (path == NULL) {
             continue;
         }
-        size_t slot = profile_call_path_hash(path->parent, path->function_name) &
+        size_t slot = profile_call_path_hash(path->parent, path->function_name,
+                                             path->function_id) &
                       (new_capacity - 1);
         while (new_paths[slot] != NULL) {
             slot = (slot + 1) & (new_capacity - 1);
@@ -868,7 +917,8 @@ static int profile_grow_call_paths_locked(void) {
 }
 
 static profile_call_path *profile_record_call_path(profile_call_path *parent,
-                                                    const char *function_name) {
+                                                    const char *function_name,
+                                                    uint64_t function_id) {
     if (function_name == NULL) {
         return NULL;
     }
@@ -876,13 +926,15 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
     profile_thread_state *thread = profile_get_thread_locked();
     size_t existing_slot = profile_call_path_capacity == 0
                                ? 0
-                               : profile_call_path_hash(parent, function_name) &
+                               : profile_call_path_hash(parent, function_name, function_id) &
                                      (profile_call_path_capacity - 1);
     if (profile_call_path_capacity != 0) {
         while (profile_call_paths[existing_slot] != NULL &&
                !(profile_call_paths[existing_slot]->parent == parent &&
                  profile_strings_equal(profile_call_paths[existing_slot]->function_name,
-                                       function_name))) {
+                                       function_name) &&
+                 profile_identity_matches(profile_call_paths[existing_slot]->function_id,
+                                          function_id))) {
             existing_slot = (existing_slot + 1) & (profile_call_path_capacity - 1);
         }
         if (profile_call_paths[existing_slot] != NULL) {
@@ -918,11 +970,12 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
             return NULL;
         }
     }
-    size_t slot = profile_call_path_hash(parent, function_name) &
+    size_t slot = profile_call_path_hash(parent, function_name, function_id) &
                   (profile_call_path_capacity - 1);
     while (profile_call_paths[slot] != NULL &&
            !(profile_call_paths[slot]->parent == parent &&
-             profile_strings_equal(profile_call_paths[slot]->function_name, function_name))) {
+             profile_strings_equal(profile_call_paths[slot]->function_name, function_name) &&
+             profile_identity_matches(profile_call_paths[slot]->function_id, function_id))) {
         slot = (slot + 1) & (profile_call_path_capacity - 1);
     }
     profile_call_path *path = profile_call_paths[slot];
@@ -951,6 +1004,7 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
         }
         path->parent = parent;
         path->function_name = function_name;
+        path->function_id = function_id;
         profile_call_paths[slot] = path;
         profile_call_path_size =
             profile_saturating_increment_size(profile_call_path_size);
@@ -1050,7 +1104,8 @@ static void profile_account_previous_locked(profile_thread_state *thread,
     }
     profile_entry *previous = profile_find_locked(
         thread->timing_function_name, thread->timing_variable_name,
-        thread->timing_line, thread->timing_kind, thread->timing_is_signed);
+        thread->timing_line, thread->timing_kind, thread->timing_is_signed,
+        thread->timing_identity_id);
     if (previous != NULL) {
         uint64_t interval_ns = profile_elapsed_ns(thread->timing_last_ns, now_ns);
         previous->interval_ns = profile_saturating_add(previous->interval_ns, interval_ns);
@@ -1093,7 +1148,8 @@ static int profile_grow_locked(void) {
             continue;
         }
         size_t slot = profile_hash(entry.function_name, entry.variable_name, entry.line,
-                                   entry.kind, entry.is_signed) & (new_capacity - 1);
+                                   entry.kind, entry.is_signed, entry.identity_id) &
+                      (new_capacity - 1);
         while (new_table[slot].function_name != NULL) {
             slot = (slot + 1) & (new_capacity - 1);
         }
@@ -1139,7 +1195,7 @@ static int profile_mode_allows_kind(uint8_t kind) {
 static void profile_record(const char *function_name, uint32_t line,
                            const char *variable_name, uint64_t value, uint8_t kind,
                            uint8_t is_signed, size_t call_depth,
-                           int stack_overflowed) {
+                           int stack_overflowed, uint64_t identity_id) {
     if (!profile_mode_allows_kind(kind)) {
         return;
     }
@@ -1175,6 +1231,7 @@ static void profile_record(const char *function_name, uint32_t line,
             .line = line,
             .kind = kind,
             .is_signed = is_signed,
+            .identity_id = identity_id,
             .value = value,
         };
     profile_recent_position =
@@ -1218,7 +1275,7 @@ static void profile_record(const char *function_name, uint32_t line,
     }
 
     profile_entry *existing = profile_find_locked(
-        function_name, variable_name, line, kind, is_signed);
+        function_name, variable_name, line, kind, is_signed, identity_id);
     if (existing == NULL && profile_location_limit != 0 &&
         profile_size >= profile_location_limit) {
         profile_dropped_count =
@@ -1256,9 +1313,11 @@ static void profile_record(const char *function_name, uint32_t line,
         }
     }
 
-    size_t slot = profile_hash(function_name, variable_name, line, kind, is_signed) & (profile_capacity - 1);
+    size_t slot = profile_hash(function_name, variable_name, line, kind, is_signed,
+                               identity_id) & (profile_capacity - 1);
     while (profile_table[slot].function_name != NULL &&
-           !profile_key_matches(&profile_table[slot], function_name, variable_name, line, kind, is_signed)) {
+           !profile_key_matches(&profile_table[slot], function_name, variable_name, line,
+                                kind, is_signed, identity_id)) {
         slot = (slot + 1) & (profile_capacity - 1);
     }
 
@@ -1269,6 +1328,7 @@ static void profile_record(const char *function_name, uint32_t line,
         entry->line = line;
         entry->kind = kind;
         entry->is_signed = is_signed;
+        entry->identity_id = identity_id;
         entry->minimum = value;
         entry->maximum = value;
         ++profile_size;
@@ -1304,28 +1364,34 @@ static void profile_record(const char *function_name, uint32_t line,
         thread->timing_line = entry->line;
         thread->timing_kind = entry->kind;
         thread->timing_is_signed = entry->is_signed;
+        thread->timing_identity_id = entry->identity_id;
         thread->timing_have_last = 1;
     }
 #endif
     pthread_mutex_unlock(&profile_lock);
 }
 
-void elisa_trace_record(const char *function_name, uint32_t line) {
-    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0, 0, 0);
+static int profile_function_matches(const char *expected_name, uint64_t expected_id,
+                                    const char *actual_name, uint64_t actual_id) {
+    return profile_strings_equal(expected_name, actual_name) &&
+           profile_identity_matches(expected_id, actual_id);
 }
 
-void elisa_trace_function_entry(const char *function_name, uint32_t line) {
+static void profile_record_function_entry(const char *function_name, uint32_t line,
+                                           uint64_t function_id) {
     const char *caller_name = NULL;
+    uint64_t caller_id = PROFILE_ID_UNSET;
     profile_call_path *caller_path = NULL;
     int stack_overflowed = 0;
     if (profile_call_overflow_depth == 0 && profile_call_depth > 0) {
         caller_name = profile_call_stack[profile_call_depth - 1].function_name;
+        caller_id = profile_call_stack[profile_call_depth - 1].function_id;
         caller_path = profile_call_stack[profile_call_depth - 1].path;
     }
-    profile_record_call_edge(caller_name, function_name);
+    profile_record_call_edge(caller_name, function_name, caller_id, function_id);
     profile_call_path *path = NULL;
     if (profile_call_overflow_depth == 0 && profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
-        path = profile_record_call_path(caller_path, function_name);
+        path = profile_record_call_path(caller_path, function_name, function_id);
     }
 
 #if ELISA_PROFILE_TIMING
@@ -1334,6 +1400,8 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
             .function_name = function_name,
             .caller_name = caller_name,
             .path = path,
+            .function_id = function_id,
+            .caller_id = caller_id,
             .start_ns = profile_now_ns(),
             .child_ns = 0,
         };
@@ -1341,7 +1409,7 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
     } else {
         profile_call_overflow_depth =
             profile_saturating_increment_size(profile_call_overflow_depth);
-        profile_push_overflow_frame(function_name, line);
+        profile_push_overflow_frame(function_name, line, function_id);
         stack_overflowed = 1;
     }
 #else
@@ -1350,23 +1418,26 @@ void elisa_trace_function_entry(const char *function_name, uint32_t line) {
             .function_name = function_name,
             .caller_name = caller_name,
             .path = path,
+            .function_id = function_id,
+            .caller_id = caller_id,
         };
         profile_call_depth = profile_saturating_increment_size(profile_call_depth);
     } else {
         profile_call_overflow_depth =
             profile_saturating_increment_size(profile_call_overflow_depth);
-        profile_push_overflow_frame(function_name, line);
+        profile_push_overflow_frame(function_name, line, function_id);
         stack_overflowed = 1;
     }
 #endif
     profile_record(function_name, line, NULL, 0, PROFILE_KIND_FUNCTION, 0,
-                   profile_call_depth, stack_overflowed);
+                   profile_call_depth, stack_overflowed, function_id);
 }
 
-static void profile_record_completed_function(const char *function_name, uint32_t line) {
+static void profile_record_completed_function(const char *function_name, uint32_t line,
+                                              uint64_t function_id) {
     pthread_mutex_lock(&profile_lock);
     profile_entry *entry = profile_find_locked(
-        function_name, NULL, line, PROFILE_KIND_FUNCTION, 0);
+        function_name, NULL, line, PROFILE_KIND_FUNCTION, 0, function_id);
     if (entry != NULL) {
         entry->completed_calls =
             profile_saturating_increment_u64(entry->completed_calls);
@@ -1375,7 +1446,8 @@ static void profile_record_completed_function(const char *function_name, uint32_
 }
 
 #if ELISA_PROFILE_TIMING
-static void profile_record_timed_function_exit(const char *function_name, uint32_t line) {
+static void profile_record_timed_function_exit(const char *function_name, uint32_t line,
+                                               uint64_t function_id) {
     if (profile_call_overflow_depth > 0) {
         profile_close_timing_cursor();
         --profile_call_overflow_depth;
@@ -1385,13 +1457,16 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         }
         profile_overflow_frame *overflow_frame = profile_pop_overflow_frame();
         if (overflow_frame == NULL ||
-            !profile_strings_equal(overflow_frame->function_name, function_name)) {
+            !profile_function_matches(overflow_frame->function_name,
+                                      overflow_frame->function_id,
+                                      function_name, function_id)) {
             free(overflow_frame);
             profile_call_depth = 0;
             profile_clear_overflow_frames();
             return;
         }
-        profile_record_completed_function(overflow_frame->function_name, overflow_frame->line);
+        profile_record_completed_function(overflow_frame->function_name, overflow_frame->line,
+                                          overflow_frame->function_id);
         free(overflow_frame);
         return;
     }
@@ -1400,7 +1475,8 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         return;
     }
     profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
-    if (!profile_strings_equal(frame->function_name, function_name)) {
+    if (!profile_function_matches(frame->function_name, frame->function_id,
+                                  function_name, function_id)) {
         /* A missing/foreign exit must not poison every later frame. */
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
@@ -1408,6 +1484,8 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
         return;
     }
     const char *caller_name = frame->caller_name;
+    uint64_t caller_id = frame->caller_id;
+    uint64_t frame_function_id = frame->function_id;
     profile_call_path *path = frame->path;
     uint64_t now_ns = profile_now_ns();
     if (now_ns == 0) {
@@ -1428,7 +1506,7 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
      * final gap without this boundary flush. */
     profile_account_previous_locked(profile_current_thread, now_ns);
     profile_entry *entry = profile_find_locked(
-        function_name, NULL, line, PROFILE_KIND_FUNCTION, 0);
+        function_name, NULL, line, PROFILE_KIND_FUNCTION, 0, function_id);
     if (entry != NULL) {
         entry->completed_calls =
             profile_saturating_increment_u64(entry->completed_calls);
@@ -1438,12 +1516,14 @@ static void profile_record_timed_function_exit(const char *function_name, uint32
     profile_invalidate_timing_cursor(profile_current_thread);
     pthread_mutex_unlock(&profile_lock);
     profile_record_completed_call_path(path, self_ns);
-    profile_record_completed_call_edge(caller_name, function_name, inclusive_ns);
+    profile_record_completed_call_edge(caller_name, function_name, caller_id,
+                                       frame_function_id, inclusive_ns);
 }
 #endif
 
 #if !ELISA_PROFILE_TIMING
-static void profile_record_untimed_function_exit(const char *function_name, uint32_t line) {
+static void profile_record_untimed_function_exit(const char *function_name, uint32_t line,
+                                                 uint64_t function_id) {
     if (profile_call_overflow_depth > 0) {
         --profile_call_overflow_depth;
         if (profile_call_overflow_untracked_depth > 0) {
@@ -1452,13 +1532,16 @@ static void profile_record_untimed_function_exit(const char *function_name, uint
         }
         profile_overflow_frame *overflow_frame = profile_pop_overflow_frame();
         if (overflow_frame == NULL ||
-            !profile_strings_equal(overflow_frame->function_name, function_name)) {
+            !profile_function_matches(overflow_frame->function_name,
+                                      overflow_frame->function_id,
+                                      function_name, function_id)) {
             free(overflow_frame);
             profile_call_depth = 0;
             profile_clear_overflow_frames();
             return;
         }
-        profile_record_completed_function(overflow_frame->function_name, overflow_frame->line);
+        profile_record_completed_function(overflow_frame->function_name, overflow_frame->line,
+                                          overflow_frame->function_id);
         free(overflow_frame);
         return;
     }
@@ -1466,32 +1549,78 @@ static void profile_record_untimed_function_exit(const char *function_name, uint
         return;
     }
     profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
-    if (!profile_strings_equal(frame->function_name, function_name)) {
+    if (!profile_function_matches(frame->function_name, frame->function_id,
+                                  function_name, function_id)) {
         profile_call_depth = 0;
         profile_call_overflow_depth = 0;
         return;
     }
     const char *caller_name = frame->caller_name;
+    uint64_t caller_id = frame->caller_id;
+    uint64_t frame_function_id = frame->function_id;
     profile_call_path *path = frame->path;
     --profile_call_depth;
-    profile_record_completed_function(function_name, line);
+    profile_record_completed_function(function_name, line, function_id);
     profile_record_completed_call_path(path, 0);
-    profile_record_completed_call_edge(caller_name, function_name, 0);
+    profile_record_completed_call_edge(caller_name, function_name, caller_id,
+                                       frame_function_id, 0);
 }
 #endif
 
-void elisa_trace_function_exit(const char *function_name, uint32_t line) {
+static void profile_record_function_exit(const char *function_name, uint32_t line,
+                                          uint64_t function_id) {
 #if ELISA_PROFILE_TIMING
-    profile_record_timed_function_exit(function_name, line);
+    profile_record_timed_function_exit(function_name, line, function_id);
 #else
-    profile_record_untimed_function_exit(function_name, line);
+    profile_record_untimed_function_exit(function_name, line, function_id);
 #endif
+}
+
+static void profile_record_value(const char *function_name, uint32_t line,
+                                 const char *variable_name, uint64_t value,
+                                 uint32_t is_signed, uint64_t identity_id) {
+    profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE,
+                   is_signed != 0 ? 1 : 0, 0, 0, identity_id);
+}
+
+void elisa_trace_record(const char *function_name, uint32_t line) {
+    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0, 0, 0,
+                   PROFILE_ID_UNSET);
+}
+
+void elisa_trace_record_id(const char *function_name, uint32_t line, uint64_t identity_id) {
+    profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0, 0, 0,
+                   identity_id);
+}
+
+void elisa_trace_function_entry(const char *function_name, uint32_t line) {
+    profile_record_function_entry(function_name, line, PROFILE_ID_UNSET);
+}
+
+void elisa_trace_function_entry_id(const char *function_name, uint32_t line,
+                                   uint64_t function_id) {
+    profile_record_function_entry(function_name, line, function_id);
+}
+
+void elisa_trace_function_exit(const char *function_name, uint32_t line) {
+    profile_record_function_exit(function_name, line, PROFILE_ID_UNSET);
+}
+
+void elisa_trace_function_exit_id(const char *function_name, uint32_t line,
+                                  uint64_t function_id) {
+    profile_record_function_exit(function_name, line, function_id);
 }
 
 void elisa_trace_record_value(const char *function_name, uint32_t line,
                               const char *variable_name, uint64_t value, uint32_t is_signed) {
-    profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE,
-                   is_signed != 0 ? 1 : 0, 0, 0);
+    profile_record_value(function_name, line, variable_name, value, is_signed,
+                         PROFILE_ID_UNSET);
+}
+
+void elisa_trace_record_value_id(const char *function_name, uint32_t line,
+                                 const char *variable_name, uint64_t value,
+                                 uint32_t is_signed, uint64_t identity_id) {
+    profile_record_value(function_name, line, variable_name, value, is_signed, identity_id);
 }
 
 /* The instrumented program asks the normal runtime to install its crash
@@ -1573,6 +1702,33 @@ static void profile_record_append_call_path(const profile_call_path *path) {
             profile_record_append_char(';');
         }
         profile_record_append_field(nodes[index - 1]->function_name);
+    }
+}
+
+static int profile_call_path_has_ids(const profile_call_path *path) {
+    for (const profile_call_path *node = path;
+         node != NULL;
+         node = node->parent) {
+        if (node->function_id != PROFILE_ID_UNSET) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void profile_record_append_call_path_ids(const profile_call_path *path) {
+    const profile_call_path *nodes[PROFILE_CALL_STACK_CAPACITY];
+    size_t depth = 0;
+    for (const profile_call_path *node = path;
+         node != NULL && depth < PROFILE_CALL_STACK_CAPACITY;
+         node = node->parent) {
+        nodes[depth++] = node;
+    }
+    for (size_t index = depth; index > 0; --index) {
+        if (index != depth) {
+            profile_record_append_char(';');
+        }
+        profile_record_append_uint64(nodes[index - 1]->function_id);
     }
 }
 
@@ -1700,6 +1856,10 @@ static void profile_dump_recent_path(void) {
             profile_record_append_int64((int64_t)entry->value);
         } else {
             profile_record_append_uint64(entry->value);
+        }
+        if (entry->identity_id != PROFILE_ID_UNSET) {
+            profile_record_append_char('\t');
+            profile_record_append_uint64(entry->identity_id);
         }
         profile_record_emit();
     }
@@ -1926,6 +2086,10 @@ static void profile_dump_body(void) {
         profile_record_append_uint64(entry->interval_ns);
         profile_record_append_char('\t');
         profile_record_append_uint64(entry->max_interval_ns);
+        if (entry->identity_id != PROFILE_ID_UNSET) {
+            profile_record_append_char('\t');
+            profile_record_append_uint64(entry->identity_id);
+        }
         profile_record_emit();
     }
     profile_call_edge **call_edges = calloc(
@@ -1957,6 +2121,13 @@ static void profile_dump_body(void) {
             profile_record_append_uint64(edge->completed_calls);
             profile_record_append_char('\t');
             profile_record_append_uint64(edge->inclusive_ns);
+            if (edge->caller_id != PROFILE_ID_UNSET ||
+                edge->callee_id != PROFILE_ID_UNSET) {
+                profile_record_append_char('\t');
+                profile_record_append_uint64(edge->caller_id);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(edge->callee_id);
+            }
             profile_record_emit();
         }
         free(call_edges);
@@ -1988,6 +2159,10 @@ static void profile_dump_body(void) {
             profile_record_append_uint64(path->completed_calls);
             profile_record_append_char('\t');
             profile_record_append_uint64(path->self_ns);
+            if (profile_call_path_has_ids(path)) {
+                profile_record_append_char('\t');
+                profile_record_append_call_path_ids(path);
+            }
             profile_record_emit();
         }
         free(paths);

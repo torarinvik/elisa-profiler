@@ -39,6 +39,7 @@ extend ProfilerNative:
                 call_edge_dropped: NATIVE_ZERO,
                 stack_dropped: NATIVE_ZERO,
                 crash_signal: NATIVE_ZERO,
+                stable_ids_available: false,
                 active_stack_available: false,
                 active_stack_tracked_depth: NATIVE_ZERO,
                 active_stack_overflow_depth: NATIVE_ZERO,
@@ -90,6 +91,7 @@ extend ProfilerNative:
             destination.call_edge_dropped <- native_saturating_add(destination.call_edge_dropped, incoming.call_edge_dropped)
             destination.stack_dropped <- native_saturating_add(destination.stack_dropped, incoming.stack_dropped)
             destination.crash_signal <- incoming.crash_signal if incoming.crash_signal > NATIVE_ZERO
+            destination.stable_ids_available <- true if incoming.stable_ids_available
             if incoming.active_stack_available:
                 destination.active_stack_available <- true
                 destination.active_stack_tracked_depth <- incoming.active_stack_tracked_depth

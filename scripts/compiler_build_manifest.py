@@ -159,6 +159,12 @@ def runtime_abi(runtime_object: Path) -> dict[str, Any]:
             ),
             "statement_events": "elisa_trace_pos" in symbols,
             "scalar_events": "elisa_trace_record_value" in symbols,
+            "compiler_stable_ids": (
+                "elisa_trace_record_id" in symbols
+                and "elisa_trace_record_value_id" in symbols
+                and "elisa_trace_function_entry_id" in symbols
+                and "elisa_trace_function_exit_id" in symbols
+            ),
             "fault_capture": "elisa_trace_install_fault_handler" in symbols,
         },
     }

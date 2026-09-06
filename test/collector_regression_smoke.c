@@ -79,21 +79,21 @@ int main(void) {
     elisa_trace_record("repeat", repeat_line);
     assert(profile_dropped_count == 0);
     assert(profile_find_locked("repeat", NULL, repeat_line,
-                               PROFILE_KIND_STATEMENT, 0)->count == 2);
-    profile_record_call_edge("caller", "callee");
+                               PROFILE_KIND_STATEMENT, 0, PROFILE_ID_UNSET)->count == 2);
+    profile_record_call_edge("caller", "callee", PROFILE_ID_UNSET, PROFILE_ID_UNSET);
     assert(profile_call_edge_dropped_count == 1);
-    assert(profile_record_call_path(NULL, "callee") == NULL);
+    assert(profile_record_call_path(NULL, "callee", PROFILE_ID_UNSET) == NULL);
     assert(profile_call_path_dropped_count == 1);
     fail_allocations = 0;
     assert(profile_grow_call_paths_locked());
     fail_allocations = 1;
-    assert(profile_record_call_path(NULL, "callee") == NULL);
+    assert(profile_record_call_path(NULL, "callee", PROFILE_ID_UNSET) == NULL);
     assert(profile_call_path_dropped_count == 2);
     fail_allocations = 0;
     elisa_trace_record(NULL, repeat_line);
     elisa_trace_record(NULL, repeat_line);
     assert(profile_find_locked("<unknown>", NULL, repeat_line,
-                               PROFILE_KIND_STATEMENT, 0)->count == 2);
+                               PROFILE_KIND_STATEMENT, 0, PROFILE_ID_UNSET)->count == 2);
     setenv("ELISA_PROFILE_MAX_LOCATIONS", "-1", 1);
     assert(profile_read_limit_environment("ELISA_PROFILE_MAX_LOCATIONS",
                                          PROFILE_DEFAULT_LOCATION_LIMIT) ==

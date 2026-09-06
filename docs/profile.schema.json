@@ -403,7 +403,7 @@
       "type": "object",
       "required": ["status", "reason", "scope"],
       "properties": {
-        "status": { "type": "string", "enum": ["unsupported", "source_name_fallback"] },
+        "status": { "type": "string", "enum": ["unsupported", "source_name_fallback", "compiler_stable_ids"] },
         "reason": { "type": "string", "minLength": 1 },
         "scope": { "type": "string", "enum": ["none", "capture"] }
       },
@@ -552,6 +552,7 @@
         "mean_self_ns": { "type": "integer", "minimum": 0 },
         "inclusive_percent": { "type": ["number", "null"], "minimum": 0 },
         "self_percent": { "type": ["number", "null"], "minimum": 0 }
+        ,"identity_id": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": true
     },
@@ -564,6 +565,8 @@
         "call_events": { "type": "integer", "minimum": 0 },
         "completed_calls": { "type": "integer", "minimum": 0 },
         "inclusive_ns": { "type": "integer", "minimum": 0 }
+        ,"caller_id": { "type": "integer", "minimum": 1 }
+        ,"callee_id": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": true
     },
@@ -575,6 +578,7 @@
         "call_events": { "type": "integer", "minimum": 0 },
         "completed_calls": { "type": "integer", "minimum": 0 },
         "self_ns": { "type": "integer", "minimum": 0 }
+        ,"stack_ids": { "type": "string", "pattern": "^[0-9]+(;[0-9]+)*$" }
       },
       "additionalProperties": true
     },
@@ -611,6 +615,7 @@
         "inclusive_ns": { "type": "integer", "minimum": 0 },
         "self_ns": { "type": "integer", "minimum": 0 },
         "completed_calls": { "type": "integer", "minimum": 0 }
+        ,"identity_id": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": true
     },
@@ -645,6 +650,7 @@
         "compiler_line": { "type": "integer", "minimum": 1 },
         "source": { "type": "string" },
         "source_text": { "type": ["string", "null"] }
+        ,"identity_id": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": true
     },

@@ -13,7 +13,7 @@ COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.js
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-self-host-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-self-host-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke collector-identity-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -199,6 +199,9 @@ compiler-smoke:
 collector-content-smoke:
 	@"$(PROFILER_ROOT)/test/collector_content_smoke.sh"
 
+collector-identity-smoke:
+	@"$(PROFILER_ROOT)/test/collector_identity_smoke.sh"
+
 collector-strict-smoke:
 	@set -eu; \
 		"$${ELISA_CLANG:-clang}" -std=c11 -Wall -Wextra -Wpedantic -Werror -fno-builtin -pthread \
@@ -232,4 +235,4 @@ bootstrap-path-smoke: profiler-native
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke profile-workload-compare-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke profile-workload-compare-smoke collector-content-smoke collector-identity-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke

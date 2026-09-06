@@ -62,7 +62,8 @@ After a successful seed, the profiler Makefile writes
 manifest is content-addressed over the compiler inputs and records the source
 commit, relevant dirty-source digest, stage0/stage1/runtime hashes, seed and
 native flags, LLVM tool versions and hashes, architecture, and discovered trace
-ABI symbols/capabilities. `compiler-manifest-smoke` validates the current
+ABI symbols/capabilities, including the optional compiler-issued stable-ID
+callbacks used by the profiler when present. `compiler-manifest-smoke` validates the current
 artifact and proves that changing a build flag invalidates the identity. A
 failed or interrupted seed cannot replace the existing binary or manifest:
 seed outputs use private temporary names and are published only after the

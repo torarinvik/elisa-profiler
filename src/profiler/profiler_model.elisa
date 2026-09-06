@@ -297,6 +297,7 @@ module ProfilerNative:
             call_edge_dropped: mutable i64
             stack_dropped: mutable i64
             crash_signal: mutable i64
+            stable_ids_available: mutable bool
             active_stack_available: mutable bool
             active_stack_tracked_depth: mutable i64
             active_stack_overflow_depth: mutable i64
