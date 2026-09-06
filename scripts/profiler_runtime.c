@@ -101,6 +101,20 @@ enum {
 
 static const uint64_t PROFILE_FNV_OFFSET_BASIS = UINT64_C(14695981039346656037);
 static const uint64_t PROFILE_FNV_PRIME = UINT64_C(1099511628211);
+static const char PROFILE_CHILD_ENVIRONMENT[] = "ELISA_PROFILE_CHILD";
+static const char *const PROFILE_INTERNAL_ENVIRONMENTS[] = {
+    "ELISA_PROFILE_FD",
+    "ELISA_PROFILE_FRAMED",
+    "ELISA_PROFILE_THREAD_RECORDS",
+    "ELISA_PROFILE_MODE",
+    "ELISA_PROFILE_EVENT_TRACE",
+    "ELISA_PROFILE_EVENT_TRACE_LIMIT",
+    "ELISA_PROFILE_MAX_LOCATIONS",
+    "ELISA_PROFILE_MAX_CALL_EDGES",
+    "ELISA_PROFILE_MAX_STACKS",
+    "ELISA_PROFILE_MAX_CAPTURE_BYTES",
+    "ELISA_PROFILE_RECENT_PATH",
+};
 
 typedef struct {
     const char *function_name;
@@ -212,6 +226,18 @@ static int profile_write_all(const char *buffer, size_t length) {
 static int profile_environment_is_true(const char *name) {
     const char *value = getenv(name);
     return value != NULL && strcmp(value, "1") == 0;
+}
+
+static void profile_clear_internal_environment(void) {
+    if (profile_environment_is_true(PROFILE_CHILD_ENVIRONMENT)) {
+        return;
+    }
+    for (size_t index = 0;
+         index < sizeof(PROFILE_INTERNAL_ENVIRONMENTS) /
+                    sizeof(PROFILE_INTERNAL_ENVIRONMENTS[0]);
+         ++index) {
+        (void)unsetenv(PROFILE_INTERNAL_ENVIRONMENTS[index]);
+    }
 }
 
 static void profile_record_reset(void) {
@@ -355,6 +381,9 @@ static void profile_initialize_output(void) {
         profile_write_capture_begin(profile_output_stream);
         return;
     }
+    if (duplicate_fd != (int)requested_fd) {
+        (void)close((int)requested_fd);
+    }
     FILE *stream = fdopen(duplicate_fd, "w");
     if (stream == NULL) {
         close(duplicate_fd);
@@ -365,6 +394,7 @@ static void profile_initialize_output(void) {
     profile_output_fd = duplicate_fd;
     profile_output_stream = stream;
     profile_write_capture_begin(profile_output_stream);
+    profile_clear_internal_environment();
 }
 
 static FILE *profile_output(void) {

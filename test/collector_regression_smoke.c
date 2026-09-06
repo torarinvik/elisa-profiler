@@ -98,6 +98,15 @@ int main(void) {
     assert(profile_read_limit_environment("ELISA_PROFILE_MAX_LOCATIONS",
                                          PROFILE_DEFAULT_LOCATION_LIMIT) ==
            PROFILE_DEFAULT_LOCATION_LIMIT);
+    setenv("ELISA_PROFILE_FD", "42", 1);
+    setenv("ELISA_PROFILE_MODE", "functions", 1);
+    setenv(PROFILE_CHILD_ENVIRONMENT, "1", 1);
+    profile_clear_internal_environment();
+    assert(getenv("ELISA_PROFILE_FD") != NULL);
+    unsetenv(PROFILE_CHILD_ENVIRONMENT);
+    profile_clear_internal_environment();
+    assert(getenv("ELISA_PROFILE_FD") == NULL);
+    assert(getenv("ELISA_PROFILE_MODE") == NULL);
     puts("collector regression smoke OK");
     return 0;
 }
