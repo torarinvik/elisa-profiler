@@ -811,7 +811,56 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details>")
 
 
-        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_html_workload_summary(buffer: mutable darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            append_text(buffer, "<section class='panel' aria-labelledby='workload-title'><h2 id='workload-title'>Workload reproducibility</h2><dl class='workload-grid'><div><dt>Working directory</dt><dd><code>")
+            if working_directory.count == NATIVE_ZERO.usize():
+                append_text(buffer, ".")
+            else:
+                append_html_escaped(buffer, working_directory)
+            append_text(buffer, "</code></dd></div><div><dt>Standard input</dt><dd>")
+            if stdin_path.count == NATIVE_ZERO.usize():
+                append_text(buffer, "not configured")
+            else:
+                append_html_escaped(buffer, stdin_path)
+                if readable_file(stdin_path):
+                    stdin_digest: darray[u8] = sha256_hex(read_file(stdin_path))
+                    append_text(buffer, "<br><small>SHA-256 <code>")
+                    append_html_escaped(buffer, stdin_digest)
+                    append_text(buffer, "</code></small>")
+                else:
+                    append_text(buffer, "<br><small>unavailable</small>")
+            append_text(buffer, "</dd></div><div><dt>Environment overrides</dt><dd>")
+            environment_index: mutable usize = NATIVE_ZERO.usize()
+            environment_first: mutable bool = true
+            while environment_index < environment.count |environment_index, environment, environment_first, buffer|:
+                environment_stop: mutable usize = environment_index
+                while environment_stop < environment.count and environment[environment_stop] != NATIVE_BYTE_NUL |environment_stop, environment|:
+                    environment_stop <- environment_stop + NATIVE_ONE.usize()
+                environment_equals: mutable usize = environment_stop
+                for assignment_index in environment_index..<environment_stop |environment_equals, environment|:
+                    if environment[assignment_index] == NATIVE_BYTE_EQUALS:
+                        environment_equals <- assignment_index
+                        break
+                if environment_equals > environment_index:
+                    append_text(buffer, ", " if not environment_first else "")
+                    environment_name: mutable darray[u8] = []
+                    for assignment_index in environment_index..<environment_equals |environment_name, environment|:
+                        environment_name.push(environment[assignment_index])
+                    append_html_escaped(buffer, environment_name)
+                    environment_first <- false
+                environment_index <- environment_stop + NATIVE_ONE.usize()
+            append_text(buffer, "none" if environment_first else "")
+            append_text(buffer, "</dd></div><div><dt>Target arguments</dt><dd><code>")
+            if target_arguments.count == NATIVE_ZERO.usize():
+                append_text(buffer, "none")
+            else:
+                for argument_index in 0..<target_arguments.count |argument_index, target_arguments, buffer|:
+                    append_text(buffer, " " if argument_index > NATIVE_ZERO.usize() else "")
+                    append_html_escaped(buffer, target_arguments[argument_index])
+            append_text(buffer, "</code></dd></div><div><dt>Reproducibility policy</dt><dd>random seed not controlled; environment values redacted; inputs hashed</dd></div></dl></section>")
+
+
+        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Source SHA-256</dt><dd><code>")
@@ -867,6 +916,7 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div>")
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
+            append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments)
             append_html_function_browser(buffer, summary.function_records)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
             append_html_flame_graph(buffer, summary.folded_records)
@@ -2127,7 +2177,7 @@ extend ProfilerNative:
             elif format_speedscope:
                 append_speedscope_report(report, display_source, summary.folded_records, true)
             elif format_html:
-                append_html_report(report, display_source, source_check, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions)
+                append_html_report(report, display_source, source_check, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, working_directory, stdin_path, environment, target_arguments)
             else:
                 append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []

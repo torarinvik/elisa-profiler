@@ -213,6 +213,12 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div>")
 
 
+        def append_html_workload_object(buffer: mutable darray[u8]&, workload: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<section class='panel' aria-labelledby='workload-title'><h2 id='workload-title'>Workload reproducibility</h2><p>Arguments, input identity, and environment policy are recorded below; environment values are intentionally redacted.</p><details open><summary>Recorded workload identity</summary><pre>")
+            append_html_escaped(buffer, workload)
+            append_text(buffer, "</pre></details></section>")
+
+
         def append_offline_html_report(buffer: mutable darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             source: mutable darray[u8] = []
             source_start: i64 = json_source_value_start(data)
@@ -247,6 +253,7 @@ extend ProfilerNative:
             host_architecture: mutable darray[u8] = []
             host_os_available: mutable bool = false
             host_architecture_available: mutable bool = false
+            workload: mutable darray[u8] = []
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
@@ -266,6 +273,8 @@ extend ProfilerNative:
                 workload_stop: i64 = json_object_end(data, workload_start.usize(), data.count)
                 return false if workload_stop < NATIVE_ZERO
                 return false if not json_read_nullable_string_field(data, "source_sha256", workload_start.usize(), workload_stop.usize(), &source_digest, &source_digest_available)
+                for index in workload_start.usize()..<workload_stop.usize() |workload, data|:
+                    workload.push(data[index])
             host_start: i64 = json_key_value_start(data, "host", NATIVE_ZERO.usize(), data.count)
             if host_start >= NATIVE_ZERO and data[host_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
                 host_stop: i64 = json_object_end(data, host_start.usize(), data.count)
@@ -359,6 +368,7 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div>")
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
+            append_html_workload_object(buffer, workload) if workload.count > NATIVE_ZERO.usize()
             append_html_function_browser(buffer, functions)
             append_html_detail_browsers(buffer, call_edges, location_records)
             append_html_flame_graph(buffer, folded)

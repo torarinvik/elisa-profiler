@@ -93,6 +93,20 @@ def main():
             "sha256": hashlib.sha256(b"embedded source").hexdigest(),
             "content": "embedded source",
         }
+        report["workload"] = {
+            "source_sha256": hashlib.sha256(report["source"].encode()).hexdigest(),
+            "source_size_bytes": len(report["source"].encode()),
+            "working_directory": "/tmp/elisa-fixture",
+            "stdin": {"path": "input.dat", "sha256": None},
+            "environment_override_keys": ["ELISA_FIXTURE"],
+            "arguments": ["--fixture", "<unsafe>"],
+            "reproducibility": {
+                "random_seed": None,
+                "random_seed_source": "not_controlled",
+                "environment_values": "redacted",
+                "inputs_hashed": True,
+            },
+        }
         capture.write_text(json.dumps(report), encoding="utf-8")
         assert run("report", capture, "--format", "text").startswith(b"Elisa profiler")
         report["source_snapshot"]["sha256"] = "0" * 64
@@ -122,6 +136,9 @@ def main():
         assert b"location-filter" in offline_html
         assert b"Flame graph" in offline_html
         assert b"flame-filter" in offline_html
+        assert b"Workload reproducibility" in offline_html
+        assert b"ELISA_FIXTURE" in offline_html
+        assert b"&lt;unsafe&gt;" in offline_html
 
         output = work / "output.txt"
         output.write_bytes(b"stale" * 10000)
@@ -136,6 +153,11 @@ def main():
                    "--format", "text").startswith(b"Elisa profile comparison")
         run("report", work / "missing", "--format", "text", ok=False)
         run("report", capture, "--format", "text", "--output", work, ok=False)
+        live_html_path = work / "live.html"
+        run("profile", ROOT / "examples/hot_loop.elisa", "--format", "html", "--output", live_html_path, "--", "--fixture")
+        live_html = live_html_path.read_bytes()
+        assert b"Workload reproducibility" in live_html
+        assert b"--fixture" in live_html
 
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))

@@ -301,6 +301,10 @@ tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies. The flame graph uses BigInt parsing
 for serialized weights and treats frame labels as text, so large values and
 hostile names do not become JavaScript code or rounded metrics.
+The overview also shows workload reproducibility evidence: working directory,
+stdin path and hash when available, forwarded target arguments, environment
+override names without their values, and the explicit random-seed/input-hash
+policy. Offline HTML preserves the same workload object as escaped detail.
 The `compare` command accepts two JSON reports and emits a machine-readable or
 text comparison of execution/compile timing, nullable CPU/RSS metrics, event
 and location counts, thread counts, trace-quality counters, and per-function
