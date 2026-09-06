@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-2dfb7175a7c40658cdc5c5d4601cda82acffca57 Merge branch 'codex/wasm-sdk' into codex/profiler
+88f09c8dccc4827bff17f2895bd7302f49c0c612 fix nested compiler stage0 parity paths
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -62,6 +62,10 @@ they were preserved as the tested dedicated version rather than duplicated.
 The rebuilt stage1 product and native profiler pass the full profiler gate;
 the compiler's focused checks pass diagnostics (367/367), semantic acceptance
 (575/575), and the internal semantic differential (0/3210 mismatches).
+The two same-name-export parity scripts were then made safe for both top-level
+and nested compiler worktrees in `88f09c8d`; the stage1 product was reseeded
+with `ELISA_STAGE1_SEED_MAX_RSS_KB=16777216`, and the resulting compiler
+manifest passed its freshness and artifact checks.
 
 Remote refresh is best effort. A successful `git fetch --all --prune` marks
 remote refs as `refreshed`; a disconnected or failing refresh leaves the refs
@@ -120,9 +124,12 @@ checkout. Independent content review found that the Neural Workshop
 scope-binding test is already present in the dedicated checkout; the structpy
 parser-machine changes are represented by the newer machine-parser implementation
 and its diagnostic fixture; and the transpiler-stage1 source deltas are already
-represented by newer or equivalent dedicated implementations. No additional
-source patch was missing, so none of those owner worktrees was rewritten. Origin
-worktrees remain untouched, including their uncommitted `.DS_Store` files.
+represented by newer or equivalent dedicated implementations. The remaining
+main-checkout path differences were likewise either superseded in the dedicated
+worktree or were the nested parity-script path fix committed as `88f09c8d`. No
+additional compiler source patch was missing, so none of those owner worktrees
+was rewritten. Origin worktrees remain untouched, including their uncommitted
+`.DS_Store` files and generated binary noise.
 
 ## Current candidate dispositions
 
@@ -131,8 +138,10 @@ The generated ledger is the detailed record; its current classifications are:
 - The main `Elisa-compiler` worktree has a mixed candidate: its packed-header
   `c_header.elisa` fix was independently reviewed, parity-tested, and imported
   as `d8cadbb1`, and its later semantic/parser/backend source patch was
-  independently reviewed and imported as `46c0671c`. Its unrelated owner
-  checkout changes remain unimported and untouched. The affected subsystems
+  independently reviewed and imported as `46c0671c`. Its remaining owner
+  checkout changes are either already represented by equivalent/newer
+  dedicated content or are test-path hygiene committed as `88f09c8d`; the
+  owner checkout remains untouched. The affected subsystems
   are backend/parser/semantic and packed-header emission; diagnostics,
   semantic-acceptance, internal-differential, and native profiler gates are the
   verification set.
