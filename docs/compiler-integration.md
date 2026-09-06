@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-2dbf556c fix: harden machine start fallback
+b3e799ee merge: integrate latest work harness fixes
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -19,15 +19,14 @@ fallback fixes. All 11 local compiler branch tips are reachable from the
 dedicated branch.
 
 The audit is authoritative for branch/worktree provenance. The latest offline
-ledger records 11 local branches, 11 registered worktrees, nine dirty
-worktrees, and four pending source-bearing worktrees. The four source candidates
-were reviewed path-by-path against the dedicated checkout: the top-level
-`Elisa-compiler` checkout, the transpiler stage1 checkout, the Neural Workshop
-checkout, and the structpy checkout. Compatible deltas were imported where they
+ledger records 11 local branches, 11 registered worktrees, eight dirty
+worktrees, and three pending source-bearing worktrees. The three source candidates
+were reviewed path-by-path against the dedicated checkout: the transpiler
+stage1 checkout, the Neural Workshop checkout, and the structpy checkout. Compatible deltas were imported where they
 were independently verifiable; the remaining dirty portions are either already
 superseded or AST-incompatible. All owner worktrees remain untouched.
 
-The stage1 product was freshly reseeded from `2dbf556c` with the canonical
+The stage1 product was freshly reseeded from `b3e799ee` with the canonical
 stage0 compiler and its usable build manifest was regenerated. The current
 `compiler-manifest-smoke`, `compiler-smoke`, `profiler-native-smoke`, and full
 profiler gates pass against that artifact. The separate fixed-point gate also
@@ -68,6 +67,13 @@ artifact and proves that changing a build flag invalidates the identity. A
 failed or interrupted seed cannot replace the existing binary or manifest:
 seed outputs use private temporary names and are published only after the
 complete image links successfully.
+
+The native profiler invokes `scripts/elisac_stage1.sh` for each profiled target
+and passes `ELISA_STAGE1_BIN` through that wrapper. This is intentional: the
+wrapper translates profiler-facing options such as `-ftrace`; invoking the
+stage1 binary directly can produce an uninstrumented target while still
+returning a successful object build. `ELISA_COMPILER_SCRIPT` overrides the
+wrapper for source-stability and compiler-integration tests.
 
 ## Imported changes
 
@@ -153,7 +159,7 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `2dbf556c` integration, the audit, ledger, manifest, compiler,
+For the current `b3e799ee` integration, the audit, ledger, manifest, compiler,
 native profiler, and full profiler gates pass. Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
 remains a fixed point and deterministic after future compiler changes.
