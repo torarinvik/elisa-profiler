@@ -10,6 +10,11 @@ override names, exact target argument vector, and native SHA-256 content
 digests for readable source/stdin bytes. It is descriptive provenance, not a
 claim that paths or stdin contents remain available after a capture is moved;
 an unreadable optional input digest is represented as `null`.
+`workload.reproducibility` makes the policy explicit: input bytes are hashed,
+environment values are redacted, and `random_seed` is `null` with source
+`not_controlled` until a target/runtime seed is deliberately supplied through a
+documented control. Consumers must not infer deterministic execution from the
+presence of hashes alone.
 
 The optional top-level `host` object records the observation context captured by
 the native launcher. `os` and `architecture` come from `uname`; the

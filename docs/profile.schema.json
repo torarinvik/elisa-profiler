@@ -312,6 +312,17 @@
         "arguments": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "reproducibility": {
+          "type": "object",
+          "required": ["random_seed", "random_seed_source", "environment_values", "inputs_hashed"],
+          "properties": {
+            "random_seed": { "type": ["integer", "string", "null"] },
+            "random_seed_source": { "type": "string", "enum": ["not_controlled", "cli", "environment", "target"] },
+            "environment_values": { "type": "string", "enum": ["redacted"] },
+            "inputs_hashed": { "const": true }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": true

@@ -906,7 +906,7 @@ extend ProfilerNative:
             for argument_index in 0..<target_arguments.count |buffer, target_arguments|:
                 append_text(buffer, "," if argument_index > NATIVE_ZERO.usize() else "")
                 append_json_string(buffer, target_arguments[argument_index])
-            append_text(buffer, "]}")
+            append_text(buffer, "],\"reproducibility\":{\"random_seed\":null,\"random_seed_source\":\"not_controlled\",\"environment_values\":\"redacted\",\"inputs_hashed\":true}}")
 
 
         def append_collection_capabilities(buffer: mutable darray[u8]&, mode: darray[u8]&, event_trace: bool, recent_path: bool, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:

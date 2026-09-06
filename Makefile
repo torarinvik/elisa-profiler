@@ -95,6 +95,7 @@ profiler-native-smoke: profiler-native
 		grep -Fq '"locations":[{' "$$native_work/report.json"; \
 		grep -Fq '"call_edges":[{' "$$native_work/report.json"; \
 		grep -Fq '"stacks":[{' "$$native_work/report.json"; \
+		grep -Fq '"random_seed_source":"not_controlled"' "$$native_work/report.json"; \
 		grep -Fq '"event_trace":[{' "$$native_work/report.json"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/report.json"; \
 		native_run "$(NATIVE_PROFILER_BIN)" report "$$native_work/report.json" --format json --output "$$native_work/offline.json"; \

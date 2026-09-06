@@ -220,6 +220,12 @@ def main():
         assert manifest["capture_index"]["valid_frames"] > 0
         assert len(measured["workload"]["source_sha256"]) == 64
         assert all(character in "0123456789abcdef" for character in measured["workload"]["source_sha256"])
+        assert measured["workload"]["reproducibility"] == {
+            "random_seed": None,
+            "random_seed_source": "not_controlled",
+            "environment_values": "redacted",
+            "inputs_hashed": True,
+        }
         repetitions = measured["run"]["repetitions"]
         assert len(repetitions) == 2
         assert all(
