@@ -1,0 +1,17 @@
+# Module qualification is part of a compiler-issued function identity. Two
+# readable `same` names must remain distinct in a profile.
+
+module Left:
+    public:
+        def same(value: i64) -> i64:
+            return value
+
+module Right:
+    public:
+        def same(value: i64) -> i64:
+            return value
+
+def main() -> i64:
+    left: i64 = Left::same(1)
+    right: i64 = Right::same(2)
+    return 0 if left + right == 3 else 1

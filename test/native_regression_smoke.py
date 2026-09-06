@@ -490,6 +490,18 @@ def main():
         assert len(generic_records) == 2, generic_identity["functions"]
         assert len({record["identity_id"] for record in generic_records}) == 2
         assert all(record["completed_calls"] == 1 for record in generic_records)
+
+        module_identity_output = work / "module-identity.json"
+        run("profile", ROOT / "examples/module_identity.elisa",
+            "--format", "json", "--output", module_identity_output)
+        module_identity = json.loads(module_identity_output.read_text())
+        module_records = [
+            record for record in module_identity["functions"]
+            if record["function"] == "same"
+        ]
+        assert len(module_records) == 2, module_identity["functions"]
+        assert len({record["identity_id"] for record in module_records}) == 2
+        assert all(record["completed_calls"] == 1 for record in module_records)
         assert all(
             set(record)
             == {
