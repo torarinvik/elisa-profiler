@@ -108,6 +108,8 @@ enum {
     PROFILE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS = 1000,
     PROFILE_MIN_SAMPLE_PERIOD_MICROSECONDS = 100,
     PROFILE_MAX_SAMPLE_PERIOD_MICROSECONDS = 1000000,
+    PROFILE_SAMPLE_HANDLER_IDLE = 0,
+    PROFILE_SAMPLE_HANDLER_BUSY = 1,
     PROFILE_SAMPLE_SIGNAL = SIGPROF,
     PROFILE_COLLECTOR_FAILURE_STATUS = 126,
     PROFILE_SIGNAL_EXIT_BASE = 128,
@@ -205,6 +207,7 @@ static volatile sig_atomic_t profile_sampling_enabled;
 static volatile sig_atomic_t profile_sample_count;
 static volatile sig_atomic_t profile_sample_missed;
 static volatile sig_atomic_t profile_sample_sequence;
+static volatile sig_atomic_t profile_sample_handler_busy;
 static uint64_t profile_sample_period_microseconds;
 static int profile_sampling_setup_failed;
 static char profile_sample_marker_buffer[PROFILE_SAMPLE_MARKER_BUFFER_BYTES];
@@ -2080,6 +2083,18 @@ static void profile_write_sample_marker(void) {
         profile_signal_increment(&profile_sample_missed);
         return;
     }
+    /* ITIMER_PROF may deliver SIGPROF to more than one busy worker. The marker
+     * buffers and frame sequence are process-wide, so never let two handlers
+     * interleave their construction or writes. A lock-free compiler atomic is
+     * usable from a signal handler; a pthread mutex is not. Contenders become
+     * explicit missed samples instead of corrupting the capture stream. */
+    if (!__sync_bool_compare_and_swap(
+            &profile_sample_handler_busy,
+            PROFILE_SAMPLE_HANDLER_IDLE,
+            PROFILE_SAMPLE_HANDLER_BUSY)) {
+        profile_signal_increment(&profile_sample_missed);
+        return;
+    }
     char *buffer = profile_sample_marker_buffer;
     size_t payload_offset = 0;
     payload_offset = profile_signal_append_literal(
@@ -2102,8 +2117,7 @@ static void profile_write_sample_marker(void) {
     payload_offset = profile_signal_append_active_stack(
         buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES);
     if (payload_offset == 0 || payload_offset >= PROFILE_SAMPLE_MARKER_BUFFER_BYTES) {
-        profile_signal_increment(&profile_sample_missed);
-        return;
+        goto sample_missed;
     }
     uint64_t checksum = PROFILE_FNV_OFFSET_BASIS;
     for (size_t index = 0; index < payload_offset; ++index) {
@@ -2135,12 +2149,17 @@ static void profile_write_sample_marker(void) {
         !profile_signal_write_all(profile_sample_frame_header, header_offset) ||
         !profile_signal_write_all(buffer, payload_offset) ||
         !profile_signal_write_all("\n", 1)) {
-        profile_signal_increment(&profile_sample_missed);
-        return;
+        goto sample_missed;
     }
     profile_signal_increment(&profile_sample_count);
     profile_signal_increment(&profile_sample_sequence);
     profile_frame_sequence = profile_saturating_increment_u64(profile_frame_sequence);
+    profile_sample_handler_busy = PROFILE_SAMPLE_HANDLER_IDLE;
+    return;
+
+sample_missed:
+    profile_signal_increment(&profile_sample_missed);
+    profile_sample_handler_busy = PROFILE_SAMPLE_HANDLER_IDLE;
 }
 
 static void profile_sampling_handler(int signal_number) {
