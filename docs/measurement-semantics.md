@@ -43,6 +43,26 @@ request is rejected instead of being mislabeled as an instrumented capture.
 The mode is a report identity field and must be considered when comparing
 captures or interpreting missing event classes.
 
+## Callback overhead benchmark
+
+The dedicated performance target `make collector-callback-benchmark` measures
+the collector ABI before changes to its hot path are accepted. It builds each
+case against the current native collector and records raw tab-separated
+observations in `build/collector-callback-benchmark.tsv` (or in the output path
+passed to `test/collector_callback_benchmark.sh`). The file includes the host
+triple, compiler version, iteration count, repetition count, elapsed
+nanoseconds, and nanoseconds per callback.
+
+The cases are intentionally separated so the result does not confuse event
+volume with callback cost: an empty no-op hook, count-only statement capture,
+function entry/exit timing, statement timing, scalar capture, and full capture
+with event tracing. Function and statement timing are compiled with the timing
+collector enabled; full capture enables the event-trace path. The benchmark
+uses five repetitions by default and is not part of `make test`, because its
+measurements are machine- and scheduler-sensitive. Repetitions are raw
+observations, not independent statistical samples of a workload, and should be
+compared on the same host with the same compiler and build options.
+
 Every report also carries an explicit capability matrix. In the current build,
 `sampling_detail`, `allocation`, and `tasks` are marked unsupported with stable
 reasons because the compiler/runtime exposes instrumentation callbacks but no
