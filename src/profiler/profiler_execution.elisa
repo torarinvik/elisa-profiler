@@ -201,7 +201,7 @@ extend ProfilerNative:
 
         def peak_rss_bytes(raw_value: i64) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             return NATIVE_ZERO if raw_value < NATIVE_ZERO
-            return raw_value * NATIVE_LINUX_RSS_UNIT_BYTES if native_host_is_linux()
+            return native_saturating_mul_nonnegative(raw_value, NATIVE_LINUX_RSS_UNIT_BYTES) if native_host_is_linux()
             return raw_value
 
 
