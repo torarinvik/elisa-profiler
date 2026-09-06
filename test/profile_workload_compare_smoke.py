@@ -53,6 +53,8 @@ def capture(arguments: list[str], exit_code: int | None = 0) -> dict[str, object
             "opt_level": "-O0",
             "execution_ms_mean": 1.0,
             "compile_ms": 1.0,
+            "cpu_ms": 0.5,
+            "peak_rss_bytes": 4096,
             "exit_code": exit_code,
         },
         "workload": {
@@ -101,6 +103,12 @@ def main() -> int:
             raise SystemExit("native comparison omitted the workload warning")
         if comparison.get("status") != "warning":
             raise SystemExit("native comparison did not report warning status")
+        if comparison["metrics"]["cpu_ms"]["baseline"] != 0.5:
+            raise SystemExit("native comparison omitted CPU timing")
+        if comparison["metrics"]["peak_rss_bytes"]["baseline"] != 4096:
+            raise SystemExit("native comparison omitted peak RSS")
+        if any("resource-metric availability" in warning for warning in comparison.get("warnings", [])):
+            raise SystemExit("native comparison reported a false resource-availability mismatch")
         if comparison["candidate"]["exit_code"] is not None:
             raise SystemExit("native comparison did not preserve a signaled null exit code")
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):

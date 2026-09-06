@@ -27,6 +27,8 @@
       "required": [
         "execution_ms_mean",
         "compile_ms",
+        "cpu_ms",
+        "peak_rss_bytes",
         "events",
         "locations",
         "dropped_events",
@@ -37,6 +39,8 @@
       "properties": {
         "execution_ms_mean": { "$ref": "#/$defs/timed_metric" },
         "compile_ms": { "$ref": "#/$defs/timed_metric" },
+        "cpu_ms": { "$ref": "#/$defs/resource_timed_metric" },
+        "peak_rss_bytes": { "$ref": "#/$defs/resource_count_metric" },
         "events": { "$ref": "#/$defs/count_metric" },
         "locations": { "$ref": "#/$defs/count_metric" },
         "dropped_events": { "$ref": "#/$defs/count_metric" },
@@ -71,6 +75,26 @@
         "baseline": { "type": "number", "minimum": 0 },
         "candidate": { "type": "number", "minimum": 0 },
         "delta_micros": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "resource_timed_metric": {
+      "type": "object",
+      "required": ["baseline", "candidate", "delta_micros"],
+      "properties": {
+        "baseline": { "type": ["number", "null"], "minimum": 0 },
+        "candidate": { "type": ["number", "null"], "minimum": 0 },
+        "delta_micros": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "resource_count_metric": {
+      "type": "object",
+      "required": ["baseline", "candidate", "delta"],
+      "properties": {
+        "baseline": { "type": ["integer", "null"], "minimum": 0 },
+        "candidate": { "type": ["integer", "null"], "minimum": 0 },
+        "delta": { "type": ["integer", "null"] }
       },
       "additionalProperties": false
     },

@@ -291,6 +291,13 @@ extend ProfilerNative:
             return NATIVE_NEGATIVE_ONE
 
 
+        def json_null_value_at(data: darray[u8]&, start: usize, stop: usize) -> i64:
+            return NATIVE_NEGATIVE_ONE if start + NATIVE_JSON_NULL_LENGTH > stop
+            return NATIVE_NEGATIVE_ONE if data[start] != NATIVE_BYTE_ASCII_NULL_N or data[start + NATIVE_ONE.usize()] != NATIVE_BYTE_ASCII_NULL_U or data[start + NATIVE_TWO.usize()] != NATIVE_BYTE_ASCII_NULL_L or data[start + NATIVE_THREE.usize()] != NATIVE_BYTE_ASCII_NULL_L
+            return NATIVE_NEGATIVE_ONE if not json_token_terminated(data, start + NATIVE_JSON_NULL_LENGTH, stop)
+            return NATIVE_ONE
+
+
         def json_source_value_start(data: darray[u8]&) -> i64 can[Abort.Panic]:
             return json_key_value_start(data, "source", NATIVE_ZERO.usize(), data.count)
 
@@ -340,6 +347,42 @@ extend ProfilerNative:
             return true if value_start < NATIVE_ZERO
             value: i64 = json_number_at(data, value_start.usize(), stop)
             return false if value < NATIVE_ZERO
+            result <- value
+            return true
+
+
+        def json_read_nullable_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&, available: mutable bool&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            if value_start < NATIVE_ZERO:
+                available <- false
+                result <- NATIVE_ZERO
+                return true
+            value_index: usize = value_start.usize()
+            if json_null_value_at(data, value_index, stop) == NATIVE_ONE:
+                available <- false
+                result <- NATIVE_ZERO
+                return true
+            value: i64 = json_number_at(data, value_index, stop)
+            return false if value < NATIVE_ZERO
+            available <- true
+            result <- value
+            return true
+
+
+        def json_read_nullable_millis_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&, available: mutable bool&) -> bool can[Abort.Panic]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            if value_start < NATIVE_ZERO:
+                available <- false
+                result <- NATIVE_ZERO
+                return true
+            value_index: usize = value_start.usize()
+            if json_null_value_at(data, value_index, stop) == NATIVE_ONE:
+                available <- false
+                result <- NATIVE_ZERO
+                return true
+            value: i64 = json_millis_micros_at(data, value_index, stop)
+            return false if value < NATIVE_ZERO
+            available <- true
             result <- value
             return true
 
@@ -564,6 +607,10 @@ extend ProfilerNative:
             return false if not json_read_bool_field(data, "detail_budget_exceeded", summary_start.usize(), summary_stop.usize(), &capture.detail_budget_exceeded)
             return false if not json_read_millis_field(data, "execution_ms_mean", run_start.usize(), run_stop.usize(), &capture.execution_mean_micros)
             return false if not json_read_millis_field(data, "compile_ms", run_start.usize(), run_stop.usize(), &capture.compile_micros)
+            return false if not json_read_nullable_millis_field(data, "cpu_ms", run_start.usize(), run_stop.usize(), &capture.cpu_micros, &capture.resource_metrics_available)
+            peak_rss_available: mutable bool = false
+            return false if not json_read_nullable_number_field(data, "peak_rss_bytes", run_start.usize(), run_stop.usize(), &capture.peak_rss_bytes, &peak_rss_available)
+            return false if peak_rss_available != capture.resource_metrics_available
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &capture.exit_code)
             return true
 

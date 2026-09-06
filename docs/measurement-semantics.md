@@ -91,6 +91,9 @@ tail after the last validated frame.
 - `peak_rss_bytes` is the largest profiled-child resident-set value across the
   selected measurement repetitions. The native launcher reports the host
   `wait4` value in bytes; unavailable host accounting remains `null`.
+- Comparison reports preserve `cpu_ms` and `peak_rss_bytes` as nullable
+  metrics. Deltas are emitted only when both captures have resource records;
+  a mismatch in availability is a warning, not a zero-valued measurement.
 - `thread_count` is the maximum number of registered collector threads seen in
   the capture. It is not the operating system's final thread count.
 
@@ -167,9 +170,12 @@ run because collector thread IDs are local to a capture. `location_dropped`,
 thread record is diagnostic evidence, not a replacement for aggregate counters.
 No individual trace event is treated as an independent statistical sample.
 The median is the middle value (the arithmetic mean of the two middle values
-for an even count), and standard deviation is the population standard
-deviation of the selected repetition durations after conversion to
-microsecond precision. The report does not claim a confidence interval.
+for an even count), and standard deviation is the sample standard deviation of
+the selected repetition durations after conversion to microsecond precision.
+For at least two observations, the report also emits a two-sided normal
+approximation using `1.96 * s / sqrt(n)`. With fewer than two observations,
+`execution_ci95_available` is false and equal descriptive bounds are emitted;
+they must not be presented as uncertainty.
 
 ## Loss and unsupported values
 

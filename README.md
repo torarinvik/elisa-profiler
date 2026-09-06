@@ -241,8 +241,10 @@ The runtime collector uses the backend's complete-run trace callbacks, rather
 than the runtime's bounded crash-debug ring, so loop counts are not truncated to
 the last 256 events. Targets may use either the legacy `main() -> i64` entry or
 the argv-aware `main(argc: i64, argv: mutable void&) -> i64` form. Repeated runs stop after the first nonzero target status and the
-report retains every completed repetition, including min/mean/median/max and
-population standard deviation for measured execution time. Locations receive
+report retains every completed repetition, including min/mean/median/max,
+sample standard deviation, and a labeled 95% confidence interval for measured
+execution time. With fewer than two observations the interval is unavailable.
+Locations receive
 attributed wall-clock time from the native collector when trace timestamps are
 available, together with their largest observed gap to the next trace event;
 function summaries aggregate the same measurements and add inclusive/self

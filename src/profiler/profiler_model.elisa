@@ -294,5 +294,8 @@ module ProfilerNative:
             trace_events_omitted: mutable i64
             execution_mean_micros: mutable i64
             compile_micros: mutable i64
+            cpu_micros: mutable i64
+            peak_rss_bytes: mutable i64
+            resource_metrics_available: mutable bool
             exit_code: mutable i64
             detail_budget_exceeded: mutable bool

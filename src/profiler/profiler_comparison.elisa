@@ -21,6 +21,32 @@ extend ProfilerNative:
             append_text(buffer, "\n")
 
 
+        def append_comparison_nullable_timed_metric(buffer: mutable darray[u8]&, baseline: i64, candidate: i64, baseline_available: bool, candidate_available: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"baseline\":")
+            append_micros_as_millis(buffer, baseline) if baseline_available
+            append_text(buffer, "null") if not baseline_available
+            append_text(buffer, ",\"candidate\":")
+            append_micros_as_millis(buffer, candidate) if candidate_available
+            append_text(buffer, "null") if not candidate_available
+            append_text(buffer, ",\"delta_micros\":")
+            append_i64(buffer, native_signed_delta(candidate, baseline)) if baseline_available and candidate_available
+            append_text(buffer, "null") if not baseline_available or not candidate_available
+            append_text(buffer, "}")
+
+
+        def append_comparison_nullable_count_metric(buffer: mutable darray[u8]&, baseline: i64, candidate: i64, baseline_available: bool, candidate_available: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"baseline\":")
+            append_i64(buffer, baseline) if baseline_available
+            append_text(buffer, "null") if not baseline_available
+            append_text(buffer, ",\"candidate\":")
+            append_i64(buffer, candidate) if candidate_available
+            append_text(buffer, "null") if not candidate_available
+            append_text(buffer, ",\"delta\":")
+            append_i64(buffer, native_signed_delta(candidate, baseline)) if baseline_available and candidate_available
+            append_text(buffer, "null") if not baseline_available or not candidate_available
+            append_text(buffer, "}")
+
+
         def append_comparison_report(
             buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool
         ) -> void can[Abort.Panic, Memory.Allocate]:
@@ -31,6 +57,7 @@ extend ProfilerNative:
                 workload_mismatch <- not byte_arrays_equal(baseline.workload_identity, candidate.workload_identity)
             compiler_mismatch: bool = not byte_arrays_equal(baseline.compiler_commit, candidate.compiler_commit)
             optimization_mismatch: bool = not byte_arrays_equal(baseline.opt_level, candidate.opt_level)
+            resource_metrics_mismatch: bool = baseline.resource_metrics_available != candidate.resource_metrics_available
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
             evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.frame_dropped > NATIVE_ZERO or candidate.frame_dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
             if not format_json:
@@ -59,7 +86,22 @@ extend ProfilerNative:
                 append_micros_as_millis(buffer, baseline.compile_micros)
                 append_text(buffer, " ms candidate=")
                 append_micros_as_millis(buffer, candidate.compile_micros)
-                append_text(buffer, " ms\nevents: baseline=")
+                append_text(buffer, " ms\n")
+                if resource_metrics_mismatch:
+                    append_text(buffer, "CPU: unavailable (resource metrics differ)\n")
+                elif not baseline.resource_metrics_available:
+                    append_text(buffer, "CPU: unavailable\npeak RSS: unavailable\n")
+                else:
+                    append_text(buffer, "CPU: baseline=")
+                    append_micros_as_millis(buffer, baseline.cpu_micros)
+                    append_text(buffer, " ms candidate=")
+                    append_micros_as_millis(buffer, candidate.cpu_micros)
+                    append_text(buffer, " ms\npeak RSS: baseline=")
+                    append_i64(buffer, baseline.peak_rss_bytes)
+                    append_text(buffer, " bytes candidate=")
+                    append_i64(buffer, candidate.peak_rss_bytes)
+                    append_text(buffer, " bytes\n")
+                append_text(buffer, "events: baseline=")
                 append_i64(buffer, baseline.events)
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.events)
@@ -82,13 +124,14 @@ extend ProfilerNative:
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.stack_overflow_entries)
                 append_text(buffer, "\n")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
                     append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different workload metadata", workload_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different collection modes", collection_mode_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different compiler commits", compiler_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different optimization levels", optimization_mismatch)
+                    append_comparison_warning_text(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch)
                     append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
                     append_comparison_warning_text(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss)
                 return
@@ -140,7 +183,11 @@ extend ProfilerNative:
             append_micros_as_millis(buffer, candidate.compile_micros)
             append_text(buffer, ",\"delta_micros\":")
             append_i64(buffer, native_signed_delta(candidate.compile_micros, baseline.compile_micros))
-            append_text(buffer, "},\"events\":{\"baseline\":")
+            append_text(buffer, "},\"cpu_ms\":")
+            append_comparison_nullable_timed_metric(buffer, baseline.cpu_micros, candidate.cpu_micros, baseline.resource_metrics_available, candidate.resource_metrics_available)
+            append_text(buffer, ",\"peak_rss_bytes\":")
+            append_comparison_nullable_count_metric(buffer, baseline.peak_rss_bytes, candidate.peak_rss_bytes, baseline.resource_metrics_available, candidate.resource_metrics_available)
+            append_text(buffer, ",\"events\":{\"baseline\":")
             append_i64(buffer, baseline.events)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.events)
@@ -184,6 +231,7 @@ extend ProfilerNative:
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different collection modes", collection_mode_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different compiler commits", compiler_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different optimization levels", optimization_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline or candidate target execution failed", target_failure, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss, &warning_first)
             append_text(buffer, "],\"status\":\"")
@@ -231,12 +279,12 @@ extend ProfilerNative:
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)
