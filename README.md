@@ -190,12 +190,16 @@ On macOS and Linux, measured repetitions also record `peak_rss_bytes`, the
 profiled child's peak resident set size; the aggregate field is the largest
 measured repetition. A timed-out child may terminate before the operating-system
 resource wrapper can write this optional value.
+Target stdout and stderr are captured independently, included in JSON when
+non-empty, and capped at the named native program-output limit; matching
+`*_truncated` fields keep diagnostic loss explicit.
 Include-expanded programs are mapped
 back to the file and line where each location originated; compiler_line
 preserves the flattened line for diagnostics, and source_mapping records
 whether that mapping succeeded. A nonzero target exit status is reported and
 returned by the profiler. Target stdout and stderr are captured as separate
-artifacts in the profile workspace. JSON reports also include call_edges with observed and completed
+artifacts in the profile workspace and are retained independently in JSON when
+non-empty. JSON reports also include call_edges with observed and completed
 caller-to-callee calls. A panic or timeout report also includes the last 256
 trace events in execution order, when the collector received the terminating signal,
 plus `active_stack` with the tracked function names and any untracked overflow

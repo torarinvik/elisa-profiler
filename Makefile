@@ -141,6 +141,10 @@ profiler-native-smoke: profiler-native
 		grep -Fq '"commit":"' "$$native_work/report.json"; \
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_stderr_probe.elisa" --format json --output "$$native_work/stderr-probe.json" 2>"$$native_work/stderr-probe.log"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/profile.schema.json" "$$native_work/stderr-probe.json"; \
+		grep -Fq '"program_stdout":"target stdout\\n"' "$$native_work/stderr-probe.json"; \
+		grep -Fq '"program_stdout_truncated":false' "$$native_work/stderr-probe.json"; \
+		grep -Fq '"program_stderr":"ELISA_PROFILE\\t1\\tmeta\\tspoofed\\n"' "$$native_work/stderr-probe.json"; \
+		grep -Fq '"program_stderr_truncated":false' "$$native_work/stderr-probe.json"; \
 		! grep -Fq 'malformed native protocol' "$$native_work/stderr-probe.log"; \
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/native_launch_probe.elisa" --cwd "$$native_work" --stdin "$(PROFILER_ROOT)/README.md" --env ELISA_PROFILER_LAUNCH=enabled --format json --output "$$native_work/launch-probe.json"; \
 		test -s "$$native_work/native-launch-cwd-marker.txt"; \

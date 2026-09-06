@@ -271,6 +271,14 @@ reservations are refused, while `quality.detail` becomes `degraded` and the
 per-run values; the aggregate summary sums used/dropped bytes across measured
 runs and retains the last configured limit.
 
+Target stdout and stderr are separate from the collector transport. The native
+launcher spools each stream independently, reports the captured text as
+`program_stdout`/`program_stderr` when non-empty, and emits matching boolean
+`program_stdout_truncated`/`program_stderr_truncated` fields. Each aggregate
+stream is capped at the named native program-output limit; a true flag means
+the diagnostic text is incomplete and must not be treated as the complete
+target transcript.
+
 The current version-1 JSON writer emits integer values directly. Consumers
 that must preserve values beyond JavaScript's exact integer range should parse
 the raw JSON with an integer-capable decoder; the planned version-2 artifact

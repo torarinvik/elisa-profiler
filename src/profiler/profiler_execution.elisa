@@ -450,3 +450,11 @@ extend ProfilerNative:
                     result.push(chunk[index])
             _ = profiler_ffi_close(fd)
             return result
+
+
+        def read_bounded_file(path: darray[u8]&, maximum_bytes: usize, truncated: mutable bool&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            result: mutable darray[u8] = read_file(path)
+            if result.count > maximum_bytes:
+                result.count <- maximum_bytes
+                truncated <- true
+            return result

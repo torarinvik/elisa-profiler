@@ -60,6 +60,7 @@ module ProfilerNative:
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192
         const NATIVE_MAX_FILE_BYTES: usize = 134217728
+        const NATIVE_MAX_PROGRAM_OUTPUT_BYTES: usize = 1048576
         const NATIVE_MAX_PROTOCOL_LINE_BYTES: usize = 1048576
         const NATIVE_MAX_PROTOCOL_LINES: usize = 10000000
         const NATIVE_MAX_PROTOCOL_FRAME_BYTES: usize = 1048576

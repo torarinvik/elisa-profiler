@@ -506,6 +506,17 @@ extend ProfilerNative:
         def write_stderr(buffer: darray[u8]&) -> void can[Abort.Panic, Console]:
             return if buffer.count == NATIVE_ZERO.usize()
             _ = write_all_fd(NATIVE_STANDARD_ERROR, buffer) can Console
+
+
+        def append_program_output(buffer: mutable darray[u8]&, chunk: darray[u8]&, truncated: mutable bool&) -> void can[Abort.Panic, Memory.Allocate]:
+            return if chunk.count == NATIVE_ZERO.usize()
+            if buffer.count > NATIVE_ZERO.usize() and buffer.count < NATIVE_MAX_PROGRAM_OUTPUT_BYTES:
+                buffer.push(NATIVE_BYTE_NEWLINE)
+            for index in 0..<chunk.count |buffer, chunk, index, truncated|:
+                if buffer.count >= NATIVE_MAX_PROGRAM_OUTPUT_BYTES:
+                    truncated <- true
+                    break
+                buffer.push(chunk[index])
         
         
         def report_error(message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
@@ -1010,7 +1021,7 @@ extend ProfilerNative:
 
         def append_report(
             buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary,
-            status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stderr: darray[u8]&, execution_ns: i64, compile_ns: i64,
+            status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64, execution_ci95_low_ns: i64, execution_ci95_high_ns: i64, execution_ci95_available: bool,
             cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool,
@@ -1209,6 +1220,13 @@ extend ProfilerNative:
             if program_stderr.count > NATIVE_ZERO.usize():
                 append_text(buffer, ",\"program_stderr\":")
                 append_json_string(buffer, program_stderr)
+            append_text(buffer, ",\"program_stderr_truncated\":")
+            append_text(buffer, "true" if program_stderr_truncated else "false")
+            if program_stdout.count > NATIVE_ZERO.usize():
+                append_text(buffer, ",\"program_stdout\":")
+                append_json_string(buffer, program_stdout)
+            append_text(buffer, ",\"program_stdout_truncated\":")
+            append_text(buffer, "true" if program_stdout_truncated else "false")
             append_text(buffer, "}\n")
 
 
@@ -1382,6 +1400,7 @@ extend ProfilerNative:
             append_text(compiler_commit, "unavailable-recovery")
             append_text(runtime_object, "unavailable-recovery")
             repetition_records: mutable darray[u8] = []
+            empty_program_stdout: mutable darray[u8] = []
             empty_program_stderr: mutable darray[u8] = []
             empty_working_directory: mutable darray[u8] = []
             empty_stdin_path: mutable darray[u8] = []
@@ -1401,7 +1420,7 @@ extend ProfilerNative:
             append_report(
                 buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit,
                 true, runtime_object, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
-                NATIVE_ZERO, empty_program_stderr, NATIVE_ZERO, NATIVE_ZERO, repetition_records,
+                NATIVE_ZERO, empty_program_stdout, false, empty_program_stderr, false, NATIVE_ZERO, NATIVE_ZERO, repetition_records,
                 NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO,
                 NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO,
                 false, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, false,
@@ -2045,14 +2064,17 @@ extend ProfilerNative:
                     return report_error("could not write profiler progress")
                 warmup_index <- warmup_index + 1
 
+            program_stdout: mutable darray[u8] = []
+            program_stdout_truncated: mutable bool = false
             program_stderr: mutable darray[u8] = []
+            program_stderr_truncated: mutable bool = false
             overall_status: mutable i64 = NATIVE_ZERO
             completed_repetitions: mutable i64 = NATIVE_ZERO
             successful_repetitions: mutable i64 = NATIVE_ZERO
             failed_repetitions: mutable i64 = NATIVE_ZERO
             overall_timed_out: mutable bool = false
             repetition: mutable i64 = NATIVE_ONE
-            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, all_cpu_user_times, all_cpu_system_times, all_peak_rss_values, all_resource_availability, measurement_cpu_user_times, measurement_cpu_system_times, measurement_peak_rss_values, measurement_resource_availability, program_stderr, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out, last_capture_bytes, last_valid_frames, last_valid_capture_bytes|:
+            while repetition <= requested_repetitions |repetition, summary, repetition_records, all_execution_times, measurement_execution_times, all_cpu_user_times, all_cpu_system_times, all_peak_rss_values, all_resource_availability, measurement_cpu_user_times, measurement_cpu_system_times, measurement_peak_rss_values, measurement_resource_availability, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, overall_status, completed_repetitions, successful_repetitions, failed_repetitions, overall_timed_out, last_capture_bytes, last_valid_frames, last_valid_capture_bytes|:
                 if not write_progress(progress_path, "capture_started", repetition, requested_repetitions, NATIVE_ZERO, summary):
                     cleanup_temp(temporary)
                     return report_error("could not write profiler progress")
@@ -2079,11 +2101,14 @@ extend ProfilerNative:
                 last_capture_bytes <- capture.count.i64()
                 last_valid_frames <- current_summary.valid_frames
                 last_valid_capture_bytes <- current_summary.valid_capture_bytes
-                current_stderr: darray[u8] = read_file(run_error_path)
-                if current_stderr.count > 0:
-                    if program_stderr.count > NATIVE_ZERO.usize():
-                        program_stderr.push(NATIVE_BYTE_NEWLINE)
-                    program_stderr.extend(current_stderr)
+                current_stdout_truncated: mutable bool = false
+                current_stdout: darray[u8] = read_bounded_file(run_output_path, NATIVE_MAX_PROGRAM_OUTPUT_BYTES, &current_stdout_truncated)
+                append_program_output(&program_stdout, current_stdout, &program_stdout_truncated)
+                program_stdout_truncated <- true if current_stdout_truncated
+                current_stderr_truncated: mutable bool = false
+                current_stderr: darray[u8] = read_bounded_file(run_error_path, NATIVE_MAX_PROGRAM_OUTPUT_BYTES, &current_stderr_truncated)
+                append_program_output(&program_stderr, current_stderr, &program_stderr_truncated)
+                program_stderr_truncated <- true if current_stderr_truncated
                 merge_capture_summary(&summary, current_summary)
                 append_repetition_record(&repetition_records, repetition, requested_repetitions, run_result, current_summary, event_trace, recent_path)
                 all_execution_times.push(run_result.elapsed_ns)
@@ -2183,7 +2208,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, display_source, source_check, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, working_directory, stdin_path, environment, target_arguments)
             else:
-                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stderr, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

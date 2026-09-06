@@ -289,7 +289,10 @@
       "items": { "$ref": "#/$defs/recent_event" }
     },
     "active_stack": { "$ref": "#/$defs/active_stack" },
+    "program_stdout": { "type": "string" },
+    "program_stdout_truncated": { "type": "boolean" },
     "program_stderr": { "type": "string" },
+    "program_stderr_truncated": { "type": "boolean" },
     "workload": {
       "type": "object",
       "properties": {
