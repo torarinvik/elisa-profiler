@@ -8,45 +8,34 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-c6948142f19d0fa66089ca33ab5718c435738f15 fix: report stage0 seed failures
+2dbf556c fix: harden machine start fallback
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
 found across the compiler worktrees, including the packed-header, nested-module,
 qualified-`usize`, stage0-path, qualified-error-recovery, lexical-error-family,
-and stable-module-identity fixes. The latest `codex/wasm-sdk` tip is integrated
-through merge commit `56a77e03`; the stage1 wrapper diagnostic follow-up is
-`c6948142`. All 11 local compiler branch tips are reachable from the dedicated
-branch.
+stable-module-identity, bounded self-host, scope-binding, and machine-start
+fallback fixes. All 11 local compiler branch tips are reachable from the
+dedicated branch.
 
 The audit is authoritative for branch/worktree provenance. The latest offline
 ledger records 11 local branches, 11 registered worktrees, nine dirty
 worktrees, and four pending source-bearing worktrees. The four source candidates
 were reviewed path-by-path against the dedicated checkout: the top-level
 `Elisa-compiler` checkout, the transpiler stage1 checkout, the Neural Workshop
-checkout, and the structpy checkout. No additional change was imported because
-the dedicated branch already contains a newer/superseding implementation, or
-the dirty patch is an older, reverting, or AST-incompatible variant. All owner
-worktrees remain untouched.
+checkout, and the structpy checkout. Compatible deltas were imported where they
+were independently verifiable; the remaining dirty portions are either already
+superseded or AST-incompatible. All owner worktrees remain untouched.
 
-The current stage1 product has not yet been reseeded from `c6948142`. The
-previously usable artifact is retained, while the manifest correctly reports
-that compiler source/configuration is newer than the stage1 binary. Foreground,
-detached, and launchd-staged seed attempts—including an isolated `-O0` run with
-an 8 GiB guard—ended before publishing an object; the wrapper emitted no
-memory-guard diagnostic, and the latest staged run ended with signal 15. The
-memory-guard diagnostic, and the latest staged run ended with signal 15. A
-subsequent isolated foreground `-O0` attempt with a 16 GiB ceiling ended at
-the same stage0 start point with signal 15 and also published no object. The
-dedicated global seed lock was cleaned up. Consequently the current
-`compiler-manifest-smoke`, `compiler-smoke`, and `profiler-native-smoke` gates
-must not be reported as passing for `c6948142`; the earlier successful gates are
-historical evidence only. The separate gen2/gen3 fixed-point script remains
-pending as well.
+The stage1 product was freshly reseeded from `2dbf556c` with the canonical
+stage0 compiler and its usable build manifest was regenerated. The current
+`compiler-manifest-smoke`, `compiler-smoke`, `profiler-native-smoke`, and full
+profiler gates pass against that artifact. The separate fixed-point gate also
+passes: stage A is 5/5, gen2 compiles the full compiler, gen3 and gen4 are
+byte-identical, and 40 repeated gen3 emissions are identical.
 
-Historical checkpoints below retain the earlier commit and test evidence for
-the build pipeline, but must not be read as proof that the current stage1
-artifact matches `c15c4918`.
+Historical checkpoints below retain earlier commit and test evidence for the
+build pipeline, but must not be read as proof of the current stage1 identity.
 
 Remote refresh is best effort. A successful `git fetch --all --prune` marks
 remote refs as `refreshed`; a disconnected or failing refresh leaves the refs
@@ -103,10 +92,12 @@ source delta to import. The current ledger still reports dirty owner worktrees a
 pending because the audit intentionally does not infer equivalence from a dirty
 checkout. Independent content review found that the Neural Workshop
 scope-binding test is already present in the dedicated checkout; the structpy
-parser-machine changes are represented by the newer machine-parser implementation
-and its diagnostic fixture; and the transpiler-stage1 source deltas are already
-represented by newer or equivalent dedicated implementations. The remaining
-main-checkout path differences were likewise either superseded in the dedicated
+parser-machine changes are represented by the newer machine-parser implementation;
+the compatible machine-start fallback and storage-invalidation diagnostic fixture
+were imported as `2dbf556c`, while the remaining dirty patch references AST
+variants absent from the dedicated compiler and was not copied. The transpiler-
+stage1 source deltas are already represented by newer or equivalent dedicated
+implementations. The remaining main-checkout path differences were likewise either superseded in the dedicated
 worktree or were the nested parity-script path fix committed as `88f09c8d`. No
 additional compiler source patch was missing, so none of those owner worktrees
 was rewritten. Origin worktrees remain untouched, including their uncommitted
@@ -133,8 +124,10 @@ The generated ledger is the detailed record; its current classifications are:
   the dedicated scope-binding smoke path is already more advanced, so the owner
   patch was not copied or rewritten.
 - The structpy worktree has a dirty parser-machine candidate that refers to AST
-  variants not present in the current dedicated parser. It was rejected as an
-  incompatible older patch; the owner worktree was not changed.
+  variants not present in the current dedicated parser. Its compatible
+  machine-start fallback and diagnostic fixture were imported as `2dbf556c`,
+  while the incompatible `Ast::Stmt.AugAssign`/`AsRefAssign` portions were
+  rejected; the owner worktree was not changed.
 - The missing temporary verification worktree is recorded as pending non-source
   provenance only. It contributes no importable source delta.
 - The effect, recovered-interop, dedicated-profiler, and Elisa UI worktrees have
@@ -159,11 +152,10 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `c6948142` integration, the audit and ledger gates pass, while
-the manifest gate correctly rejects the stale retained stage1 artifact. Keep
-`make compiler-self-host-smoke` as a separate pending gate until a fresh stage1
-seed completes, its manifest and native parity gates pass, and gen2/gen3/gen4
-fixed-point evidence is available.
+For the current `2dbf556c` integration, the audit, ledger, manifest, compiler,
+native profiler, and full profiler gates pass. Keep the self-host gate in the
+verification contract: it is the required evidence that the local compiler
+remains a fixed point and deterministic after future compiler changes.
 
 The native profiler itself remains Elisa code. The C collector is only the explicit
 low-level ABI/runtime component used by the generated target and is not an alternate
