@@ -972,6 +972,7 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div><div><dt>Collection mode</dt><dd>")
             append_html_escaped(buffer, mode)
             append_text(buffer, "</dd></div>")
+            append_capability_html_summary(buffer)
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
             append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments)
@@ -1277,6 +1278,7 @@ extend ProfilerNative:
             for index in 0..<mode.count |buffer, mode|:
                 buffer.push(mode[index])
             append_text(buffer, "\n")
+            append_capability_text_summary(buffer)
             append_text(buffer, "signal: ")
             append_observed_signal(buffer, status, summary)
             append_text(buffer, "\ntimeout: ")

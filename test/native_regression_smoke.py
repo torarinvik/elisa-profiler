@@ -335,13 +335,17 @@ def main():
         assert all(frame == "descend" for frame in interrupted["active_stack"]["stack"][1:])
         interrupted_text_output = work / "interrupted-stack.txt"
         run("profile", ROOT / "examples/interrupted_stack.elisa", "--format", "text", "--output", interrupted_text_output, expected=134)
-        assert b"active stack (tracked depth" in interrupted_text_output.read_bytes()
-        assert b"main;descend" in interrupted_text_output.read_bytes()
+        interrupted_text = interrupted_text_output.read_bytes()
+        assert b"active stack (tracked depth" in interrupted_text
+        assert b"main;descend" in interrupted_text
+        assert b"capability boundary: sampling unsupported" in interrupted_text
         interrupted_html_output = work / "interrupted-stack.html"
         run("profile", ROOT / "examples/interrupted_stack.elisa", "--format", "html", "--output", interrupted_html_output, expected=134)
         interrupted_html = interrupted_html_output.read_bytes()
         assert b"Interrupted active stack" in interrupted_html
         assert b"diagnostic evidence, not completed-call evidence" in interrupted_html
+        assert b"Capability boundary" in interrupted_html
+        assert b"Allocation:</strong> unsupported" in interrupted_html
 
         run("profile", ROOT / "examples/hot_loop.elisa", "--repeat", "2",
             "--event-trace", "--max-event-trace-events", "10",
