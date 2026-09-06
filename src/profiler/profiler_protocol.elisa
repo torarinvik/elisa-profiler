@@ -31,6 +31,7 @@ extend ProfilerNative:
 
         def protocol_unsigned(value: darray[u8]&) -> bool can[Abort.Panic]:
             false return if value.count == NATIVE_ZERO.usize()
+            false return if value.count > NATIVE_ONE.usize() and value[NATIVE_ZERO.usize()] == NATIVE_BYTE_ASCII_ZERO
             parsed: mutable i64 = NATIVE_ZERO
             for index in 0..<value.count |value, parsed|:
                 false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
@@ -42,6 +43,7 @@ extend ProfilerNative:
 
         def protocol_unsigned_u64(value: darray[u8]&) -> bool can[Abort.Panic]:
             false return if value.count == NATIVE_ZERO.usize()
+            false return if value.count > NATIVE_ONE.usize() and value[NATIVE_ZERO.usize()] == NATIVE_BYTE_ASCII_ZERO
             parsed: mutable u64 = NATIVE_ZERO.u64()
             for index in 0..<value.count |value, parsed|:
                 false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
@@ -75,6 +77,7 @@ extend ProfilerNative:
                 negative <- true
                 start <- NATIVE_ONE.usize()
             false return if start == value.count
+            false return if value.count - start > NATIVE_ONE.usize() and value[start] == NATIVE_BYTE_ASCII_ZERO
             parsed: mutable i64 = NATIVE_ZERO
             for index in start..<value.count |value, parsed, negative|:
                 false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
@@ -472,6 +475,7 @@ extend ProfilerNative:
             valid: mutable bool = true
             digits: mutable usize = NATIVE_ZERO.usize()
             position: mutable usize = cursor
+            number_start: usize = cursor
             while position < stop and data[position] != NATIVE_BYTE_TAB |position, value, valid, digits, data|:
                 if data[position] < NATIVE_BYTE_ASCII_ZERO or data[position] > NATIVE_BYTE_ASCII_NINE:
                     valid <- false
@@ -484,6 +488,7 @@ extend ProfilerNative:
             position <- position + NATIVE_ONE.usize() if position < stop and data[position] == NATIVE_BYTE_TAB
             cursor <- position
             return NATIVE_NEGATIVE_ONE if not valid or digits == NATIVE_ZERO.usize()
+            return NATIVE_NEGATIVE_ONE if digits > NATIVE_ONE.usize() and data[number_start] == NATIVE_BYTE_ASCII_ZERO
             return value
         
         

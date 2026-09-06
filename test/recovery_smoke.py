@@ -167,6 +167,22 @@ def main() -> int:
             check=False,
         )
         assert oversized_process.returncode != 0, "recovery accepted an oversized framed payload"
+        noncanonical_capture = work / "noncanonical-number.txt"
+        noncanonical_meta = meta.replace(b"\t0", b"\t00", 1)
+        noncanonical_capture.write_bytes(
+            frame(0, b"ELISA_PROFILE\t1\tbegin\t1") + frame(1, noncanonical_meta)
+        )
+        noncanonical_manifest = work / "noncanonical-number.manifest.json"
+        noncanonical_payload = dict(manifest_payload)
+        noncanonical_payload["capture_path"] = str(noncanonical_capture)
+        noncanonical_manifest.write_text(json.dumps(noncanonical_payload), encoding="utf-8")
+        noncanonical_process = subprocess.run(
+            [str(native), "recover", str(noncanonical_manifest), "--format", "json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert noncanonical_process.returncode != 0, "recovery accepted a noncanonical protocol number"
     print("recovery smoke OK")
     return 0
 
