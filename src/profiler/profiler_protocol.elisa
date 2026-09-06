@@ -42,7 +42,7 @@ extend ProfilerNative:
 
         def protocol_unsigned_u64(value: darray[u8]&) -> bool can[Abort.Panic]:
             false return if value.count == NATIVE_ZERO.usize()
-            parsed: mutable u64 = 0
+            parsed: mutable u64 = NATIVE_ZERO.u64()
             for index in 0..<value.count |value, parsed|:
                 false return if value[index] < NATIVE_BYTE_ASCII_ZERO or value[index] > NATIVE_BYTE_ASCII_NINE
                 digit: u64 = (value[index] - NATIVE_BYTE_ASCII_ZERO).u64()
@@ -52,8 +52,8 @@ extend ProfilerNative:
 
 
         def protocol_u64_number_field(value: darray[u8]&) -> u64 can[Abort.Panic]:
-            return 0 if not protocol_unsigned_u64(value)
-            result: mutable u64 = 0
+            return NATIVE_ZERO.u64() if not protocol_unsigned_u64(value)
+            result: mutable u64 = NATIVE_ZERO.u64()
             for index in 0..<value.count |result, value|:
                 result <- result * NATIVE_DECIMAL_BASE.u64() + (value[index] - NATIVE_BYTE_ASCII_ZERO).u64()
             return result
