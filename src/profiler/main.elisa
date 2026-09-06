@@ -772,9 +772,8 @@ extend ProfilerNative:
             append_html_escaped(buffer, mode)
             append_text(buffer, "</dd></div></dl>")
             append_html_function_browser(buffer, summary.function_records)
-            append_html_section(buffer, "Call edges", summary.call_edge_records)
+            append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
-            append_html_section(buffer, "Locations", summary.location_records)
             append_html_section(buffer, "Thread loss", summary.thread_loss_records)
             append_text(buffer, "</main></body></html>\n")
 

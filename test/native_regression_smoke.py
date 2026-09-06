@@ -106,6 +106,8 @@ def main():
         assert speedscope["profiles"][0]["weights"] == [1, 6]
         offline_html = run("report", capture, "--format", "html")
         assert b"<dt>Locations</dt><dd>2</dd>" in offline_html
+        assert b"edge-filter" in offline_html
+        assert b"location-filter" in offline_html
 
         output = work / "output.txt"
         output.write_bytes(b"stale" * 10000)
