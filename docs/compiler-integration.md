@@ -8,64 +8,41 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-88f09c8dccc4827bff17f2895bd7302f49c0c612 fix nested compiler stage0 parity paths
+c15c491825223dcdbb124321480d54fd3422c056 merge: record wasm-sdk fix integration
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
-found in the compiler worktrees during profiler setup, the qualified-module
-error-call lowering fix from `codex/wasm-sdk`, and the later packed-header
-storage fix from the main compiler checkout. The dedicated branch now includes
-the complete `codex/wasm-sdk` tip `88448c3f` through merge `095ca058`. The
-current tip also contains the qualified-`usize` cast-inference fix from
-`d58afa95` and its parity fixture through `ec2e7609`.
-The prior dedicated checkpoint added recursive nested-module hoisting in backend
-declaration selection and corrects the default stage0 path used by the stage1
-wrapper in `f1219f88`. It imports the qualified error-recovery fix from
-`codex/wasm-sdk` (`09270840`) and preserves that branch tip through merge
-`c11a42c2`; the focused parity smoke passes when the optional stage0 compiler is
-available. The prior dedicated commit `506e93c2` made the stage0 fallback
-probe both top-level-checkout and nested-worktree safe; its seed attempt is
-bounded and retains the prior usable stage1 image if the host limit is hit.
-That ancestry includes the packed-store activation, effect-identity lowering,
-qualified-owner error-call preservation, semantic-gate documentation, nested
-stage0 resolution, bounded self-host reproducibility probes, and gen2
-construction guard from that branch. `d8cadbb1` then corrects generated
-C-header accounting for inline dynamic-AoS common fields versus side-table
-common fields and records the packed side-table offsets accurately.
-`5028591f` fixes the parity harness defaults so a compiler worktree nested
-under `elisa-compiler-worktrees/` resolves the sibling stage0 checkout at
-`../../../Go projects/structpy-tree` instead of the nonexistent path under
-`Elisa Projects/`. The dedicated branch first merged the current `work` tip as
-`9c5ca036`, then merged `codex/wasm-sdk` as `095ca058`. Several source changes
-were already represented by equivalent or newer dedicated changes, so the
-latter semantic merge changed only the remaining backend/test files while
-retaining every source commit in history. The dedicated compiler branch also
-contains the previously committed profiler-facing CLI fix and the complete
-committed ancestry of the local compiler branches. `make
-compiler-audit` is the repeatable check that every local branch tip remains an
-ancestor of the dedicated compiler branch. It also writes the ignored
-`build/compiler-integration-ledger.json` file atomically. The ledger is the
-authoritative observation for that audit run: it records the UTC observation
-time, dedicated HEAD, local branch tips, fetched-or-cached remote refs, every
-registered worktree, porcelain status records, relevant untracked files, and a
-content digest for each dirty patch.
+found across the compiler worktrees, including the packed-header, nested-module,
+qualified-`usize`, stage0-path, and qualified-error-recovery fixes. The current
+integration adds the qualified fallible-return fix as content commit `92963549`.
+That commit is patch-equivalent to the source branch tip `c528860a`; the
+explicit no-op merge at `c15c4918` records the original `codex/wasm-sdk` branch
+tip in ancestry without duplicating the patch. All 11 local compiler branch
+tips are reachable from the dedicated branch.
 
-Since that checkpoint, the exact advanced `codex/wasm-sdk` tip
-`4a9ed7a1` is reachable through merge commit `2dfb7175`. The dedicated branch
-also contains the independently reviewed source patch imported from the dirty
-main `Elisa-compiler` checkout in `46c0671c`: nested-module name resolution,
-mutable/readonly reference assignment diagnostics, aggregate-state call
-checking, auto-region/defer parity, permission-alias validation, and their
-focused Elisa fixtures. The two backend files whose patches did not apply
-cleanly already contained the same recursive module-hoist implementation, so
-they were preserved as the tested dedicated version rather than duplicated.
-The rebuilt stage1 product and native profiler pass the full profiler gate;
-the compiler's focused checks pass diagnostics (367/367), semantic acceptance
-(575/575), and the internal semantic differential (0/3210 mismatches).
-The two same-name-export parity scripts were then made safe for both top-level
-and nested compiler worktrees in `88f09c8d`; the stage1 product was reseeded
-with `ELISA_STAGE1_SEED_MAX_RSS_KB=16777216`, and the resulting compiler
-manifest passed its freshness and artifact checks.
+The audit is authoritative for branch/worktree provenance. The latest offline
+ledger records 11 local branches, 11 registered worktrees, nine dirty
+worktrees, and four pending source-bearing worktrees. The four source candidates
+were reviewed path-by-path against the dedicated checkout: the top-level
+`Elisa-compiler` checkout, the transpiler stage1 checkout, the Neural Workshop
+checkout, and the structpy checkout. No additional change was imported because
+the dedicated branch already contains a newer/superseding implementation, or
+the dirty patch is an older, reverting, or AST-incompatible variant. All owner
+worktrees remain untouched.
+
+The retained stage1 binary and compiler manifest are from the older `88f09c8d`
+product and are correctly marked unusable against `c15c4918`. A fresh direct
+stage0 build and a fresh build through the existing self-host image both receive
+SIGTERM during active compilation at roughly 1.9 GB RSS, without a compiler
+diagnostic or object output. This reproduces independently of the new
+qualified-return fix; it is currently a host/process-supervisor blocker, not a
+reason to falsify the manifest or weaken freshness checks. The audit and ledger
+smokes pass, while compiler-manifest, compiler-smoke, and the new
+cross-module parity check remain pending a successful fresh seed.
+
+Historical checkpoints below retain the earlier commit and test evidence for
+the build pipeline, but must not be read as proof that the current stage1
+artifact matches `c15c4918`.
 
 Remote refresh is best effort. A successful `git fetch --all --prune` marks
 remote refs as `refreshed`; a disconnected or failing refresh leaves the refs
@@ -145,18 +122,17 @@ The generated ledger is the detailed record; its current classifications are:
   are backend/parser/semantic and packed-header emission; diagnostics,
   semantic-acceptance, internal-differential, and native profiler gates are the
   verification set.
-- The temporary verification worktree is an `equivalent-patch` for the local
-  region annotation and region-scope fixtures; it has not been rewritten or
-  committed from this audit.
-- The transpiler stage1 worktree has a distinct backend/parser candidate plus a
-  breadth fixture. Content review found the behavior already represented by
-  newer or equivalent implementations in the dedicated checkout; the dirty
-  owner patch remains an audit `candidate-fix-needs-review` entry because the
-  owner worktree itself is still dirty.
-- The Neural Workshop scope-binding test and structpy parser-machine changes
-  are likewise already represented in the dedicated checkout. Their dirty
-  owner entries remain `candidate-fix-needs-review` for provenance purposes;
-  the owners' worktrees remain byte-for-byte untouched.
+- The transpiler stage1 worktree has a dirty layout/state candidate. The
+  dedicated checkout already has the more advanced packed-layout and parser
+  implementation, so the owner patch was not copied or rewritten.
+- The Neural Workshop worktree has an older scope-binding robustness candidate;
+  the dedicated scope-binding smoke path is already more advanced, so the owner
+  patch was not copied or rewritten.
+- The structpy worktree has a dirty parser-machine candidate that refers to AST
+  variants not present in the current dedicated parser. It was rejected as an
+  incompatible older patch; the owner worktree was not changed.
+- The missing temporary verification worktree is recorded as pending non-source
+  provenance only. It contributes no importable source delta.
 - The effect, recovered-interop, dedicated-profiler, and Elisa UI worktrees have
   metadata-only changes and are classified `obsolete-noise-only`.
 
@@ -178,6 +154,11 @@ make compiler-seed
 make compiler-smoke
 make profiler-native-smoke
 ```
+
+For the current `c15c4918` integration, the first two audit commands pass.
+`make compiler-manifest-smoke`, `make compiler-smoke`, and native rebuild gates
+must remain pending until the fresh stage1 seed succeeds; the retained
+`88f09c8d` product is intentionally rejected as stale.
 
 The native profiler itself remains Elisa code. The C collector is only the explicit
 low-level ABI/runtime component used by the generated target and is not an alternate
