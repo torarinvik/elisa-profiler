@@ -232,6 +232,11 @@ Each repetition also reports `detail_records` for normalized locations,
 functions, caller-to-callee edges, and stack paths. These are evidence counts
 for that run, not independent statistical samples; a lower count must be
 interpreted with the repetition's drop, overflow, and completeness fields.
+The `completeness` object makes that interpretation explicit for events,
+locations, functions, call edges, stacks, timings, and resource metrics. Its
+values are `exact`, `partial`, or `unavailable`; `unavailable` is reserved for
+metrics the host did not provide, while `partial` means the capture cannot
+support an exact claim.
 When native collection is enabled, `thread_loss` records the event count and
 loss counters for each profiler thread. `repetition` identifies the target
 run because collector thread IDs are local to a capture. `location_dropped`,

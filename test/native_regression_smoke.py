@@ -274,6 +274,11 @@ def main():
         assert abs(measured["run"]["cpu_ms"] - sum(item["cpu_ms"] for item in repetitions)) <= 0.002
         assert measured["run"]["peak_rss_bytes"] == max(item["peak_rss_bytes"] for item in repetitions)
         assert all(item["trace_events_captured"] == 10 for item in repetitions)
+        assert all(set(item["completeness"]) == {
+            "events", "locations", "functions", "call_edges", "stacks", "timings", "resources"
+        } for item in repetitions)
+        assert all(item["completeness"]["resources"] == "exact" for item in repetitions)
+        assert all(item["completeness"]["timings"] == "exact" for item in repetitions)
         mean_of_middle = sum(item["execution_ms"] for item in repetitions) / 2
         assert abs(measured["run"]["execution_ms_median"] - mean_of_middle) <= 0.002
         expected_stdev = statistics.stdev(item["execution_ms"] for item in repetitions)

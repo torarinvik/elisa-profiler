@@ -78,6 +78,15 @@ def main() -> int:
             "inputs_hashed": True,
         }, payload
         assert payload["run"]["outcome"] == "incomplete_artifact", payload
+        assert payload["run"]["repetitions"][0]["completeness"] == {
+            "events": "partial",
+            "locations": "partial",
+            "functions": "partial",
+            "call_edges": "partial",
+            "stacks": "partial",
+            "timings": "partial",
+            "resources": "unavailable",
+        }, payload
         assert payload["quality"]["capture"] == "recovered", payload
         assert "recovered_partial" in payload["quality"]["reasons"], payload
         assert payload["summary"]["capture_started"] is True, payload

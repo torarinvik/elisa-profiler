@@ -128,6 +128,7 @@ extend ProfilerNative:
 
 
         def append_repetition_record(buffer: mutable darray[u8]&, repetition: i64, requested: i64, result: TargetRunResult, summary: CaptureSummary, event_trace: bool, recent_path: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            capture_incomplete: bool = not summary.capture_started or not summary.capture_complete or result.timed_out
             append_record_separator(buffer)
             append_text(buffer, "{\"repetition\":")
             append_i64(buffer, repetition)
@@ -145,6 +146,21 @@ extend ProfilerNative:
             append_text(buffer, "true" if summary.capture_started else "false")
             append_text(buffer, ",\"capture_complete\":")
             append_text(buffer, "true" if summary.capture_started and summary.capture_complete else "false")
+            append_text(buffer, ",\"completeness\":{\"events\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"locations\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"functions\":\"")
+            append_text(buffer, "partial" if summary.dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"call_edges\":\"")
+            append_text(buffer, "partial" if summary.call_edge_dropped > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"stacks\":\"")
+            append_text(buffer, "partial" if summary.stack_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or capture_incomplete else "exact")
+            append_text(buffer, "\",\"timings\":\"")
+            append_text(buffer, "partial" if capture_incomplete else "exact")
+            append_text(buffer, "\",\"resources\":\"")
+            append_text(buffer, "exact" if result.resource_available else "unavailable")
+            append_text(buffer, "\"}")
             append_text(buffer, ",\"cpu_user_ms\":")
             if result.resource_available:
                 append_millis(buffer, result.cpu_user_ns)

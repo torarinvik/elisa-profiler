@@ -360,6 +360,20 @@
         "timed_out": { "type": "boolean" },
         "capture_started": { "type": "boolean" },
         "capture_complete": { "type": "boolean" },
+        "completeness": {
+          "type": "object",
+          "required": ["events", "locations", "functions", "call_edges", "stacks", "timings", "resources"],
+          "properties": {
+            "events": { "type": "string", "enum": ["exact", "partial"] },
+            "locations": { "type": "string", "enum": ["exact", "partial"] },
+            "functions": { "type": "string", "enum": ["exact", "partial"] },
+            "call_edges": { "type": "string", "enum": ["exact", "partial"] },
+            "stacks": { "type": "string", "enum": ["exact", "partial"] },
+            "timings": { "type": "string", "enum": ["exact", "partial"] },
+            "resources": { "type": "string", "enum": ["exact", "unavailable"] }
+          },
+          "additionalProperties": false
+        },
         "cpu_user_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_system_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_ms": { "type": ["number", "null"], "minimum": 0 },
