@@ -144,6 +144,7 @@ def main():
         assert b"location-filter" in offline_html
         assert b"Flame graph" in offline_html
         assert b"flame-filter" in offline_html
+        assert b"function formatPercent(value,total)" in offline_html
         assert b"Workload reproducibility" in offline_html
         assert b"ELISA_FIXTURE" in offline_html
         assert b"&lt;unsafe&gt;" in offline_html
@@ -176,6 +177,7 @@ def main():
         assert b"source-filter" in live_html
         assert b"source-line" in live_html
         assert b"function hasMatch(node,query)" in live_html
+        assert b"function formatPercent(value,total)" in live_html
         assert b".split(/\\n+/)" not in live_html
 
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
