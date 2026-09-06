@@ -218,6 +218,12 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
   records expose optional semicolon-delimited `stack_ids`, and source/event
   location records expose optional `identity_id`. Readable names and source
   metadata remain in every record for diagnostics and legacy compatibility.
+- Offline comparison uses those IDs for function, edge, stack, and source-location
+  matching whenever the compared records provide them. It does not merge a
+  stable-ID record with a legacy readable-name record, and it reports a
+  stable-identity coverage mismatch as a warning/inconclusive requested gate.
+  IDs are retained as decimal text at the Elisa parser boundary so values above
+  signed 64-bit range remain exact.
 
 ## Completeness and failure states
 

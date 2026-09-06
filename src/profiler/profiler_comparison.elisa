@@ -22,7 +22,7 @@ extend ProfilerNative:
         def comparison_function_self_exceeded(baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&, percent: i64) -> bool can[Abort.Panic]:
             return false if percent < NATIVE_ZERO
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, percent|:
-                candidate_index: i64 = comparison_function_index(candidate, baseline[baseline_index].function)
+                candidate_index: i64 = comparison_function_index(candidate, baseline[baseline_index])
                 continue if candidate_index < NATIVE_ZERO
                 baseline_record: ComparisonFunctionRecord = baseline[baseline_index]
                 candidate_record: ComparisonFunctionRecord = candidate[candidate_index.usize()]
@@ -32,13 +32,13 @@ extend ProfilerNative:
 
         def comparison_has_shared_function(baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&) -> bool can[Abort.Panic]:
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate|:
-                return true if comparison_function_index(candidate, baseline[baseline_index].function) >= NATIVE_ZERO
+                return true if comparison_function_index(candidate, baseline[baseline_index]) >= NATIVE_ZERO
             return false
 
 
-        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
+        def comparison_gate_inconclusive(policy: ComparisonPolicy, source_mismatch: bool, workload_mismatch: bool, collection_mode_mismatch: bool, compiler_mismatch: bool, optimization_mismatch: bool, identity_mismatch: bool, resource_metrics_mismatch: bool, target_failure: bool, evidence_loss: bool, baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
             return false if not comparison_policy_requested(policy)
-            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or target_failure or evidence_loss
+            return true if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or target_failure or evidence_loss
             return true if (policy.max_cpu_regression_percent >= NATIVE_ZERO or policy.max_cpu_micros >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
             return true if (policy.max_rss_regression_percent >= NATIVE_ZERO or policy.max_rss_bytes >= NATIVE_ZERO) and (resource_metrics_mismatch or not baseline.resource_metrics_available or not candidate.resource_metrics_available)
             return true if policy.max_function_self_regression_percent >= NATIVE_ZERO and not comparison_has_shared_function(baseline.functions, candidate.functions)
@@ -172,22 +172,25 @@ extend ProfilerNative:
             append_text(buffer, "}")
 
 
-        def comparison_function_index(records: darray[ComparisonFunctionRecord]&, name: darray[u8]&) -> i64 can[Abort.Panic]:
-            for index in 0..<records.count |index, records, name|:
-                return index.i64() if byte_arrays_equal(records[index].function, name)
+        def comparison_function_index(records: darray[ComparisonFunctionRecord]&, subject: ComparisonFunctionRecord) -> i64 can[Abort.Panic]:
+            for index in 0..<records.count |index, records, subject|:
+                candidate: ComparisonFunctionRecord = records[index]
+                if subject.identity_id.count > NATIVE_ZERO.usize():
+                    return index.i64() if candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id)
+                return index.i64() if candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function)
             return NATIVE_NEGATIVE_ONE
 
 
         def comparison_missing_function_count(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
-                missing <- missing + NATIVE_ONE if comparison_function_index(other, records[index].function) < NATIVE_ZERO
+                missing <- missing + NATIVE_ONE if comparison_function_index(other, records[index]) < NATIVE_ZERO
             return missing
 
 
         def append_comparison_function_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
             for index in 0..<records.count |index, records, other, label, emitted, buffer|:
-                continue if comparison_function_index(other, records[index].function) >= NATIVE_ZERO
+                continue if comparison_function_index(other, records[index]) >= NATIVE_ZERO
                 if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
                     append_text(buffer, "<tr><th scope='row'>")
                     append_text(buffer, label)
@@ -286,12 +289,12 @@ extend ProfilerNative:
             append_text(buffer, "[")
             first: mutable bool = true
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, buffer|:
-                candidate_index: i64 = comparison_function_index(candidate, baseline[baseline_index].function)
+                candidate_index: i64 = comparison_function_index(candidate, baseline[baseline_index])
                 append_text(buffer, ",") if not first
                 append_comparison_function_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
                 first <- false
             for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, buffer|:
-                baseline_index: i64 = comparison_function_index(baseline, candidate[candidate_index].function)
+                baseline_index: i64 = comparison_function_index(baseline, candidate[candidate_index])
                 continue if baseline_index >= NATIVE_ZERO
                 append_text(buffer, ",") if not first
                 append_comparison_function_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
@@ -299,9 +302,12 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
-        def comparison_call_edge_index(records: darray[ComparisonCallEdgeRecord]&, caller: darray[u8]&, callee: darray[u8]&) -> i64 can[Abort.Panic]:
-            for index in 0..<records.count |index, records, caller, callee|:
-                return index.i64() if byte_arrays_equal(records[index].caller, caller) and byte_arrays_equal(records[index].callee, callee)
+        def comparison_call_edge_index(records: darray[ComparisonCallEdgeRecord]&, subject: ComparisonCallEdgeRecord) -> i64 can[Abort.Panic]:
+            for index in 0..<records.count |index, records, subject|:
+                candidate: ComparisonCallEdgeRecord = records[index]
+                if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
+                    return index.i64() if candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id)
+                return index.i64() if candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee)
             return NATIVE_NEGATIVE_ONE
 
 
@@ -343,14 +349,14 @@ extend ProfilerNative:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
                 record: ComparisonCallEdgeRecord = records[index]
-                missing <- missing + NATIVE_ONE if comparison_call_edge_index(other, record.caller, record.callee) < NATIVE_ZERO
+                missing <- missing + NATIVE_ONE if comparison_call_edge_index(other, record) < NATIVE_ZERO
             return missing
 
 
         def append_comparison_call_edge_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonCallEdgeRecord]&, other: darray[ComparisonCallEdgeRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
             for index in 0..<records.count |index, records, other, label, emitted, buffer|:
                 record: ComparisonCallEdgeRecord = records[index]
-                continue if comparison_call_edge_index(other, record.caller, record.callee) >= NATIVE_ZERO
+                continue if comparison_call_edge_index(other, record) >= NATIVE_ZERO
                 if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
                     append_text(buffer, "<tr><th scope='row'>")
                     append_text(buffer, label)
@@ -392,12 +398,12 @@ extend ProfilerNative:
             append_text(buffer, "[")
             first: mutable bool = true
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, buffer|:
-                candidate_index: i64 = comparison_call_edge_index(candidate, baseline[baseline_index].caller, baseline[baseline_index].callee)
+                candidate_index: i64 = comparison_call_edge_index(candidate, baseline[baseline_index])
                 append_text(buffer, ",") if not first
                 append_comparison_call_edge_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
                 first <- false
             for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, buffer|:
-                baseline_index: i64 = comparison_call_edge_index(baseline, candidate[candidate_index].caller, candidate[candidate_index].callee)
+                baseline_index: i64 = comparison_call_edge_index(baseline, candidate[candidate_index])
                 continue if baseline_index >= NATIVE_ZERO
                 append_text(buffer, ",") if not first
                 append_comparison_call_edge_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
@@ -405,22 +411,25 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
-        def comparison_stack_index(records: darray[ComparisonStackRecord]&, path: darray[u8]&) -> i64 can[Abort.Panic]:
-            for index in 0..<records.count |index, records, path|:
-                return index.i64() if byte_arrays_equal(records[index].path, path)
+        def comparison_stack_index(records: darray[ComparisonStackRecord]&, subject: ComparisonStackRecord) -> i64 can[Abort.Panic]:
+            for index in 0..<records.count |index, records, subject|:
+                candidate: ComparisonStackRecord = records[index]
+                if subject.identity_path.count > NATIVE_ZERO.usize():
+                    return index.i64() if candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path)
+                return index.i64() if candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path)
             return NATIVE_NEGATIVE_ONE
 
 
         def comparison_missing_stack_count(records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
-                missing <- missing + NATIVE_ONE if comparison_stack_index(other, records[index].path) < NATIVE_ZERO
+                missing <- missing + NATIVE_ONE if comparison_stack_index(other, records[index]) < NATIVE_ZERO
             return missing
 
 
         def append_comparison_stack_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
             for index in 0..<records.count |index, records, other, label, emitted, buffer|:
-                continue if comparison_stack_index(other, records[index].path) >= NATIVE_ZERO
+                continue if comparison_stack_index(other, records[index]) >= NATIVE_ZERO
                 if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
                     append_text(buffer, "<tr><th scope='row'>")
                     append_text(buffer, label)
@@ -491,12 +500,12 @@ extend ProfilerNative:
             append_text(buffer, "[")
             first: mutable bool = true
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, buffer|:
-                candidate_index: i64 = comparison_stack_index(candidate, baseline[baseline_index].path)
+                candidate_index: i64 = comparison_stack_index(candidate, baseline[baseline_index])
                 append_text(buffer, ",") if not first
                 append_comparison_stack_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
                 first <- false
             for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, buffer|:
-                baseline_index: i64 = comparison_stack_index(baseline, candidate[candidate_index].path)
+                baseline_index: i64 = comparison_stack_index(baseline, candidate[candidate_index])
                 continue if baseline_index >= NATIVE_ZERO
                 append_text(buffer, ",") if not first
                 append_comparison_stack_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
@@ -504,10 +513,12 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
-        def comparison_location_index(records: darray[ComparisonLocationRecord]&, source: darray[u8]&, kind: darray[u8]&, function: darray[u8]&, variable: darray[u8]&, line: i64, signed: bool, source_available: bool, variable_available: bool) -> i64 can[Abort.Panic]:
-            for index in 0..<records.count |index, records, source, kind, function, variable, line, signed, source_available, variable_available|:
+        def comparison_location_index(records: darray[ComparisonLocationRecord]&, subject: ComparisonLocationRecord) -> i64 can[Abort.Panic]:
+            for index in 0..<records.count |index, records, subject|:
                 record: ComparisonLocationRecord = records[index]
-                return index.i64() if record.line == line and record.signed == signed and record.source_available == source_available and record.variable_available == variable_available and byte_arrays_equal(record.source, source) and byte_arrays_equal(record.kind, kind) and byte_arrays_equal(record.function, function) and byte_arrays_equal(record.variable, variable)
+                if subject.identity_id.count > NATIVE_ZERO.usize():
+                    return index.i64() if record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
+                return index.i64() if record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
             return NATIVE_NEGATIVE_ONE
 
 
@@ -515,7 +526,7 @@ extend ProfilerNative:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
                 record: ComparisonLocationRecord = records[index]
-                other_index: i64 = comparison_location_index(other, record.source, record.kind, record.function, record.variable, record.line, record.signed, record.source_available, record.variable_available)
+                other_index: i64 = comparison_location_index(other, record)
                 missing <- missing + NATIVE_ONE if other_index < NATIVE_ZERO
             return missing
 
@@ -523,7 +534,7 @@ extend ProfilerNative:
         def append_comparison_location_change_rows_html(buffer: mutable darray[u8]&, records: darray[ComparisonLocationRecord]&, other: darray[ComparisonLocationRecord]&, label: sview, emitted: mutable i64&) -> void can[Abort.Panic, Memory.Allocate]:
             for index in 0..<records.count |index, records, other, label, emitted, buffer|:
                 record: ComparisonLocationRecord = records[index]
-                other_index: i64 = comparison_location_index(other, record.source, record.kind, record.function, record.variable, record.line, record.signed, record.source_available, record.variable_available)
+                other_index: i64 = comparison_location_index(other, record)
                 continue if other_index >= NATIVE_ZERO
                 if emitted < NATIVE_COMPARISON_HTML_DETAIL_LIMIT:
                     append_text(buffer, "<tr><th scope='row'>")
@@ -626,13 +637,13 @@ extend ProfilerNative:
             first: mutable bool = true
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, buffer|:
                 baseline_record: ComparisonLocationRecord = baseline[baseline_index]
-                candidate_index: i64 = comparison_location_index(candidate, baseline_record.source, baseline_record.kind, baseline_record.function, baseline_record.variable, baseline_record.line, baseline_record.signed, baseline_record.source_available, baseline_record.variable_available)
+                candidate_index: i64 = comparison_location_index(candidate, baseline_record)
                 append_text(buffer, ",") if not first
                 append_comparison_location_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
                 first <- false
             for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, buffer|:
                 candidate_record: ComparisonLocationRecord = candidate[candidate_index]
-                baseline_index: i64 = comparison_location_index(baseline, candidate_record.source, candidate_record.kind, candidate_record.function, candidate_record.variable, candidate_record.line, candidate_record.signed, candidate_record.source_available, candidate_record.variable_available)
+                baseline_index: i64 = comparison_location_index(baseline, candidate_record)
                 continue if baseline_index >= NATIVE_ZERO
                 append_text(buffer, ",") if not first
                 append_comparison_location_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
@@ -650,6 +661,7 @@ extend ProfilerNative:
                 workload_mismatch <- not byte_arrays_equal(baseline.workload_identity, candidate.workload_identity)
             compiler_mismatch: bool = not byte_arrays_equal(baseline.compiler_commit, candidate.compiler_commit)
             optimization_mismatch: bool = not byte_arrays_equal(baseline.opt_level, candidate.opt_level)
+            identity_mismatch: bool = baseline.stable_ids_available != candidate.stable_ids_available
             resource_metrics_mismatch: bool = baseline.resource_metrics_available != candidate.resource_metrics_available
             target_failure: bool = baseline.exit_code != NATIVE_ZERO or candidate.exit_code != NATIVE_ZERO
             evidence_loss: bool = baseline.dropped > NATIVE_ZERO or candidate.dropped > NATIVE_ZERO or baseline.frame_dropped > NATIVE_ZERO or candidate.frame_dropped > NATIVE_ZERO or baseline.dropped_call_edges > NATIVE_ZERO or candidate.dropped_call_edges > NATIVE_ZERO or baseline.dropped_stacks > NATIVE_ZERO or candidate.dropped_stacks > NATIVE_ZERO or baseline.stack_overflow_entries > NATIVE_ZERO or candidate.stack_overflow_entries > NATIVE_ZERO or baseline.trace_events_omitted > NATIVE_ZERO or candidate.trace_events_omitted > NATIVE_ZERO or baseline.detail_budget_exceeded or candidate.detail_budget_exceeded
@@ -662,7 +674,7 @@ extend ProfilerNative:
             rss_percent_failed: bool = comparison_percent_exceeded(baseline.peak_rss_bytes, candidate.peak_rss_bytes, policy.max_rss_regression_percent, rss_available)
             rss_absolute_failed: bool = comparison_absolute_exceeded(candidate.peak_rss_bytes, policy.max_rss_bytes, rss_available)
             function_failed: bool = comparison_function_self_exceeded(baseline.functions, candidate.functions, policy.max_function_self_regression_percent)
-            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
+            gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, identity_mismatch, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
             gate_failed: bool = wall_percent_failed or wall_absolute_failed or cpu_percent_failed or cpu_absolute_failed or rss_percent_failed or rss_absolute_failed or function_failed
             if format_html:
                 json_details: mutable darray[u8] = []
@@ -723,13 +735,14 @@ extend ProfilerNative:
                 append_text(buffer, "<p><strong>Gate:</strong> ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
                 append_text(buffer, "</p>")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "<section class='warning' aria-labelledby='comparison-warnings'><h2 id='comparison-warnings'>Warnings</h2><ul>")
                     append_text(buffer, "<li>Source paths or contents differ.</li>" if source_mismatch else "")
                     append_text(buffer, "<li>Workload metadata differs.</li>" if workload_mismatch else "")
                     append_text(buffer, "<li>Collection modes differ.</li>" if collection_mode_mismatch else "")
                     append_text(buffer, "<li>Compiler commits differ.</li>" if compiler_mismatch else "")
                     append_text(buffer, "<li>Optimization levels differ.</li>" if optimization_mismatch else "")
+                    append_text(buffer, "<li>Stable identity coverage differs; readable-name fallback is unsafe for a gated comparison.</li>" if identity_mismatch else "")
                     append_text(buffer, "<li>Resource metrics are not comparable.</li>" if resource_metrics_mismatch else "")
                     append_text(buffer, "<li>One or both target executions failed.</li>" if target_failure else "")
                     append_text(buffer, "<li>One or both captures contain incomplete or bounded evidence.</li>" if evidence_loss else "")
@@ -819,13 +832,14 @@ extend ProfilerNative:
                 append_text(buffer, " candidate=")
                 append_i64(buffer, candidate.location_records.count.i64())
                 append_text(buffer, "\n")
-                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or identity_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
                     append_text(buffer, "warnings:\n")
                     append_comparison_warning_text(buffer, "baseline and candidate use different source paths or contents", source_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different workload metadata", workload_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different collection modes", collection_mode_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different compiler commits", compiler_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate use different optimization levels", optimization_mismatch)
+                    append_comparison_warning_text(buffer, "baseline and candidate differ in stable identity coverage; readable-name fallback is unsafe for a gated comparison", identity_mismatch)
                     append_comparison_warning_text(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch)
                     append_comparison_warning_text(buffer, "baseline or candidate target execution failed", target_failure)
                     append_comparison_warning_text(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss)
@@ -845,6 +859,9 @@ extend ProfilerNative:
             append_json_string(buffer, baseline.opt_level)
             append_text(buffer, ",\"collection_mode\":")
             append_json_string(buffer, baseline.collection_mode)
+            append_text(buffer, ",\"identity\":\"")
+            append_text(buffer, "compiler_stable_ids" if baseline.stable_ids_available else "source_name_fallback")
+            append_text(buffer, "\"")
             append_text(buffer, ",\"exit_code\":")
             if baseline.exit_code < NATIVE_ZERO:
                 append_text(buffer, "null")
@@ -860,6 +877,9 @@ extend ProfilerNative:
             append_json_string(buffer, candidate.opt_level)
             append_text(buffer, ",\"collection_mode\":")
             append_json_string(buffer, candidate.collection_mode)
+            append_text(buffer, ",\"identity\":\"")
+            append_text(buffer, "compiler_stable_ids" if candidate.stable_ids_available else "source_name_fallback")
+            append_text(buffer, "\"")
             append_text(buffer, ",\"exit_code\":")
             if candidate.exit_code < NATIVE_ZERO:
                 append_text(buffer, "null")
@@ -939,6 +959,7 @@ extend ProfilerNative:
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different collection modes", collection_mode_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different compiler commits", compiler_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate use different optimization levels", optimization_mismatch, &warning_first)
+            warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in stable identity coverage; readable-name fallback is unsafe for a gated comparison", identity_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline and candidate differ in resource-metric availability", resource_metrics_mismatch, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "baseline or candidate target execution failed", target_failure, &warning_first)
             warning_count <- warning_count + append_comparison_warning_json(buffer, "one or both captures contain incomplete or bounded evidence", evidence_loss, &warning_first)
@@ -1052,12 +1073,12 @@ extend ProfilerNative:
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
+                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)

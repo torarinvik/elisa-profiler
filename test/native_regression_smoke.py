@@ -17,6 +17,8 @@ TIMEOUT_SECONDS = 120
 ERROR_STATUS = 2
 RECURSIVE_CALLS = 7
 I64_MAX = 9223372036854775807
+IDENTITY_ID_BASELINE = 2**63
+IDENTITY_ID_CANDIDATE = 2**64 - 1
 
 
 def run(*args, ok=True, expected=None):
@@ -84,6 +86,32 @@ def main():
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))
         assert comparison["baseline"]["source"] == report["source"]
         assert comparison["status"] == "ok"
+        identity_function = {
+            "function": "same_readable_name",
+            "identity_id": IDENTITY_ID_BASELINE,
+            "events": 1,
+            "call_events": 1,
+            "completed_calls": 1,
+            "inclusive_ns": 10,
+            "self_ns": 10,
+            "interval_ns": 10,
+            "max_interval_ns": 10,
+        }
+        identity_baseline = copy.deepcopy(report)
+        identity_candidate = copy.deepcopy(report)
+        identity_baseline["functions"] = [identity_function]
+        identity_candidate["functions"] = [dict(identity_function, identity_id=IDENTITY_ID_CANDIDATE)]
+        identity_baseline_path = work / "identity-baseline.json"
+        identity_candidate_path = work / "identity-candidate.json"
+        identity_baseline_path.write_text(json.dumps(identity_baseline), encoding="utf-8")
+        identity_candidate_path.write_text(json.dumps(identity_candidate), encoding="utf-8")
+        identity_comparison = json.loads(run("compare", identity_baseline_path, identity_candidate_path, "--format", "json"))
+        identity_changes = [row for row in identity_comparison["functions"] if row["function"] == "same_readable_name"]
+        assert len(identity_changes) == 2, identity_changes
+        assert any(row["events"]["baseline"] is not None and row["events"]["candidate"] is None for row in identity_changes)
+        assert any(row["events"]["baseline"] is None and row["events"]["candidate"] is not None for row in identity_changes)
+        assert identity_comparison["baseline"]["identity"] == "compiler_stable_ids"
+        assert identity_comparison["candidate"]["identity"] == "compiler_stable_ids"
         assert comparison["metrics"]["execution_ms_mean"]["baseline"] == 1.25
         report["locations"] = [{
             "kind": "value", "function": "main", "line": 1, "count": 1,

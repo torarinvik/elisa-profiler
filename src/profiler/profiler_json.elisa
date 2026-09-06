@@ -383,6 +383,25 @@ extend ProfilerNative:
             return true
 
 
+        def json_read_optional_unsigned_text_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            value_start: i64 = json_key_value_start(data, key, start, stop)
+            result <- []
+            return true if value_start < NATIVE_ZERO
+            cursor: mutable usize = value_start.usize()
+            token_start: usize = cursor
+            while cursor < stop |cursor, data|:
+                byte: u8 = data[cursor]
+                break if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                cursor <- cursor + NATIVE_ONE.usize()
+            return false if cursor == token_start or (cursor < stop and not json_token_terminated(data, cursor, stop))
+            return false if cursor - token_start > NATIVE_ONE.usize() and data[token_start] == NATIVE_BYTE_ASCII_ZERO
+            for index in token_start..<cursor |index, data, result|:
+                result.push(data[index])
+            return false if not protocol_unsigned_u64(result)
+            result <- [] if result.count == NATIVE_ONE.usize() and result[NATIVE_ZERO.usize()] == NATIVE_BYTE_ASCII_ZERO
+            return true
+
+
         def json_read_nullable_number_field(data: darray[u8]&, key: sview, start: usize, stop: usize, result: mutable i64&, available: mutable bool&) -> bool can[Abort.Panic]:
             value_start: i64 = json_key_value_start(data, key, start, stop)
             if value_start < NATIVE_ZERO:
@@ -585,10 +604,11 @@ extend ProfilerNative:
                 object_stop: i64 = json_object_end(data, cursor, content_stop)
                 return false if object_stop < NATIVE_ZERO
                 record: mutable ComparisonFunctionRecord = ComparisonFunctionRecord{
-                    function: [], events: NATIVE_ZERO, call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO,
+                    function: [], identity_id: [], events: NATIVE_ZERO, call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO,
                     inclusive_ns: NATIVE_ZERO, self_ns: NATIVE_ZERO, interval_ns: NATIVE_ZERO, max_interval_ns: NATIVE_ZERO
                 }
                 return false if not json_read_string_field(data, "function", cursor, object_stop.usize(), &record.function) or record.function.count == NATIVE_ZERO.usize()
+                return false if not json_read_optional_unsigned_text_field(data, "identity_id", cursor, object_stop.usize(), &record.identity_id)
                 return false if not json_read_number_field(data, "events", cursor, object_stop.usize(), &record.events)
                 return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &record.call_events)
                 return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &record.completed_calls)
@@ -624,10 +644,13 @@ extend ProfilerNative:
                 object_stop: i64 = json_object_end(data, cursor, content_stop)
                 return false if object_stop < NATIVE_ZERO
                 record: mutable ComparisonCallEdgeRecord = ComparisonCallEdgeRecord{
-                    caller: [], callee: [], call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO, inclusive_ns: NATIVE_ZERO
+                    caller: [], callee: [], caller_identity_id: [], callee_identity_id: [], call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO, inclusive_ns: NATIVE_ZERO
                 }
                 return false if not json_read_string_field(data, "caller", cursor, object_stop.usize(), &record.caller) or record.caller.count == NATIVE_ZERO.usize()
                 return false if not json_read_string_field(data, "callee", cursor, object_stop.usize(), &record.callee) or record.callee.count == NATIVE_ZERO.usize()
+                return false if not json_read_optional_unsigned_text_field(data, "caller_id", cursor, object_stop.usize(), &record.caller_identity_id)
+                return false if not json_read_optional_unsigned_text_field(data, "callee_id", cursor, object_stop.usize(), &record.callee_identity_id)
+                return false if (record.caller_identity_id.count > NATIVE_ZERO.usize()) != (record.callee_identity_id.count > NATIVE_ZERO.usize())
                 return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &record.call_events)
                 return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &record.completed_calls)
                 return false if not json_read_number_field(data, "inclusive_ns", cursor, object_stop.usize(), &record.inclusive_ns)
@@ -659,9 +682,13 @@ extend ProfilerNative:
                 object_stop: i64 = json_object_end(data, cursor, content_stop)
                 return false if object_stop < NATIVE_ZERO
                 record: mutable ComparisonStackRecord = ComparisonStackRecord{
-                    path: [], call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO, self_ns: NATIVE_ZERO
+                    path: [], identity_path: [], call_events: NATIVE_ZERO, completed_calls: NATIVE_ZERO, self_ns: NATIVE_ZERO
                 }
                 return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &record.path) or record.path.count == NATIVE_ZERO.usize()
+                identity_path_available: mutable bool = false
+                return false if not json_read_nullable_string_field(data, "stack_ids", cursor, object_stop.usize(), &record.identity_path, &identity_path_available)
+                if identity_path_available:
+                    return false if not protocol_identity_path(record.identity_path)
                 return false if not json_read_number_field(data, "call_events", cursor, object_stop.usize(), &record.call_events)
                 return false if not json_read_number_field(data, "completed_calls", cursor, object_stop.usize(), &record.completed_calls)
                 return false if not json_read_number_field(data, "self_ns", cursor, object_stop.usize(), &record.self_ns)
@@ -693,13 +720,14 @@ extend ProfilerNative:
                 object_stop: i64 = json_object_end(data, cursor, content_stop)
                 return false if object_stop < NATIVE_ZERO
                 record: mutable ComparisonLocationRecord = ComparisonLocationRecord{
-                    source: [], kind: [], function: [], variable: [], line: NATIVE_ZERO, signed: false,
+                    source: [], kind: [], function: [], variable: [], identity_id: [], line: NATIVE_ZERO, signed: false,
                     source_available: false, variable_available: false, count: NATIVE_ZERO, interval_ns: NATIVE_ZERO, max_interval_ns: NATIVE_ZERO
                 }
                 return false if not json_read_nullable_string_field(data, "source", cursor, object_stop.usize(), &record.source, &record.source_available)
                 return false if not json_read_string_field(data, "kind", cursor, object_stop.usize(), &record.kind)
                 return false if not protocol_field_is(record.kind, "statement") and not protocol_field_is(record.kind, "value") and not protocol_field_is(record.kind, "function")
                 return false if not json_read_string_field(data, "function", cursor, object_stop.usize(), &record.function) or record.function.count == NATIVE_ZERO.usize()
+                return false if not json_read_optional_unsigned_text_field(data, "identity_id", cursor, object_stop.usize(), &record.identity_id)
                 return false if not json_read_number_field(data, "line", cursor, object_stop.usize(), &record.line)
                 return false if not json_read_nullable_string_field(data, "variable", cursor, object_stop.usize(), &record.variable, &record.variable_available)
                 return false if not json_read_optional_bool_field(data, "signed", cursor, object_stop.usize(), &record.signed)
@@ -855,6 +883,15 @@ extend ProfilerNative:
             return false if not json_read_call_edge_records(data, &capture.call_edges)
             return false if not json_read_stack_records(data, &capture.stacks)
             return false if not json_read_location_records(data, &capture.location_records)
+            capture.stable_ids_available <- false
+            for index in 0..<capture.functions.count |index, capture|:
+                capture.stable_ids_available <- true if capture.functions[index].identity_id.count > NATIVE_ZERO.usize()
+            for index in 0..<capture.call_edges.count |index, capture|:
+                capture.stable_ids_available <- true if capture.call_edges[index].caller_identity_id.count > NATIVE_ZERO.usize()
+            for index in 0..<capture.stacks.count |index, capture|:
+                capture.stable_ids_available <- true if capture.stacks[index].identity_path.count > NATIVE_ZERO.usize()
+            for index in 0..<capture.location_records.count |index, capture|:
+                capture.stable_ids_available <- true if capture.location_records[index].identity_id.count > NATIVE_ZERO.usize()
             return true
 
 

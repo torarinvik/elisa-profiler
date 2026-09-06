@@ -316,6 +316,7 @@ module ProfilerNative:
 
         struct ComparisonFunctionRecord:
             function: mutable darray[u8]
+            identity_id: mutable darray[u8]
             events: mutable i64
             call_events: mutable i64
             completed_calls: mutable i64
@@ -327,12 +328,15 @@ module ProfilerNative:
         struct ComparisonCallEdgeRecord:
             caller: mutable darray[u8]
             callee: mutable darray[u8]
+            caller_identity_id: mutable darray[u8]
+            callee_identity_id: mutable darray[u8]
             call_events: mutable i64
             completed_calls: mutable i64
             inclusive_ns: mutable i64
 
         struct ComparisonStackRecord:
             path: mutable darray[u8]
+            identity_path: mutable darray[u8]
             call_events: mutable i64
             completed_calls: mutable i64
             self_ns: mutable i64
@@ -342,6 +346,7 @@ module ProfilerNative:
             kind: mutable darray[u8]
             function: mutable darray[u8]
             variable: mutable darray[u8]
+            identity_id: mutable darray[u8]
             line: mutable i64
             signed: mutable bool
             source_available: mutable bool
@@ -371,6 +376,7 @@ module ProfilerNative:
             cpu_micros: mutable i64
             peak_rss_bytes: mutable i64
             resource_metrics_available: mutable bool
+            stable_ids_available: mutable bool
             exit_code: mutable i64
             detail_budget_exceeded: mutable bool
             functions: mutable darray[ComparisonFunctionRecord]
