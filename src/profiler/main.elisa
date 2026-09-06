@@ -1699,7 +1699,7 @@ extend ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [options] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
@@ -1707,7 +1707,7 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--progress PATH] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
