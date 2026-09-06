@@ -363,6 +363,7 @@
       "type": "object",
       "properties": {
         "source_sha256": { "type": ["string", "null"] },
+        "source_tree_sha256": { "type": ["string", "null"] },
         "source_size_bytes": { "type": "integer", "minimum": 0 },
         "working_directory": { "type": "string" },
         "stdin": {

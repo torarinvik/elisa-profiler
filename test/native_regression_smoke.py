@@ -368,6 +368,25 @@ def main():
         assert failed_report["run"]["exit_code"] == 7
         assert failed_report["run"]["outcome"] == "target_exit"
         assert failed_report["workload"]["source_sha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
+        dependency_target = work / "dependency-target.elisa"
+        dependency_helper = work / "dependency-helper.elisa"
+        dependency_helper.write_text("def helper() -> i64:\n    return 1\n", encoding="utf-8")
+        dependency_target.write_text(
+            'include "dependency-helper.elisa"\n\n'
+            "def main() -> i64:\n"
+            "    return 0 if helper() == 1 else 1\n",
+            encoding="utf-8",
+        )
+        run("profile", dependency_target, "--format", "json", "--output", output)
+        dependency_first = json.loads(output.read_text(encoding="utf-8"))
+        dependency_source_digest = dependency_first["workload"]["source_sha256"]
+        dependency_tree_digest = dependency_first["workload"]["source_tree_sha256"]
+        assert len(dependency_tree_digest) == 64
+        dependency_helper.write_text("def helper() -> i64:\n    return 2\n", encoding="utf-8")
+        run("profile", dependency_target, "--format", "json", "--output", output, expected=1)
+        dependency_second = json.loads(output.read_text(encoding="utf-8"))
+        assert dependency_second["workload"]["source_sha256"] == dependency_source_digest
+        assert dependency_second["workload"]["source_tree_sha256"] != dependency_tree_digest
         assert failed_report["run"]["signal"] is None
         assert failed_report["quality"] == {
             "capture": "target_exit",

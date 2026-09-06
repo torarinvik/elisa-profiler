@@ -112,6 +112,7 @@ profiler-native-smoke: profiler-native
 		grep -Fq 'Native Elisa offline renderer' "$$native_work/offline.html"; \
 		grep -Fq 'Outcome' "$$native_work/offline.html"; \
 		grep -Fq 'Source SHA-256' "$$native_work/offline.html"; \
+		grep -Fq 'source_tree_sha256' "$$native_work/offline.html"; \
 		grep -Fq 'Capture completeness' "$$native_work/offline.html"; \
 		grep -Fq 'Flame graph' "$$native_work/offline.html"; \
 		grep -Fq 'flame-filter' "$$native_work/offline.html"; \
@@ -126,6 +127,7 @@ profiler-native-smoke: profiler-native
 		grep -Fq '<!doctype html>' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Hotspots' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Source SHA-256' "$$native_work/hot-loop.html"; \
+		grep -Fq 'Source tree SHA-256' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Capture completeness' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Flame graph' "$$native_work/hot-loop.html"; \
 		grep -Fq 'flame-filter' "$$native_work/hot-loop.html"; \

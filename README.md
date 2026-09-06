@@ -320,9 +320,10 @@ hostile names do not become JavaScript code or rounded metrics.
 Raw function records leave percentages null when the collector did not compute
 them; the viewer never presents that absence as a numeric zero.
 The overview also shows workload reproducibility evidence: working directory,
-stdin path and hash when available, forwarded target arguments, environment
-override names without their values, and the explicit random-seed/input-hash
-policy. Offline HTML preserves the same workload object as escaped detail.
+stdin path and hash when available, top-level source and compiler-enumerated
+source-tree hashes, forwarded target arguments, environment override names
+without their values, and the explicit random-seed/input-hash policy. Offline
+HTML preserves the same workload object as escaped detail.
 Both live and offline HTML include a diagnostics panel that explains incomplete
 captures, dropped transport/detail records, byte-budget refusals, stack
 overflow, omitted full-trace events, and target crash signals when those

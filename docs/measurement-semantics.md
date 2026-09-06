@@ -55,6 +55,12 @@ identity contract. Fallback captures use null namespace/version. A capture from
 an older identity contract must not be compared as if it used the same IDs;
 these fields are declarations of evidence coverage, not estimates.
 
+The workload also carries `source_tree_sha256` when the compiler can enumerate
+the source dependency tree. It is an ordered digest of the bytes of every
+listed source dependency, including the root source. This is deliberately
+independent of checkout paths, so an included-file edit changes workload
+identity even when the top-level source file is unchanged.
+
 Native collector streams begin with a capture marker and finish with a
 completion marker. Successful target runs require both markers; timeout and
 signal captures may intentionally be partial and expose
