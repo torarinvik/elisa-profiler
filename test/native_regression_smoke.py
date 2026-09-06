@@ -362,6 +362,12 @@ def main():
             "repetition": {"scope": "run.repetitions", "warmups_excluded": True},
             "clock": {"domain": "wall", "unit": "ns", "source": "CLOCK_MONOTONIC"},
         }
+        assert measured["numeric_encoding"] == {
+            "integer": "decimal_json_integer",
+            "large_integer_policy": "preserve_decimal_text",
+            "viewer_metric_parser": "raw_json_to_BigInt",
+            "javascript_safe_integer": "2^53_minus_1",
+        }
         assert measured["run"]["capabilities"]["timing"] == "wall"
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True

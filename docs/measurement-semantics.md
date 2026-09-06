@@ -96,6 +96,13 @@ instrumented timing clock is `CLOCK_MONOTONIC` wall time in integer
 nanoseconds; `run.timing_clock` and the capability vector remain authoritative
 for future clock domains.
 
+Integer metrics are emitted as exact decimal JSON integer text. The bundled
+HTML viewer extracts metric lexemes from the embedded report and converts them
+to JavaScript `BigInt`; it does not use `JSON.parse` for timing, count, or
+Speedscope weight fields. Consumers that use ordinary JavaScript JSON parsing
+must apply the same arbitrary-precision policy or they may round values above
+`2^53 - 1`.
+
 - `events`, `locations`, `statement_events`, `value_events`, and
   `function_events` are callback observations. They count collector records,
   not function invocations unless the field is explicitly named

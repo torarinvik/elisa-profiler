@@ -166,6 +166,17 @@
       },
       "additionalProperties": false
     },
+    "numeric_encoding": {
+      "type": "object",
+      "required": ["integer", "large_integer_policy", "viewer_metric_parser", "javascript_safe_integer"],
+      "properties": {
+        "integer": { "const": "decimal_json_integer" },
+        "large_integer_policy": { "const": "preserve_decimal_text" },
+        "viewer_metric_parser": { "const": "raw_json_to_BigInt" },
+        "javascript_safe_integer": { "const": "2^53_minus_1" }
+      },
+      "additionalProperties": false
+    },
     "quality": {
       "type": "object",
       "required": ["capture", "detail", "event_counts", "completeness", "reasons"],
