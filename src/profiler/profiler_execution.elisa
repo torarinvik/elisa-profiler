@@ -42,6 +42,11 @@ extend ProfilerNative:
             if stderr_fd < NATIVE_ZERO:
                 _ = profiler_ffi_close(stdout_fd)
                 return NATIVE_NEGATIVE_ONE
+            start_time: ProfilerNativeTimespec = read_monotonic()
+            if not monotonic_timestamp_valid(start_time):
+                _ = profiler_ffi_close(stdout_fd)
+                _ = profiler_ffi_close(stderr_fd)
+                return NATIVE_NEGATIVE_ONE
             process: i64 = profiler_ffi_fork()
             if process == NATIVE_ZERO:
                 if profiler_ffi_dup2(stdout_fd, NATIVE_STANDARD_OUTPUT) < NATIVE_ZERO or profiler_ffi_dup2(stderr_fd, NATIVE_STANDARD_ERROR) < NATIVE_ZERO:
@@ -58,7 +63,6 @@ extend ProfilerNative:
             _ = profiler_ffi_setpgid(process, process)
             status: mutable i64 = NATIVE_ZERO
             waited: mutable i64 = NATIVE_ZERO
-            start_time: ProfilerNativeTimespec = read_monotonic()
             while waited != process |waited, status|:
                 waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_HANG)
                 break if waited == process or waited < NATIVE_ZERO
@@ -297,6 +301,13 @@ extend ProfilerNative:
                     clear_target_environment()
                     return failed_target_run_result(false)
             start_time: ProfilerNativeTimespec = read_monotonic()
+            if timeout_ns > NATIVE_ZERO and not monotonic_timestamp_valid(start_time):
+                _ = profiler_ffi_close(stdout_fd)
+                _ = profiler_ffi_close(stderr_fd)
+                if stdin_fd >= NATIVE_ZERO:
+                    _ = profiler_ffi_close(stdin_fd)
+                clear_target_environment()
+                return failed_target_run_result(false)
             process: i64 = profiler_ffi_fork()
             if process == NATIVE_ZERO:
                 if profiler_ffi_dup2(stdout_fd, NATIVE_STANDARD_OUTPUT) < NATIVE_ZERO or profiler_ffi_dup2(stderr_fd, NATIVE_STANDARD_ERROR) < NATIVE_ZERO:
@@ -331,6 +342,7 @@ extend ProfilerNative:
             status: mutable i64 = NATIVE_ZERO
             waited: mutable i64 = NATIVE_ZERO
             timed_out: mutable bool = false
+            clock_failed: mutable bool = false
             resource_usage: mutable ProfilerNativeRusage = empty_native_rusage()
             if timeout_ns <= NATIVE_ZERO:
                 waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_OPTIONS, &resource_usage)
@@ -339,6 +351,11 @@ extend ProfilerNative:
                     waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_HANG, &resource_usage)
                     break if waited == process or waited < NATIVE_ZERO
                     now: ProfilerNativeTimespec = read_monotonic()
+                    if not monotonic_timestamp_valid(now):
+                        clock_failed <- true
+                        _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_KILL)
+                        waited <- profiler_ffi_wait4(process, &status, NATIVE_WAIT_NO_OPTIONS, &resource_usage)
+                        break
                     if elapsed_nanoseconds(start_time, now) >= timeout_ns:
                         timed_out <- true
                         _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_TERM)
@@ -361,7 +378,7 @@ extend ProfilerNative:
             if stdin_fd >= NATIVE_ZERO:
                 _ = profiler_ffi_close(stdin_fd)
             clear_target_environment()
-            return failed_target_run_result(timed_out) if waited != process
+            return failed_target_run_result(timed_out) if clock_failed or waited != process
             return TargetRunResult{
                 status: status,
                 elapsed_ns: elapsed_nanoseconds(start_time, finish_time),

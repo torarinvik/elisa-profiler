@@ -220,13 +220,17 @@ extend ProfilerNative:
 
 
         def read_monotonic() -> ProfilerNativeTimespec:
-            timestamp: mutable ProfilerNativeTimespec = ProfilerNativeTimespec{seconds: NATIVE_ZERO, nanoseconds: NATIVE_ZERO}
-            _ = profiler_ffi_clock_gettime(NATIVE_MONOTONIC_CLOCK, &timestamp)
+            timestamp: mutable ProfilerNativeTimespec = ProfilerNativeTimespec{seconds: NATIVE_NEGATIVE_ONE, nanoseconds: NATIVE_NEGATIVE_ONE}
+            return timestamp if profiler_ffi_clock_gettime(NATIVE_MONOTONIC_CLOCK, &timestamp) != NATIVE_ZERO
             return timestamp
 
 
+        def monotonic_timestamp_valid(timestamp: ProfilerNativeTimespec) -> bool:
+            return timestamp.seconds >= NATIVE_ZERO and timestamp.nanoseconds >= NATIVE_ZERO and timestamp.nanoseconds < NATIVE_NANOS_PER_SECOND
+
+
         def elapsed_nanoseconds(start: ProfilerNativeTimespec, finish: ProfilerNativeTimespec) -> i64:
-            return NATIVE_ZERO if finish.seconds < start.seconds
+            return NATIVE_ZERO if not monotonic_timestamp_valid(start) or not monotonic_timestamp_valid(finish) or finish.seconds < start.seconds
             seconds: mutable i64 = finish.seconds - start.seconds
             nanoseconds: mutable i64 = finish.nanoseconds - start.nanoseconds
             if nanoseconds < NATIVE_ZERO:
