@@ -359,9 +359,12 @@ commit, optimization level, target exit status, or evidence quality differs.
 Comparison gates support relative and absolute wall, CPU, RSS, and shared
 function self-time budgets; requested gates return stable regression or
 inconclusive exit statuses and serialize their policy and violations. Compiler-
-stable cross-build identity matching remains a planned extension; current
-comparisons report explicit keyed location changes without pretending that
-readable names are stable identities.
+stable IDs are used for functions, caller edges, folded stacks, and source
+locations when both captures provide the same declared identity contract.
+Legacy captures use their complete readable identity only when both sides lack
+stable IDs. Duplicate readable or stable identities are reported as ambiguous
+changes, and a requested gate becomes inconclusive rather than guessing a
+match; richer structural matching for source rewrites remains future work.
 Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target

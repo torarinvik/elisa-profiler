@@ -1,6 +1,7 @@
 # Elisa profiler measurement semantics
 
-This note defines the meanings of the version-1 native report fields. The
+This note defines the meanings of the native report fields, including the
+version-1 record contract carried by the current version-2 envelope. The
 report is an instrumented event capture, not a statistical CPU sample. A
 renderer must preserve that distinction in labels and comparisons.
 
@@ -241,7 +242,10 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
   IDs are retained as decimal text at the Elisa parser boundary so values above
   signed 64-bit range remain exact. It also validates the declared stable-ID
   namespace/version and treats an unknown or mismatched contract as the same
-  warning/inconclusive condition.
+  warning/inconclusive condition. If either side contains duplicate identities
+  for a comparison key, the result includes an explicit ambiguous-identity
+  warning and a requested gate is inconclusive; the renderer never chooses an
+  arbitrary duplicate.
 
 ## Completeness and failure states
 
