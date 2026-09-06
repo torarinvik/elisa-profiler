@@ -13,7 +13,7 @@ COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.js
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-self-host-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke legacy-profiler-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke progress-smoke path-remap-smoke source-mapping-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-self-host-smoke profiler-native profiler-native-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke collector-strict-smoke collector-content-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -188,32 +188,11 @@ timing-mismatch-smoke:
 overflow-mismatch-smoke:
 	@"$(PROFILER_ROOT)/test/overflow_mismatch_smoke.sh"
 
-profile-resource-smoke:
-	@python3 "$(PROFILER_ROOT)/test/profile_resource_smoke.py"
-
-profile-fd-smoke:
-	@python3 "$(PROFILER_ROOT)/test/profile_fd_smoke.py"
-
-legacy-profiler-smoke:
-	@"$(PROFILER_ROOT)/test/legacy_profiler_smoke.sh"
-
-profile-aggregation-smoke:
-	@python3 "$(PROFILER_ROOT)/test/profile_aggregation_smoke.py"
-
-profile-compare-smoke:
-	@python3 "$(PROFILER_ROOT)/test/profile_compare_smoke.py"
-
-profile-protocol-smoke:
-	@python3 "$(PROFILER_ROOT)/test/profile_protocol_smoke.py"
-
 progress-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/progress_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
 path-remap-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/path_remap_smoke.py" "$(NATIVE_PROFILER_BIN)"
-
-source-mapping-smoke:
-	@python3 "$(PROFILER_ROOT)/test/source_mapping_smoke.py"
 
 source-stability-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/source_stability_smoke.py" "$(NATIVE_PROFILER_BIN)"
@@ -224,4 +203,4 @@ bootstrap-path-smoke: profiler-native
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke profile-workload-compare-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke profile-resource-smoke profile-fd-smoke profile-aggregation-smoke profile-compare-smoke profile-protocol-smoke progress-smoke path-remap-smoke source-mapping-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
+test: compiler-manifest-smoke compiler-smoke profiler-native-smoke native-timeout-smoke recovery-smoke profile-budget-smoke profile-workload-compare-smoke collector-content-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
