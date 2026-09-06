@@ -370,7 +370,8 @@ static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right) {
 static int profile_reserve_bytes_locked(uint64_t bytes) {
     if (bytes > UINT64_MAX - profile_capture_bytes_used ||
         (profile_capture_byte_limit != 0 &&
-         bytes > profile_capture_byte_limit - profile_capture_bytes_used)) {
+         (profile_capture_bytes_used > profile_capture_byte_limit ||
+          bytes > profile_capture_byte_limit - profile_capture_bytes_used))) {
         profile_capture_bytes_dropped =
             profile_saturating_add_u64(profile_capture_bytes_dropped, bytes);
         profile_budget_exceeded = 1;

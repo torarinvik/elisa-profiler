@@ -41,6 +41,13 @@ int main(void) {
     assert(!profile_allocation_bytes(SIZE_MAX, sizeof(profile_entry),
                                      &allocation_bytes));
     assert(profile_table_requires_growth(SIZE_MAX, SIZE_MAX));
+    profile_capture_byte_limit = 1;
+    profile_capture_bytes_used = 2;
+    assert(!profile_reserve_bytes_locked(1));
+    profile_capture_byte_limit = 0;
+    profile_capture_bytes_used = 0;
+    profile_capture_bytes_dropped = 0;
+    profile_budget_exceeded = 0;
 
     const uint32_t repeat_line = 1;
     const size_t entries_before_growth =
