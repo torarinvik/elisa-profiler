@@ -125,6 +125,26 @@ def main():
             "compare", identity_baseline_path, legacy_candidate_path, "--format", "json",
             "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
         )
+        contract_baseline = copy.deepcopy(identity_baseline)
+        contract_candidate = copy.deepcopy(identity_baseline)
+        contract_baseline["run"]["capabilities"] = {"identity": {
+            "status": "compiler_stable_ids", "reason": "fixture", "namespace": "elisa.compiler.trace", "version": 1, "scope": "capture"
+        }}
+        contract_candidate["run"]["capabilities"] = {"identity": {
+            "status": "compiler_stable_ids", "reason": "fixture", "namespace": "other.trace", "version": 1, "scope": "capture"
+        }}
+        contract_baseline_path = work / "identity-contract-baseline.json"
+        contract_candidate_path = work / "identity-contract-candidate.json"
+        contract_baseline_path.write_text(json.dumps(contract_baseline), encoding="utf-8")
+        contract_candidate_path.write_text(json.dumps(contract_candidate), encoding="utf-8")
+        contract_comparison = json.loads(run("compare", contract_baseline_path, contract_candidate_path, "--format", "json"))
+        assert contract_comparison["baseline"]["identity_namespace"] == "elisa.compiler.trace"
+        assert contract_comparison["candidate"]["identity_namespace"] == "other.trace"
+        assert any("stable identity coverage or contract" in warning for warning in contract_comparison["warnings"])
+        run(
+            "compare", contract_baseline_path, contract_candidate_path, "--format", "json",
+            "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
+        )
         assert comparison["metrics"]["execution_ms_mean"]["baseline"] == 1.25
         report["locations"] = [{
             "kind": "value", "function": "main", "line": 1, "count": 1,

@@ -378,6 +378,8 @@ module ProfilerNative:
             peak_rss_bytes: mutable i64
             resource_metrics_available: mutable bool
             stable_ids_available: mutable bool
+            stable_id_namespace: mutable darray[u8]
+            stable_id_version: mutable i64
             exit_code: mutable i64
             detail_budget_exceeded: mutable bool
             functions: mutable darray[ComparisonFunctionRecord]

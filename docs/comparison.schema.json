@@ -94,7 +94,7 @@
   "$defs": {
     "identity": {
       "type": "object",
-      "required": ["path", "source", "compiler_commit", "opt_level", "collection_mode", "identity", "exit_code"],
+      "required": ["path", "source", "compiler_commit", "opt_level", "collection_mode", "identity", "identity_namespace", "identity_version", "exit_code"],
       "properties": {
         "path": { "type": "string" },
         "source": { "type": "string" },
@@ -102,6 +102,8 @@
         "opt_level": { "type": "string" },
         "collection_mode": { "type": "string" },
         "identity": { "type": "string", "enum": ["compiler_stable_ids", "source_name_fallback"] },
+        "identity_namespace": { "type": ["string", "null"], "minLength": 1 },
+        "identity_version": { "type": ["integer", "null"], "minimum": 1 },
         "exit_code": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": false

@@ -225,7 +225,9 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
   stable-ID record with a legacy readable-name record, and it reports a
   stable-identity coverage mismatch as a warning/inconclusive requested gate.
   IDs are retained as decimal text at the Elisa parser boundary so values above
-  signed 64-bit range remain exact.
+  signed 64-bit range remain exact. It also validates the declared stable-ID
+  namespace/version and treats an unknown or mismatched contract as the same
+  warning/inconclusive condition.
 
 ## Completeness and failure states
 

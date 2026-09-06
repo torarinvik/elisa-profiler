@@ -879,6 +879,21 @@ extend ProfilerNative:
             return false if not json_read_nullable_number_field(data, "peak_rss_bytes", run_start.usize(), run_stop.usize(), &capture.peak_rss_bytes, &peak_rss_available)
             return false if peak_rss_available != capture.resource_metrics_available
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &capture.exit_code)
+            capture.stable_id_namespace <- []
+            capture.stable_id_version <- NATIVE_ZERO
+            capabilities_start: i64 = json_key_value_start(data, "capabilities", run_start.usize(), run_stop.usize())
+            if capabilities_start >= NATIVE_ZERO:
+                capabilities_stop: i64 = json_object_end(data, capabilities_start.usize(), run_stop.usize())
+                return false if capabilities_stop < NATIVE_ZERO
+                identity_object: mutable darray[u8] = []
+                return false if not json_read_optional_object_field(data, "identity", capabilities_start.usize(), capabilities_stop.usize(), &identity_object)
+                if identity_object.count > NATIVE_ZERO.usize():
+                    identity_status: mutable darray[u8] = []
+                    return false if not json_read_string_field(identity_object, "status", NATIVE_ZERO.usize(), identity_object.count, &identity_status)
+                    if protocol_field_is(identity_status, "compiler_stable_ids"):
+                        return false if not json_read_string_field(identity_object, "namespace", NATIVE_ZERO.usize(), identity_object.count, &capture.stable_id_namespace)
+                        return false if not json_read_number_field(identity_object, "version", NATIVE_ZERO.usize(), identity_object.count, &capture.stable_id_version)
+                        return false if capture.stable_id_version < NATIVE_ONE
             return false if not json_read_function_records(data, &capture.functions)
             return false if not json_read_call_edge_records(data, &capture.call_edges)
             return false if not json_read_stack_records(data, &capture.stacks)
