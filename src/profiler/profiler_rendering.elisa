@@ -123,7 +123,7 @@ extend ProfilerNative:
             while line_start < records.count |line_start, total, records|:
                 line_end: usize = folded_line_end(records, line_start)
                 weight: i64 = folded_line_weight(records, line_start, line_end)
-                total <- total + weight if weight > NATIVE_ZERO
+                total <- native_saturating_add(total, weight) if weight > NATIVE_ZERO
                 line_start <- line_end + NATIVE_ONE.usize() if line_end < records.count else records.count
             return total
 

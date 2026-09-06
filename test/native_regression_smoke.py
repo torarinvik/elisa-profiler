@@ -16,6 +16,7 @@ NATIVE = ROOT / "bin" / "elisa-profiler"
 TIMEOUT_SECONDS = 120
 ERROR_STATUS = 2
 RECURSIVE_CALLS = 7
+I64_MAX = 9223372036854775807
 
 
 def run(*args, ok=True, expected=None):
@@ -171,6 +172,18 @@ def main():
         assert b"&lt;unsafe&gt;" in offline_html
         assert b"Diagnostics" in offline_html
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
+
+        large_weights = copy.deepcopy(report)
+        large_weights["run"]["location_timing"] = True
+        large_weights["stacks"] = [
+            {"stack": "root", "call_events": 1, "completed_calls": 1, "self_ns": I64_MAX},
+            {"stack": "root;tail", "call_events": 1, "completed_calls": 1, "self_ns": 1},
+        ]
+        capture.write_text(json.dumps(large_weights), encoding="utf-8")
+        large_speedscope = json.loads(run("report", capture, "--format", "speedscope"))
+        assert large_speedscope["profiles"][0]["endValue"] == I64_MAX
+        assert large_speedscope["profiles"][0]["weights"] == [I64_MAX, 1]
+        capture.write_text(json.dumps(report), encoding="utf-8")
 
         output = work / "output.txt"
         output.write_bytes(b"stale" * 10000)
