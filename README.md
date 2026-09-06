@@ -309,6 +309,11 @@ Both live and offline HTML include a diagnostics panel that explains incomplete
 captures, dropped transport/detail records, byte-budget refusals, stack
 overflow, omitted full-trace events, and target crash signals when those
 conditions are present.
+Live HTML also provides a source view with line numbers, exact observed
+interval weights, searchable source text, and escaped source content. Offline
+HTML enables the same view when the report contains an `--embed-source`
+snapshot; reports without an embedded snapshot retain their location records
+but do not pretend to have source bytes.
 The `compare` command accepts two JSON reports and emits a machine-readable or
 text comparison of execution/compile timing, nullable CPU/RSS metrics, event
 and location counts, thread counts, trace-quality counters, and per-function

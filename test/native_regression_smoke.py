@@ -108,8 +108,15 @@ def main():
                 "inputs_hashed": True,
             },
         }
+        report["source_snapshot"]["content"] = "embedded <source>"
+        report["source_snapshot"]["sha256"] = hashlib.sha256(b"embedded <source>").hexdigest()
         capture.write_text(json.dumps(report), encoding="utf-8")
         assert run("report", capture, "--format", "text").startswith(b"Elisa profiler")
+        embedded_html = run("report", capture, "--format", "html")
+        assert b"Source view" in embedded_html
+        assert b"source-filter" in embedded_html
+        assert b"source-line" in embedded_html
+        assert b"embedded &lt;source&gt;" in embedded_html
         report["source_snapshot"]["sha256"] = "0" * 64
         capture.write_text(json.dumps(report), encoding="utf-8")
         run("report", capture, "--format", "text", ok=False)
@@ -165,6 +172,9 @@ def main():
         assert b"supersecret" not in live_html
         assert b"Diagnostics" in live_html
         assert b"No recorded capture-quality degradations" in live_html
+        assert b"Source view" in live_html
+        assert b"source-filter" in live_html
+        assert b"source-line" in live_html
 
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))
