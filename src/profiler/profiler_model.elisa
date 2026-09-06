@@ -10,6 +10,7 @@ module ProfilerNative:
         # source-level API exported by this module is `run`; libc symbols above are
         # deliberately aliased to keep the global FFI namespace collision-free.
         const NATIVE_ZERO: i64 = 0
+        const NATIVE_ZERO_F64: f64 = 0.0
         const NATIVE_ONE: i64 = 1
         const NATIVE_TWO: i64 = 2
         const NATIVE_THREE: i64 = 3

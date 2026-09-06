@@ -222,7 +222,7 @@ extend ProfilerNative:
                 available: false,
                 os: [],
                 architecture: [],
-                load_average_1m: 0.0,
+                load_average_1m: NATIVE_ZERO_F64,
                 load_average_available: false,
             }
 
