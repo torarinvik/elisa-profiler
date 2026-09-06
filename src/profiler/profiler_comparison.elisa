@@ -446,7 +446,7 @@ extend ProfilerNative:
 
 
         def append_comparison_report(
-            buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool, policy: ComparisonPolicy
+            buffer: mutable darray[u8]&, baseline_path: darray[u8]&, candidate_path: darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture, format_json: bool, format_html: bool, policy: ComparisonPolicy
         ) -> i64 can[Abort.Panic, Memory.Allocate]:
             source_mismatch: bool = not byte_arrays_equal(baseline.source, candidate.source)
             collection_mode_mismatch: bool = (baseline.collection_mode.count > NATIVE_ZERO.usize() and candidate.collection_mode.count == NATIVE_ZERO.usize()) or (baseline.collection_mode.count == NATIVE_ZERO.usize() and candidate.collection_mode.count > NATIVE_ZERO.usize()) or (baseline.collection_mode.count > NATIVE_ZERO.usize() and candidate.collection_mode.count > NATIVE_ZERO.usize() and not byte_arrays_equal(baseline.collection_mode, candidate.collection_mode))
@@ -469,6 +469,75 @@ extend ProfilerNative:
             function_failed: bool = comparison_function_self_exceeded(baseline.functions, candidate.functions, policy.max_function_self_regression_percent)
             gate_inconclusive: bool = comparison_gate_inconclusive(policy, source_mismatch, workload_mismatch, collection_mode_mismatch, compiler_mismatch, optimization_mismatch, resource_metrics_mismatch, target_failure, evidence_loss, baseline, candidate)
             gate_failed: bool = wall_percent_failed or wall_absolute_failed or cpu_percent_failed or cpu_absolute_failed or rss_percent_failed or rss_absolute_failed or function_failed
+            if format_html:
+                json_details: mutable darray[u8] = []
+                _ = append_comparison_report(&json_details, baseline_path, candidate_path, baseline, candidate, true, false, policy)
+                append_text(buffer, "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Elisa profile comparison</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1180px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;margin-top:1rem}th,td{padding:.55rem .7rem;border-bottom:1px solid #d8dee4;text-align:left}th{font-size:.8rem;color:#57606a}td:not(:first-child){font-family:ui-monospace,SFMono-Regular,Menlo,monospace}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}.warning{border-left:4px solid #bf8700;background:#fff8c5;padding:.75rem;margin-top:1rem}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}th,td{border-color:#30363d}details{border-color:#30363d}.warning{background:#9a670033}}</style></head><body><main><h1>Elisa profile comparison</h1><p>Native comparison view; identity differences and evidence quality are explicit.</p><dl><div><dt>Baseline</dt><dd><code>")
+                append_html_escaped(buffer, baseline_path)
+                append_text(buffer, "</code></dd></div><div><dt>Candidate</dt><dd><code>")
+                append_html_escaped(buffer, candidate_path)
+                append_text(buffer, "</code></dd></div><div><dt>Source identity</dt><dd>")
+                append_text(buffer, "same" if not source_mismatch else "different")
+                append_text(buffer, "</dd></div><div><dt>Workload identity</dt><dd>")
+                append_text(buffer, "same" if not workload_mismatch else "different")
+                append_text(buffer, "</dd></div><div><dt>Compiler / optimization</dt><dd>")
+                append_text(buffer, "same" if not compiler_mismatch and not optimization_mismatch else "different")
+                append_text(buffer, "</dd></div><div><dt>Collection mode</dt><dd>")
+                append_text(buffer, "same" if not collection_mode_mismatch else "different")
+                append_text(buffer, "</dd></div></dl><table><thead><tr><th scope='col'>Metric</th><th scope='col'>Baseline</th><th scope='col'>Candidate</th><th scope='col'>Delta</th></tr></thead><tbody><tr><th scope='row'>Mean execution</th><td>")
+                append_micros_as_millis(buffer, baseline.execution_mean_micros)
+                append_text(buffer, " ms</td><td>")
+                append_micros_as_millis(buffer, candidate.execution_mean_micros)
+                append_text(buffer, " ms</td><td>")
+                append_i64(buffer, native_signed_delta(candidate.execution_mean_micros, baseline.execution_mean_micros))
+                append_text(buffer, " µs</td></tr><tr><th scope='row'>Compilation</th><td>")
+                append_micros_as_millis(buffer, baseline.compile_micros)
+                append_text(buffer, " ms</td><td>")
+                append_micros_as_millis(buffer, candidate.compile_micros)
+                append_text(buffer, " ms</td><td>")
+                append_i64(buffer, native_signed_delta(candidate.compile_micros, baseline.compile_micros))
+                append_text(buffer, " µs</td></tr><tr><th scope='row'>CPU</th><td>")
+                append_micros_as_millis(buffer, baseline.cpu_micros) if baseline.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, "</td><td>")
+                append_micros_as_millis(buffer, candidate.cpu_micros) if candidate.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, "</td><td>")
+                append_i64(buffer, native_signed_delta(candidate.cpu_micros, baseline.cpu_micros)) if baseline.resource_metrics_available and candidate.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, " µs</td></tr><tr><th scope='row'>Peak RSS</th><td>")
+                append_i64(buffer, baseline.peak_rss_bytes) if baseline.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, " bytes</td><td>")
+                append_i64(buffer, candidate.peak_rss_bytes) if candidate.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, " bytes</td><td>")
+                append_i64(buffer, native_signed_delta(candidate.peak_rss_bytes, baseline.peak_rss_bytes)) if baseline.resource_metrics_available and candidate.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, "</td></tr><tr><th scope='row'>Events</th><td>")
+                append_i64(buffer, baseline.events)
+                append_text(buffer, "</td><td>")
+                append_i64(buffer, candidate.events)
+                append_text(buffer, "</td><td>")
+                append_i64(buffer, native_signed_delta(candidate.events, baseline.events))
+                append_text(buffer, "</td></tr><tr><th scope='row'>Locations</th><td>")
+                append_i64(buffer, baseline.locations)
+                append_text(buffer, "</td><td>")
+                append_i64(buffer, candidate.locations)
+                append_text(buffer, "</td><td>")
+                append_i64(buffer, native_signed_delta(candidate.locations, baseline.locations))
+                append_text(buffer, "</td></tr></tbody></table><p><strong>Gate:</strong> ")
+                append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
+                append_text(buffer, "</p>")
+                if source_mismatch or workload_mismatch or collection_mode_mismatch or compiler_mismatch or optimization_mismatch or resource_metrics_mismatch or target_failure or evidence_loss:
+                    append_text(buffer, "<section class='warning' aria-labelledby='comparison-warnings'><h2 id='comparison-warnings'>Warnings</h2><ul>")
+                    append_text(buffer, "<li>Source paths or contents differ.</li>" if source_mismatch else "")
+                    append_text(buffer, "<li>Workload metadata differs.</li>" if workload_mismatch else "")
+                    append_text(buffer, "<li>Collection modes differ.</li>" if collection_mode_mismatch else "")
+                    append_text(buffer, "<li>Compiler commits differ.</li>" if compiler_mismatch else "")
+                    append_text(buffer, "<li>Optimization levels differ.</li>" if optimization_mismatch else "")
+                    append_text(buffer, "<li>Resource metrics are not comparable.</li>" if resource_metrics_mismatch else "")
+                    append_text(buffer, "<li>One or both target executions failed.</li>" if target_failure else "")
+                    append_text(buffer, "<li>One or both captures contain incomplete or bounded evidence.</li>" if evidence_loss else "")
+                    append_text(buffer, "</ul></section>")
+                append_text(buffer, "<details><summary>Raw comparison JSON</summary><pre>")
+                append_html_escaped(buffer, json_details)
+                append_text(buffer, "</pre></details></main></body></html>\n")
+                return comparison_gate_exit_code(policy, gate_inconclusive, gate_failed)
             if not format_json:
                 append_text(buffer, "Elisa profile comparison\n")
                 append_text(buffer, "baseline: ")
@@ -680,7 +749,7 @@ extend ProfilerNative:
 
 
         def compare_offline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler compare BASELINE CANDIDATE [--format text|json] [--output PATH] [--max-wall-regression-percent N] [--max-wall-ms N] [--max-cpu-regression-percent N] [--max-cpu-ms N] [--max-rss-regression-percent N] [--max-rss-bytes N] [--max-function-self-regression-percent N]") if argc < NATIVE_MIN_COMPARE_ARGUMENTS
+            return report_error("usage: elisa-profiler compare BASELINE CANDIDATE [--format text|json|html] [--output PATH] [--max-wall-regression-percent N] [--max-wall-ms N] [--max-cpu-regression-percent N] [--max-cpu-ms N] [--max-rss-regression-percent N] [--max-rss-bytes N] [--max-function-self-regression-percent N]") if argc < NATIVE_MIN_COMPARE_ARGUMENTS
             baseline_path: mutable darray[u8] = []
             candidate_path: mutable darray[u8] = []
             output_path: mutable darray[u8] = []
@@ -696,17 +765,23 @@ extend ProfilerNative:
             copy_cstr(baseline_path, slots[NATIVE_COMPARE_BASELINE_INDEX].cast[cstr])
             copy_cstr(candidate_path, slots[NATIVE_COMPARE_CANDIDATE_INDEX].cast[cstr])
             format_json: mutable bool = false
+            format_html: mutable bool = false
             index: mutable i64 = NATIVE_COMPARE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, output_path, format_json, policy|:
+            while index < argc |index, slots, output_path, format_json, format_html, policy|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
-                    return report_error("--format requires text or json") if index + NATIVE_ONE >= argc
+                    return report_error("--format requires text, json, or html") if index + NATIVE_ONE >= argc
                     if profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "json") == NATIVE_ZERO:
                         format_json <- true
+                        format_html <- false
                     elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "text") == NATIVE_ZERO:
                         format_json <- false
+                        format_html <- false
+                    elif profiler_ffi_strcmp(slots[index + NATIVE_ONE].cast[cstr], "html") == NATIVE_ZERO:
+                        format_json <- false
+                        format_html <- true
                     else:
-                        return report_error("--format requires text or json")
+                        return report_error("--format requires text, json, or html")
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
@@ -787,7 +862,7 @@ extend ProfilerNative:
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)
             rendered: mutable darray[u8] = []
-            gate_status: i64 = append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json, policy)
+            gate_status: i64 = append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json, format_html, policy)
             if output_path.count > NATIVE_ZERO.usize():
                 return gate_status if write_file(output_path, rendered)
                 return report_error("could not write native comparison report")

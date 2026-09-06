@@ -183,6 +183,19 @@ def main() -> int:
             raise SystemExit("native comparison unexpectedly requested a threshold gate")
         if any(value is not None for value in comparison["thresholds"].values()):
             raise SystemExit("native comparison emitted an unexpected default threshold")
+        html_output = root / "comparison.html"
+        html_result = run_command(
+            [str(profiler), "compare", str(baseline), str(candidate), "--format", "html", "--output", str(html_output)],
+            "native comparison html",
+        )
+        if html_result.returncode != 0:
+            raise SystemExit(f"native comparison html failed: {html_result.stderr or html_result.stdout}")
+        html = html_output.read_bytes()
+        for marker in (b"Elisa profile comparison", b"Mean execution", b"Workload identity", b"Warnings", b"Raw comparison JSON"):
+            if marker not in html:
+                raise SystemExit(f"native comparison html omitted {marker!r}")
+        if b"baseline and candidate use different workload metadata" not in html:
+            raise SystemExit("native comparison html omitted its workload warning")
         function_changes = {item["function"]: item for item in comparison["functions"]}
         if set(function_changes) != {"alpha", "beta"}:
             raise SystemExit("native comparison did not retain added and removed functions")

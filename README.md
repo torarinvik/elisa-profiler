@@ -326,6 +326,10 @@ rendered as zero:
     bin/elisa-profiler compare baseline.json candidate.json \
         --format json --output comparison.json
 
+Use `--format html` for a self-contained side-by-side comparison view with
+identity cards, baseline/candidate metric deltas, gate status, warnings, and a
+raw JSON disclosure for machine-readable detail.
+
 Comparison JSON output follows
 [`docs/profile-comparison.schema.json`](docs/profile-comparison.schema.json).
 Comparisons warn when source, workload metadata, collection mode, compiler
