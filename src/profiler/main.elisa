@@ -130,7 +130,7 @@ extend ProfilerNative:
         
         def append_i64(buffer: mutable darray[u8]&, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
             if value == NATIVE_I64_MIN:
-                append_text(buffer, "-9223372036854775808")
+                append_text(buffer, NATIVE_I64_MIN_TEXT)
                 return
             if value == NATIVE_ZERO:
                 buffer.push(NATIVE_BYTE_ASCII_ZERO)
