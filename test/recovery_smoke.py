@@ -117,6 +117,23 @@ def main() -> int:
         assert recovered_text.returncode == 0, (recovered_text.returncode, recovered_text.stderr)
         assert b"outcome: incomplete_artifact" in recovered_text.stdout, recovered_text.stdout
         assert b"capture completeness: partial" in recovered_text.stdout, recovered_text.stdout
+        verified_report = subprocess.run(
+            [str(native), "report", output, "--format", "text", "--source", str(source)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert verified_report.returncode == 0, (verified_report.returncode, verified_report.stderr)
+        changed_source = work / "changed.elisa"
+        changed_source.write_bytes(source_bytes + b"\n# changed checkout\n")
+        rejected_report = subprocess.run(
+            [str(native), "report", output, "--format", "text", "--source", str(changed_source)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert rejected_report.returncode == 2, (rejected_report.returncode, rejected_report.stdout, rejected_report.stderr)
+        assert b"source changed since capture" in rejected_report.stderr, rejected_report.stderr
         subprocess.run([sys.executable, str(ROOT / "test" / "profile_schema_smoke.py"), str(SCHEMA), str(output)], check=True)
         legacy_manifest = work / "legacy.manifest.json"
         legacy_payload = dict(manifest_payload)

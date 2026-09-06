@@ -283,7 +283,11 @@ The `speedscope` format emits a self-contained sampled-profile JSON document
 using the same stack weights, ready to open in Speedscope or another compatible
 viewer.
 The `report` command renders an existing JSON report offline, so changing
-format or display limits never reruns the compiler or target.
+format or display limits never reruns the compiler or target. Pass
+`--source PATH` when the report is being inspected from a checkout: the
+profiler hashes that file and refuses to render if it does not match the
+report's recorded workload identity. This prevents source locations from
+being silently misattributed after a checkout changes.
 The `recover` command reads a progress manifest and its still-present framed
 capture, validates the source identity, ignores an incomplete tail, and emits
 a clearly marked `quality.capture = recovered` report without claiming missing
