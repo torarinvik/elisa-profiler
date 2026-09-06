@@ -39,6 +39,13 @@ extend ProfilerNative:
             append_text(buffer, ",\"tasks\":{\"status\":\"unsupported\",\"reason\":\"task_lifecycle_hooks_unavailable\",\"scope\":\"none\"}")
             append_text(buffer, ",\"identity\":{\"status\":\"")
             append_text(buffer, "compiler_stable_ids\",\"reason\":\"compiler_issued_function_and_location_ids\"" if summary.stable_ids_available else "source_name_fallback\",\"reason\":\"compiler_stable_ids_unavailable\"")
+            if summary.stable_ids_available:
+                append_text(buffer, ",\"namespace\":\"")
+                append_text(buffer, "elisa.compiler.trace")
+                append_text(buffer, "\",\"version\":")
+                append_i64(buffer, NATIVE_TRACE_ID_VERSION)
+            else:
+                append_text(buffer, ",\"namespace\":null,\"version\":null")
             append_text(buffer, ",\"scope\":\"capture\"}")
             append_text(buffer, ",\"detail_limits\":{\"locations\":")
             append_i64(buffer, summary.location_limit)

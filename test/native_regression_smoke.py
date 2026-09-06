@@ -415,7 +415,8 @@ def main():
             "status": "unsupported", "reason": "task_lifecycle_hooks_unavailable", "scope": "none"
         }
         assert measured["run"]["capabilities"]["identity"] == {
-            "status": "compiler_stable_ids", "reason": "compiler_issued_function_and_location_ids", "scope": "capture"
+            "status": "compiler_stable_ids", "reason": "compiler_issued_function_and_location_ids",
+            "namespace": "elisa.compiler.trace", "version": 1, "scope": "capture"
         }
         assert measured["capture"] == {
             "process": {"scope": "single_profiled_child", "lifetime": "launch_to_wait"},

@@ -405,6 +405,8 @@
       "properties": {
         "status": { "type": "string", "enum": ["unsupported", "source_name_fallback", "compiler_stable_ids"] },
         "reason": { "type": "string", "minLength": 1 },
+        "namespace": { "type": ["string", "null"], "minLength": 1 },
+        "version": { "type": ["integer", "null"], "minimum": 1 },
         "scope": { "type": "string", "enum": ["none", "capture"] }
       },
       "additionalProperties": false

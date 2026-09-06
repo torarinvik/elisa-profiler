@@ -48,7 +48,9 @@ reasons because the compiler/runtime exposes instrumentation callbacks but no
 native sampler, allocator-lifecycle stream, or task scheduler lifecycle stream.
 `identity` is `compiler_stable_ids` when compiler-issued function and location
 identity callbacks are observed, and `source_name_fallback` for legacy
-compiler/collector streams. These fields are declarations of evidence
+compiler/collector streams. Stable-ID captures also declare the
+`elisa.compiler.trace` namespace and identity-contract version `1`; fallback
+captures use null namespace/version. These fields are declarations of evidence
 coverage, not estimates.
 
 Native collector streams begin with a capture marker and finish with a
