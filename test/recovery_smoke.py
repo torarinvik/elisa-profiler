@@ -108,6 +108,7 @@ def main() -> int:
         assert b"<dt>Capture completeness</dt><dd>partial</dd>" in recovered_html.stdout, recovered_html.stdout
         assert b"Flame graph" in recovered_html.stdout, recovered_html.stdout
         assert b"flame-filter" in recovered_html.stdout, recovered_html.stdout
+        assert b"Diagnostics" in recovered_html.stdout, recovered_html.stdout
         recovered_text = subprocess.run(
             [str(native), "report", output, "--format", "text"],
             stdout=subprocess.PIPE,

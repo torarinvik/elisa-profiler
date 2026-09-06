@@ -88,6 +88,7 @@ def main():
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))
         assert comparison["status"] == "warning"
         report["summary"]["dropped_call_edges"] = 0
+        report["summary"]["stack_overflow_entries"] = 1
         capture.write_text(json.dumps(report))
         report["source_snapshot"] = {
             "sha256": hashlib.sha256(b"embedded source").hexdigest(),
@@ -139,6 +140,8 @@ def main():
         assert b"Workload reproducibility" in offline_html
         assert b"ELISA_FIXTURE" in offline_html
         assert b"&lt;unsafe&gt;" in offline_html
+        assert b"Diagnostics" in offline_html
+        assert b"Stack depth overflow occurred 1 time(s)" in offline_html
 
         output = work / "output.txt"
         output.write_bytes(b"stale" * 10000)
@@ -158,6 +161,8 @@ def main():
         live_html = live_html_path.read_bytes()
         assert b"Workload reproducibility" in live_html
         assert b"--fixture" in live_html
+        assert b"Diagnostics" in live_html
+        assert b"No recorded capture-quality degradations" in live_html
 
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))

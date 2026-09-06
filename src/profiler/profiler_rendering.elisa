@@ -213,6 +213,56 @@ extend ProfilerNative:
             append_text(buffer, "</dd></div>")
 
 
+        def append_html_diagnostics(buffer: mutable darray[u8]&, capture_complete: bool, dropped: i64, call_edge_dropped: i64, stack_dropped: i64, frame_dropped: i64, capture_bytes_dropped: i64, stack_overflow_entries: i64, trace_omitted: i64, crash_signal: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<section class='panel' aria-labelledby='diagnostics-title'><h2 id='diagnostics-title'>Diagnostics</h2><ul>")
+            has_diagnostics: mutable bool = false
+            if not capture_complete:
+                append_text(buffer, "<li>Capture is incomplete; termination or final timing evidence may be missing.</li>")
+                has_diagnostics <- true
+            if dropped > NATIVE_ZERO:
+                append_text(buffer, "<li>Aggregate event loss: ")
+                append_i64(buffer, dropped)
+                append_text(buffer, " event(s) were dropped.</li>")
+                has_diagnostics <- true
+            if call_edge_dropped > NATIVE_ZERO:
+                append_text(buffer, "<li>Caller/callee detail loss: ")
+                append_i64(buffer, call_edge_dropped)
+                append_text(buffer, " edge record(s) were dropped.</li>")
+                has_diagnostics <- true
+            if stack_dropped > NATIVE_ZERO:
+                append_text(buffer, "<li>Folded-stack detail loss: ")
+                append_i64(buffer, stack_dropped)
+                append_text(buffer, " stack record(s) were dropped.</li>")
+                has_diagnostics <- true
+            if frame_dropped > NATIVE_ZERO:
+                append_text(buffer, "<li>Transport frame loss: ")
+                append_i64(buffer, frame_dropped)
+                append_text(buffer, " frame(s) were dropped.</li>")
+                has_diagnostics <- true
+            if capture_bytes_dropped > NATIVE_ZERO:
+                append_text(buffer, "<li>Capture byte budget refused ")
+                append_i64(buffer, capture_bytes_dropped)
+                append_text(buffer, " byte(s) of detail.</li>")
+                has_diagnostics <- true
+            if stack_overflow_entries > NATIVE_ZERO:
+                append_text(buffer, "<li>Stack depth overflow occurred ")
+                append_i64(buffer, stack_overflow_entries)
+                append_text(buffer, " time(s); folded paths may be incomplete.</li>")
+                has_diagnostics <- true
+            if trace_omitted > NATIVE_ZERO:
+                append_text(buffer, "<li>Full trace retention omitted ")
+                append_i64(buffer, trace_omitted)
+                append_text(buffer, " event(s) after the configured limit.</li>")
+                has_diagnostics <- true
+            if crash_signal > NATIVE_ZERO:
+                append_text(buffer, "<li>Target terminated by signal ")
+                append_i64(buffer, crash_signal)
+                append_text(buffer, ".</li>")
+                has_diagnostics <- true
+            append_text(buffer, "<li>No recorded capture-quality degradations.</li>" if not has_diagnostics else "")
+            append_text(buffer, "</ul></section>")
+
+
         def append_html_workload_object(buffer: mutable darray[u8]&, workload: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<section class='panel' aria-labelledby='workload-title'><h2 id='workload-title'>Workload reproducibility</h2><p>Arguments, input identity, and environment policy are recorded below; environment values are intentionally redacted.</p><details open><summary>Recorded workload identity</summary><pre>")
             append_html_escaped(buffer, workload)
@@ -254,10 +304,25 @@ extend ProfilerNative:
             host_os_available: mutable bool = false
             host_architecture_available: mutable bool = false
             workload: mutable darray[u8] = []
+            call_edge_dropped: mutable i64 = NATIVE_ZERO
+            stack_dropped: mutable i64 = NATIVE_ZERO
+            frame_dropped: mutable i64 = NATIVE_ZERO
+            capture_bytes_dropped: mutable i64 = NATIVE_ZERO
+            stack_overflow_entries: mutable i64 = NATIVE_ZERO
+            trace_omitted: mutable i64 = NATIVE_ZERO
+            crash_signal: mutable i64 = NATIVE_ZERO
+            crash_signal_available: mutable bool = false
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &locations)
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
+            return false if not json_read_optional_number_field(data, "dropped_call_edges", summary_start.usize(), summary_stop.usize(), &call_edge_dropped)
+            return false if not json_read_optional_number_field(data, "dropped_stacks", summary_start.usize(), summary_stop.usize(), &stack_dropped)
+            return false if not json_read_optional_number_field(data, "frame_dropped", summary_start.usize(), summary_stop.usize(), &frame_dropped)
+            return false if not json_read_optional_number_field(data, "capture_bytes_dropped", summary_start.usize(), summary_stop.usize(), &capture_bytes_dropped)
+            return false if not json_read_optional_number_field(data, "stack_overflow_entries", summary_start.usize(), summary_stop.usize(), &stack_overflow_entries)
+            return false if not json_read_optional_number_field(data, "trace_events_omitted", summary_start.usize(), summary_stop.usize(), &trace_omitted)
+            return false if not json_read_nullable_number_field(data, "crash_signal", summary_start.usize(), summary_stop.usize(), &crash_signal, &crash_signal_available)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
             outcome_start: i64 = json_key_value_start(data, "outcome", run_start.usize(), run_stop.usize())
             if outcome_start >= NATIVE_ZERO:
@@ -369,6 +434,7 @@ extend ProfilerNative:
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
             append_html_workload_object(buffer, workload) if workload.count > NATIVE_ZERO.usize()
+            append_html_diagnostics(buffer, capture_complete if capture_complete_available else true, dropped, call_edge_dropped, stack_dropped, frame_dropped, capture_bytes_dropped, stack_overflow_entries, trace_omitted, crash_signal if crash_signal_available else NATIVE_NEGATIVE_ONE)
             append_html_function_browser(buffer, functions)
             append_html_detail_browsers(buffer, call_edges, location_records)
             append_html_flame_graph(buffer, folded)

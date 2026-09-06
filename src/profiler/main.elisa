@@ -917,6 +917,7 @@ extend ProfilerNative:
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
             append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments)
+            append_html_diagnostics(buffer, summary.capture_complete, summary.dropped, summary.call_edge_dropped, summary.stack_dropped, summary.frame_dropped, summary.capture_bytes_dropped, summary.stack_overflow_entries, summary.trace_omitted, summary.crash_signal)
             append_html_function_browser(buffer, summary.function_records)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
             append_html_flame_graph(buffer, summary.folded_records)
