@@ -869,6 +869,7 @@ extend ProfilerNative:
             append_text(buffer, "</dl>")
             append_html_function_browser(buffer, summary.function_records)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
+            append_html_flame_graph(buffer, summary.folded_records)
             append_html_section(buffer, "Folded stacks", summary.stack_records)
             append_html_section(buffer, "Thread loss", summary.thread_loss_records)
             append_text(buffer, "</main></body></html>\n")

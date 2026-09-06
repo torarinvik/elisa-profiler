@@ -106,6 +106,8 @@ def main() -> int:
         expected_source_hash = hashlib.sha256(source_bytes).hexdigest().encode("ascii")
         assert b"<dt>Source SHA-256</dt><dd><code>" + expected_source_hash + b"</code>" in recovered_html.stdout, recovered_html.stdout
         assert b"<dt>Capture completeness</dt><dd>partial</dd>" in recovered_html.stdout, recovered_html.stdout
+        assert b"Flame graph" in recovered_html.stdout, recovered_html.stdout
+        assert b"flame-filter" in recovered_html.stdout, recovered_html.stdout
         recovered_text = subprocess.run(
             [str(native), "report", output, "--format", "text"],
             stdout=subprocess.PIPE,

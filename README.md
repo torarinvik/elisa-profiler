@@ -291,9 +291,12 @@ termination or timing data.
 The `doctor` command performs a read-only prerequisite check for the compiler
 worktree, branch coverage, stage1 freshness, LLVM tools, runtime ABI, and the
 content-validated runtime manifest. `doctor --json` is suitable for scripts.
-The HTML format is a self-contained local report with summary cards, sortable
+The HTML format is a self-contained local report with summary cards, searchable
+hotspots, an interactive folded-timing flame graph with zoom/reset, sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
-it has no network or runtime dependencies.
+it has no network or runtime dependencies. The flame graph uses BigInt parsing
+for serialized weights and treats frame labels as text, so large values and
+hostile names do not become JavaScript code or rounded metrics.
 The `compare` command accepts two JSON reports and emits a machine-readable or
 text comparison of execution/compile timing, nullable CPU/RSS metrics, event
 and location counts, thread counts, trace-quality counters, and per-function

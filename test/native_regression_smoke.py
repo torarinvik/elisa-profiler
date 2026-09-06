@@ -120,6 +120,8 @@ def main():
         assert b"<dt>Measured repetitions</dt><dd>0</dd>" in offline_html
         assert b"edge-filter" in offline_html
         assert b"location-filter" in offline_html
+        assert b"Flame graph" in offline_html
+        assert b"flame-filter" in offline_html
 
         output = work / "output.txt"
         output.write_bytes(b"stale" * 10000)
