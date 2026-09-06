@@ -108,6 +108,23 @@ extend ProfilerNative:
             return equals > NATIVE_ZERO.usize() and equals < value.count
 
 
+        def profiler_internal_environment_name(name: darray[u8]&) -> bool can[Abort.Panic]:
+            return protocol_field_is(name, "ELISA_PROFILE_FD") or protocol_field_is(name, "ELISA_PROFILE_FRAMED") or protocol_field_is(name, "ELISA_PROFILE_THREAD_RECORDS") or protocol_field_is(name, "ELISA_PROFILE_MODE") or protocol_field_is(name, "ELISA_PROFILE_EVENT_TRACE") or protocol_field_is(name, "ELISA_PROFILE_EVENT_TRACE_LIMIT") or protocol_field_is(name, "ELISA_PROFILE_MAX_CAPTURE_BYTES") or protocol_field_is(name, "ELISA_PROFILE_RECENT_PATH")
+
+
+        def profiler_internal_environment_assignment(value: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            equals: mutable usize = value.count
+            for index in 0..<value.count |index, value, equals|:
+                if value[index] == NATIVE_BYTE_EQUALS:
+                    equals <- index
+                    break
+            return false if equals == NATIVE_ZERO.usize() or equals == value.count
+            name: mutable darray[u8] = []
+            for index in 0..<equals |index, value, name|:
+                name.push(value[index])
+            return profiler_internal_environment_name(name)
+
+
         def apply_environment_overrides(environment: darray[u8]) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             assignment_start: mutable usize = NATIVE_ZERO.usize()
             while assignment_start < environment.count |environment, assignment_start|:
@@ -123,6 +140,7 @@ extend ProfilerNative:
                         equals <- assignment_index
                         break
                 return false if equals == NATIVE_ZERO.usize() or equals == assignment.count
+                return false if profiler_internal_environment_assignment(assignment)
                 name: mutable darray[u8] = []
                 value: mutable darray[u8] = []
                 for assignment_index in 0..<equals |assignment, name|:

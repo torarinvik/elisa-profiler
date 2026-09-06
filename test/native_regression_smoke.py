@@ -283,6 +283,7 @@ def main():
         for option in ("--repeat", "--warmup", "--max-event-trace-events"):
             for invalid in ("", "9223372036854775808"):
                 run("profile", ROOT / "examples/hot_loop.elisa", option, invalid, ok=False)
+        run("profile", ROOT / "examples/hot_loop.elisa", "--env", "ELISA_PROFILE_FD=1", ok=False)
         target = work / "target.elisa"
         target.write_text("def main() -> i64:\n    return 7\n")
         run("profile", target, "--format", "json", "--output", output, expected=7)

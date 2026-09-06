@@ -250,6 +250,12 @@ Useful controls:
     --env KEY=VALUE        set a target environment variable (repeatable)
     -- TARGET_ARG...       forward target arguments without shell re-parsing
 
+`--env` rejects the profiler's private transport variables (`ELISA_PROFILE_FD`,
+framing, mode, trace, capture-budget, and recent-path keys). This prevents a
+target override from replacing the collector channel; documented target-facing
+controls such as `ELISA_PROFILE_MAX_LOCATIONS`, `ELISA_PROFILE_MAX_CALL_EDGES`,
+`ELISA_PROFILE_MAX_STACKS`, and `ELISA_PROFILE_CHILD` remain available.
+
 The runtime collector uses the backend's complete-run trace callbacks, rather
 than the runtime's bounded crash-debug ring, so loop counts are not truncated to
 the last 256 events. Targets may use either the legacy `main() -> i64` entry or

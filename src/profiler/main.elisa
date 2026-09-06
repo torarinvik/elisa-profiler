@@ -1813,6 +1813,7 @@ extend ProfilerNative:
                     assignment: mutable darray[u8] = []
                     copy_cstr(assignment, slots[index + NATIVE_ONE].cast[cstr])
                     return report_error("--env requires KEY=VALUE") if not environment_assignment_valid(assignment)
+                    return report_error("--env cannot override profiler transport variables") if profiler_internal_environment_assignment(assignment)
                     environment.extend(assignment)
                     environment.push(NATIVE_BYTE_NUL)
                     index <- index + NATIVE_TWO
