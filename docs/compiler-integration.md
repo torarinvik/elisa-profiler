@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-506e93c2ada4a1c039a53de63aa1b09889847f7c fix: resolve stage0 from nested worktrees
+2dfb7175a7c40658cdc5c5d4601cda82acffca57 Merge branch 'codex/wasm-sdk' into codex/profiler
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -18,12 +18,12 @@ storage fix from the main compiler checkout. The dedicated branch now includes
 the complete `codex/wasm-sdk` tip `88448c3f` through merge `095ca058`. The
 current tip also contains the qualified-`usize` cast-inference fix from
 `d58afa95` and its parity fixture through `ec2e7609`.
-The dedicated branch then adds recursive nested-module hoisting in backend
+The prior dedicated checkpoint added recursive nested-module hoisting in backend
 declaration selection and corrects the default stage0 path used by the stage1
 wrapper in `f1219f88`. It imports the qualified error-recovery fix from
 `codex/wasm-sdk` (`09270840`) and preserves that branch tip through merge
 `c11a42c2`; the focused parity smoke passes when the optional stage0 compiler is
-available. The latest dedicated commit `506e93c2` makes the stage0 fallback
+available. The prior dedicated commit `506e93c2` made the stage0 fallback
 probe both top-level-checkout and nested-worktree safe; its seed attempt is
 bounded and retains the prior usable stage1 image if the host limit is hit.
 That ancestry includes the packed-store activation, effect-identity lowering,
@@ -49,6 +49,19 @@ authoritative observation for that audit run: it records the UTC observation
 time, dedicated HEAD, local branch tips, fetched-or-cached remote refs, every
 registered worktree, porcelain status records, relevant untracked files, and a
 content digest for each dirty patch.
+
+Since that checkpoint, the exact advanced `codex/wasm-sdk` tip
+`4a9ed7a1` is reachable through merge commit `2dfb7175`. The dedicated branch
+also contains the independently reviewed source patch imported from the dirty
+main `Elisa-compiler` checkout in `46c0671c`: nested-module name resolution,
+mutable/readonly reference assignment diagnostics, aggregate-state call
+checking, auto-region/defer parity, permission-alias validation, and their
+focused Elisa fixtures. The two backend files whose patches did not apply
+cleanly already contained the same recursive module-hoist implementation, so
+they were preserved as the tested dedicated version rather than duplicated.
+The rebuilt stage1 product and native profiler pass the full profiler gate;
+the compiler's focused checks pass diagnostics (367/367), semantic acceptance
+(575/575), and the internal semantic differential (0/3210 mismatches).
 
 Remote refresh is best effort. A successful `git fetch --all --prune` marks
 remote refs as `refreshed`; a disconnected or failing refresh leaves the refs
