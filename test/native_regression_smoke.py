@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / "bin" / "elisa-profiler"
 TIMEOUT_SECONDS = 120
 ERROR_STATUS = 2
+RECURSIVE_CALLS = 7
 
 
 def run(*args, ok=True, expected=None):
@@ -365,6 +366,20 @@ def main():
         assert measured["run"]["execution_ms_ci95_low"] <= measured["run"]["execution_ms_mean"]
         assert measured["run"]["execution_ms_ci95_high"] >= measured["run"]["execution_ms_mean"]
         assert measured["run"]["execution_ms_ci95_high"] > measured["run"]["execution_ms_ci95_low"]
+
+        recursive_output = work / "recursive.json"
+        run("profile", ROOT / "examples/recursive.elisa", "--format", "json", "--output", recursive_output)
+        recursive = json.loads(recursive_output.read_text(encoding="utf-8"))
+        recursive_functions = {item["function"]: item for item in recursive["functions"]}
+        assert recursive_functions["countdown"]["call_events"] == RECURSIVE_CALLS
+        assert recursive_functions["countdown"]["completed_calls"] == RECURSIVE_CALLS
+        assert recursive_functions["countdown"]["self_ns"] <= recursive_functions["countdown"]["inclusive_ns"]
+        recursive_edges = {(item["caller"], item["callee"]): item for item in recursive["call_edges"]}
+        assert recursive_edges[("main", "countdown")]["completed_calls"] == 1
+        assert recursive_edges[("countdown", "countdown")]["call_events"] == RECURSIVE_CALLS - 1
+        assert recursive_edges[("countdown", "countdown")]["completed_calls"] == RECURSIVE_CALLS - 1
+        assert recursive["stacks"]
+        assert all(item["completed_calls"] <= item["call_events"] for item in recursive["stacks"])
 
         threaded_output = work / "threaded.json"
         run("profile", ROOT / "examples/threaded.elisa", "--format", "json", "--output", threaded_output)
