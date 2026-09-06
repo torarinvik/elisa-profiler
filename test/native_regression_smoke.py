@@ -223,6 +223,13 @@ def main():
         for malformed in ('9223372036854775808', '7garbage', '07', '7.1'):
             capture.write_text(json.dumps(report).replace('"events": 7', '"events": ' + malformed))
             run("compare", capture, capture, "--format", "json", ok=False)
+        valid_report_json = json.dumps(report)
+        mismatched_array_json = valid_report_json.replace('"stacks": [', '"stacks": [{"broken":]', 1)
+        capture.write_text(mismatched_array_json, encoding="utf-8")
+        run("report", capture, "--format", "folded", ok=False)
+        mismatched_object_json = valid_report_json.replace('"run": {', '"run": [{', 1)
+        capture.write_text(mismatched_object_json, encoding="utf-8")
+        run("report", capture, "--format", "folded", ok=False)
         for escaped in (r'\u00g0', r'\ud800', r'\udc00'):
             invalid = copy.deepcopy(report)
             invalid["source"] = "REPLACE"

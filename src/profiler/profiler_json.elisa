@@ -67,13 +67,14 @@ extend ProfilerNative:
             return NATIVE_NEGATIVE_ONE
 
 
-        def json_object_end(data: darray[u8]&, start: usize, stop: usize) -> i64:
-            return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != NATIVE_BYTE_LEFT_BRACE
-            depth: mutable i64 = NATIVE_ZERO
+        def json_compound_end(data: darray[u8]&, start: usize, stop: usize, opening: u8, closing: u8) -> i64 can[Abort.Panic, Memory.Allocate]:
+            return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != opening
+            delimiters: mutable darray[u8] = []
+            delimiters.push(opening)
             in_string: mutable bool = false
             escaped: mutable bool = false
-            cursor: mutable usize = start
-            while cursor < stop |cursor, depth, in_string, escaped, data|:
+            cursor: mutable usize = start + NATIVE_ONE.usize()
+            while cursor < stop |cursor, in_string, escaped, delimiters, data|:
                 byte: u8 = data[cursor]
                 if in_string:
                     if escaped:
@@ -86,43 +87,25 @@ extend ProfilerNative:
                         in_string <- false
                 elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
                     in_string <- true
-                elif byte == NATIVE_BYTE_LEFT_BRACE:
-                    depth <- depth + NATIVE_ONE
-                    return NATIVE_NEGATIVE_ONE if depth > NATIVE_MAX_JSON_NESTING_DEPTH
-                elif byte == NATIVE_BYTE_RIGHT_BRACE:
-                    depth <- depth - NATIVE_ONE
-                    return (cursor + NATIVE_ONE.usize()).i64() if depth == NATIVE_ZERO
+                elif byte == NATIVE_BYTE_LEFT_BRACE or byte == NATIVE_BYTE_LEFT_BRACKET:
+                    return NATIVE_NEGATIVE_ONE if delimiters.count >= NATIVE_MAX_JSON_NESTING_DEPTH.usize()
+                    delimiters.push(byte)
+                elif byte == NATIVE_BYTE_RIGHT_BRACE or byte == NATIVE_BYTE_RIGHT_BRACKET:
+                    return NATIVE_NEGATIVE_ONE if delimiters.count == NATIVE_ZERO.usize()
+                    expected: u8 = closing if delimiters.count == NATIVE_ONE.usize() else NATIVE_BYTE_RIGHT_BRACE if delimiters[delimiters.count - NATIVE_ONE.usize()] == NATIVE_BYTE_LEFT_BRACE else NATIVE_BYTE_RIGHT_BRACKET
+                    return NATIVE_NEGATIVE_ONE if byte != expected
+                    delimiters.count <- delimiters.count - NATIVE_ONE.usize()
+                    return (cursor + NATIVE_ONE.usize()).i64() if delimiters.count == NATIVE_ZERO.usize()
                 cursor <- cursor + NATIVE_ONE.usize()
             return NATIVE_NEGATIVE_ONE
 
 
-        def json_array_end(data: darray[u8]&, start: usize, stop: usize) -> i64:
-            return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != NATIVE_BYTE_LEFT_BRACKET
-            depth: mutable i64 = NATIVE_ZERO
-            in_string: mutable bool = false
-            escaped: mutable bool = false
-            cursor: mutable usize = start
-            while cursor < stop |cursor, depth, in_string, escaped, data|:
-                byte: u8 = data[cursor]
-                if in_string:
-                    if escaped:
-                        escaped <- false
-                    elif byte == NATIVE_BYTE_BACKSLASH:
-                        escaped <- true
-                    elif byte < NATIVE_BYTE_CONTROL_LIMIT:
-                        return NATIVE_NEGATIVE_ONE
-                    elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
-                        in_string <- false
-                elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
-                    in_string <- true
-                elif byte == NATIVE_BYTE_LEFT_BRACKET:
-                    depth <- depth + NATIVE_ONE
-                    return NATIVE_NEGATIVE_ONE if depth > NATIVE_MAX_JSON_NESTING_DEPTH
-                elif byte == NATIVE_BYTE_RIGHT_BRACKET:
-                    depth <- depth - NATIVE_ONE
-                    return (cursor + NATIVE_ONE.usize()).i64() if depth == NATIVE_ZERO
-                cursor <- cursor + NATIVE_ONE.usize()
-            return NATIVE_NEGATIVE_ONE
+        def json_object_end(data: darray[u8]&, start: usize, stop: usize) -> i64 can[Abort.Panic, Memory.Allocate]:
+            return json_compound_end(data, start, stop, NATIVE_BYTE_LEFT_BRACE, NATIVE_BYTE_RIGHT_BRACE)
+
+
+        def json_array_end(data: darray[u8]&, start: usize, stop: usize) -> i64 can[Abort.Panic, Memory.Allocate]:
+            return json_compound_end(data, start, stop, NATIVE_BYTE_LEFT_BRACKET, NATIVE_BYTE_RIGHT_BRACKET)
 
 
         def json_hex_digit(byte: u8) -> i64:
@@ -339,7 +322,7 @@ extend ProfilerNative:
             return json_key_value_start(data, "source", NATIVE_ZERO.usize(), data.count)
 
 
-        def json_read_location_timing(data: darray[u8]&, timing: mutable bool&) -> bool can[Abort.Panic]:
+        def json_read_location_timing(data: darray[u8]&, timing: mutable bool&) -> bool can[Abort.Panic, Memory.Allocate]:
             run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
             return false if run_start < NATIVE_ZERO
             run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
