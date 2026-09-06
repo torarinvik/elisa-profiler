@@ -301,7 +301,8 @@ worktree, branch coverage, stage1 freshness, LLVM tools, runtime ABI, and the
 content-validated runtime manifest. `doctor --json` is suitable for scripts.
 The HTML format is a self-contained local report with summary cards, searchable
 hotspots, an interactive folded-timing flame graph with zoom/reset and nested
-frame search, an inclusive-share column derived from exact timing values,
+frame search, an inclusive-share column derived from observed folded root
+self-time (with overlapping caller shares explained),
 sortable
 tables, source snippets, call graph, folded stacks, and recent execution path;
 it has no network or runtime dependencies. The flame graph uses BigInt parsing
