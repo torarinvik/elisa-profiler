@@ -54,37 +54,37 @@ extend ProfilerNative:
 
 
         def merge_capture_summary(destination: mutable CaptureSummary&, incoming: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
-            destination.events <- destination.events + incoming.events
-            destination.locations <- destination.locations + incoming.locations
-            destination.statement_events <- destination.statement_events + incoming.statement_events
-            destination.value_events <- destination.value_events + incoming.value_events
-            destination.function_events <- destination.function_events + incoming.function_events
-            destination.location_record_count <- destination.location_record_count + incoming.location_record_count
-            destination.function_record_count <- destination.function_record_count + incoming.function_record_count
-            destination.call_edge_record_count <- destination.call_edge_record_count + incoming.call_edge_record_count
-            destination.stack_record_count <- destination.stack_record_count + incoming.stack_record_count
-            destination.event_record_count <- destination.event_record_count + incoming.event_record_count
-            destination.thread_loss_record_count <- destination.thread_loss_record_count + incoming.thread_loss_record_count
-            destination.dropped <- destination.dropped + incoming.dropped
+            destination.events <- native_saturating_add(destination.events, incoming.events)
+            destination.locations <- native_saturating_add(destination.locations, incoming.locations)
+            destination.statement_events <- native_saturating_add(destination.statement_events, incoming.statement_events)
+            destination.value_events <- native_saturating_add(destination.value_events, incoming.value_events)
+            destination.function_events <- native_saturating_add(destination.function_events, incoming.function_events)
+            destination.location_record_count <- native_saturating_add(destination.location_record_count, incoming.location_record_count)
+            destination.function_record_count <- native_saturating_add(destination.function_record_count, incoming.function_record_count)
+            destination.call_edge_record_count <- native_saturating_add(destination.call_edge_record_count, incoming.call_edge_record_count)
+            destination.stack_record_count <- native_saturating_add(destination.stack_record_count, incoming.stack_record_count)
+            destination.event_record_count <- native_saturating_add(destination.event_record_count, incoming.event_record_count)
+            destination.thread_loss_record_count <- native_saturating_add(destination.thread_loss_record_count, incoming.thread_loss_record_count)
+            destination.dropped <- native_saturating_add(destination.dropped, incoming.dropped)
             destination.max_stack_depth <- incoming.max_stack_depth if incoming.max_stack_depth > destination.max_stack_depth
-            destination.stack_overflow_entries <- destination.stack_overflow_entries + incoming.stack_overflow_entries
+            destination.stack_overflow_entries <- native_saturating_add(destination.stack_overflow_entries, incoming.stack_overflow_entries)
             destination.thread_count <- incoming.thread_count if incoming.thread_count > destination.thread_count
             destination.trace_enabled <- incoming.trace_enabled
-            destination.trace_captured <- destination.trace_captured + incoming.trace_captured
-            destination.trace_omitted <- destination.trace_omitted + incoming.trace_omitted
+            destination.trace_captured <- native_saturating_add(destination.trace_captured, incoming.trace_captured)
+            destination.trace_omitted <- native_saturating_add(destination.trace_omitted, incoming.trace_omitted)
             destination.trace_limit <- incoming.trace_limit
             destination.location_limit <- incoming.location_limit
             destination.call_edge_limit <- incoming.call_edge_limit
             destination.stack_limit <- incoming.stack_limit
             destination.capture_byte_limit <- incoming.capture_byte_limit
-            destination.capture_bytes_used <- destination.capture_bytes_used + incoming.capture_bytes_used
-            destination.capture_bytes_dropped <- destination.capture_bytes_dropped + incoming.capture_bytes_dropped
-            destination.frame_dropped <- destination.frame_dropped + incoming.frame_dropped
-            destination.valid_frames <- destination.valid_frames + incoming.valid_frames
+            destination.capture_bytes_used <- native_saturating_add(destination.capture_bytes_used, incoming.capture_bytes_used)
+            destination.capture_bytes_dropped <- native_saturating_add(destination.capture_bytes_dropped, incoming.capture_bytes_dropped)
+            destination.frame_dropped <- native_saturating_add(destination.frame_dropped, incoming.frame_dropped)
+            destination.valid_frames <- native_saturating_add(destination.valid_frames, incoming.valid_frames)
             destination.valid_capture_bytes <- incoming.valid_capture_bytes if incoming.valid_capture_bytes > NATIVE_ZERO
             destination.budget_exceeded <- incoming.budget_exceeded if incoming.budget_exceeded != NATIVE_ZERO
-            destination.call_edge_dropped <- destination.call_edge_dropped + incoming.call_edge_dropped
-            destination.stack_dropped <- destination.stack_dropped + incoming.stack_dropped
+            destination.call_edge_dropped <- native_saturating_add(destination.call_edge_dropped, incoming.call_edge_dropped)
+            destination.stack_dropped <- native_saturating_add(destination.stack_dropped, incoming.stack_dropped)
             destination.crash_signal <- incoming.crash_signal if incoming.crash_signal > NATIVE_ZERO
             destination.capture_started <- true if incoming.capture_started
             destination.capture_complete <- false if incoming.capture_started and not incoming.capture_complete
@@ -112,7 +112,8 @@ extend ProfilerNative:
             return NATIVE_ZERO if value <= NATIVE_ZERO
             guess: mutable i64 = value
             while guess > value / guess |guess, value|:
-                guess <- (guess + value / guess) / NATIVE_TWO
+                quotient: i64 = value / guess
+                guess <- guess / NATIVE_TWO + quotient / NATIVE_TWO + (guess % NATIVE_TWO + quotient % NATIVE_TWO) / NATIVE_TWO
             return guess
 
 
@@ -156,7 +157,7 @@ extend ProfilerNative:
                 append_text(buffer, "null")
             append_text(buffer, ",\"cpu_ms\":")
             if result.resource_available:
-                append_millis(buffer, result.cpu_user_ns + result.cpu_system_ns)
+                append_millis(buffer, native_saturating_add(result.cpu_user_ns, result.cpu_system_ns))
             else:
                 append_text(buffer, "null")
             append_text(buffer, ",\"peak_rss_bytes\":")

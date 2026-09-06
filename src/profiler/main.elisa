@@ -226,7 +226,14 @@ extend ProfilerNative:
 
 
         def elapsed_nanoseconds(start: ProfilerNativeTimespec, finish: ProfilerNativeTimespec) -> i64:
-            return (finish.seconds - start.seconds) * NATIVE_NANOS_PER_SECOND + finish.nanoseconds - start.nanoseconds
+            return NATIVE_ZERO if finish.seconds < start.seconds
+            seconds: mutable i64 = finish.seconds - start.seconds
+            nanoseconds: mutable i64 = finish.nanoseconds - start.nanoseconds
+            if nanoseconds < NATIVE_ZERO:
+                return NATIVE_ZERO if seconds == NATIVE_ZERO
+                seconds <- seconds - NATIVE_ONE
+                nanoseconds <- NATIVE_NANOS_PER_SECOND + nanoseconds
+            return native_saturating_add(native_saturating_mul_nonnegative(seconds, NATIVE_NANOS_PER_SECOND), nanoseconds)
         
         
         def append_cstr(buffer: mutable darray[u8]&, value: cstr) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -1838,7 +1845,7 @@ extend ProfilerNative:
                     return report_error("could not open native collector transport for warmup")
                 warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
-                warmup_ns <- warmup_ns + warmup_result.elapsed_ns
+                warmup_ns <- native_saturating_add(warmup_ns, warmup_result.elapsed_ns)
                 if warmup_result.status != NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("native profiler warmup failed")
@@ -1946,18 +1953,18 @@ extend ProfilerNative:
             sort_i64(metric_times)
             total_execution_ns: mutable i64 = NATIVE_ZERO
             for index in 0..<metric_times.count |index, metric_times, total_execution_ns|:
-                total_execution_ns <- total_execution_ns + metric_times[index]
+                total_execution_ns <- native_saturating_add(total_execution_ns, metric_times[index])
             execution_min_ns: i64 = metric_times[0]
             execution_max_ns: i64 = metric_times[metric_times.count - 1.usize()]
             execution_median_ns: mutable i64 = metric_times[metric_times.count / 2.usize()]
             if metric_times.count % NATIVE_TWO.usize() == NATIVE_ZERO.usize():
-                execution_median_ns <- (metric_times[metric_times.count / NATIVE_TWO.usize() - NATIVE_ONE.usize()] + metric_times[metric_times.count / NATIVE_TWO.usize()]) / NATIVE_TWO
+                execution_median_ns <- native_saturating_add(metric_times[metric_times.count / NATIVE_TWO.usize() - NATIVE_ONE.usize()], metric_times[metric_times.count / NATIVE_TWO.usize()]) / NATIVE_TWO
             execution_mean_ns: i64 = total_execution_ns / metric_times.count.i64()
             mean_micros: i64 = execution_mean_ns / NATIVE_NANOS_PER_MICROSECOND
             variance: mutable i64 = NATIVE_ZERO
             for index in 0..<metric_times.count |index, metric_times, variance, mean_micros|:
                 difference: i64 = metric_times[index] / NATIVE_NANOS_PER_MICROSECOND - mean_micros
-                variance <- variance + difference * difference
+                variance <- native_saturating_add(variance, native_saturating_square(difference))
             variance <- variance / metric_times.count.i64()
             execution_stdev_ns: i64 = integer_sqrt(variance) * NATIVE_NANOS_PER_MICROSECOND
             cpu_user_ns: mutable i64 = NATIVE_ZERO
@@ -1965,9 +1972,9 @@ extend ProfilerNative:
             peak_rss_bytes: mutable i64 = NATIVE_ZERO
             if resource_metrics_available:
                 for index in 0..<selected_cpu_user_times.count |index, selected_cpu_user_times, cpu_user_ns|:
-                    cpu_user_ns <- cpu_user_ns + selected_cpu_user_times[index]
+                    cpu_user_ns <- native_saturating_add(cpu_user_ns, selected_cpu_user_times[index])
                 for index in 0..<selected_cpu_system_times.count |index, selected_cpu_system_times, cpu_system_ns|:
-                    cpu_system_ns <- cpu_system_ns + selected_cpu_system_times[index]
+                    cpu_system_ns <- native_saturating_add(cpu_system_ns, selected_cpu_system_times[index])
                 for index in 0..<selected_peak_rss_values.count |index, selected_peak_rss_values, peak_rss_bytes|:
                     peak_rss_bytes <- selected_peak_rss_values[index] if selected_peak_rss_values[index] > peak_rss_bytes
             final_exit_code: i64 = system_exit_code(overall_status)

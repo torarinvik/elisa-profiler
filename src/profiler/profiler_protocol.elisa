@@ -193,12 +193,12 @@ extend ProfilerNative:
             append_protocol_number(location_records, count_field)
             count_number: i64 = protocol_number_field(count_field)
             if kind_name == "statement":
-                summary.statement_events <- summary.statement_events + count_number
+                summary.statement_events <- native_saturating_add(summary.statement_events, count_number)
             elif kind_name == "value":
-                summary.value_events <- summary.value_events + count_number
+                summary.value_events <- native_saturating_add(summary.value_events, count_number)
             else:
-                summary.function_events <- summary.function_events + count_number
-            summary.location_record_count <- summary.location_record_count + NATIVE_ONE
+                summary.function_events <- native_saturating_add(summary.function_events, count_number)
+            summary.location_record_count <- native_saturating_add(summary.location_record_count, NATIVE_ONE)
             if kind_name == "value":
                 append_text(location_records, ",\"variable\":")
                 if protocol_field_is(variable_field, "-"):
@@ -236,7 +236,7 @@ extend ProfilerNative:
             append_text(location_records, ",\"source_text\":null")
             append_text(location_records, "}")
             if kind_name == "function":
-                summary.function_record_count <- summary.function_record_count + NATIVE_ONE
+                summary.function_record_count <- native_saturating_add(summary.function_record_count, NATIVE_ONE)
                 append_record_separator(function_records)
                 append_text(function_records, "{\"function\":")
                 append_json_string(function_records, function_field)
@@ -309,7 +309,7 @@ extend ProfilerNative:
             append_text(call_edge_records, ",\"inclusive_ns\":")
             append_protocol_number(call_edge_records, inclusive_field)
             append_text(call_edge_records, "}")
-            summary.call_edge_record_count <- summary.call_edge_record_count + NATIVE_ONE
+            summary.call_edge_record_count <- native_saturating_add(summary.call_edge_record_count, NATIVE_ONE)
 
 
         def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
@@ -354,7 +354,7 @@ extend ProfilerNative:
                 append_protocol_number(folded_records, self_field)
             else:
                 append_protocol_number(folded_records, calls_field)
-            summary.stack_record_count <- summary.stack_record_count + NATIVE_ONE
+            summary.stack_record_count <- native_saturating_add(summary.stack_record_count, NATIVE_ONE)
 
 
         def append_event_record(summary: mutable CaptureSummary&, event_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -422,7 +422,7 @@ extend ProfilerNative:
             append_json_string(event_records, source)
             append_text(event_records, ",\"source_text\":null")
             append_text(event_records, "}")
-            summary.event_record_count <- summary.event_record_count + NATIVE_ONE
+            summary.event_record_count <- native_saturating_add(summary.event_record_count, NATIVE_ONE)
 
 
         def append_thread_loss_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
@@ -464,7 +464,7 @@ extend ProfilerNative:
             append_text(records, ",\"bytes_dropped\":")
             append_protocol_number(records, bytes_dropped)
             append_text(records, "}")
-            summary.thread_loss_record_count <- summary.thread_loss_record_count + NATIVE_ONE
+            summary.thread_loss_record_count <- native_saturating_add(summary.thread_loss_record_count, NATIVE_ONE)
 
 
         def parse_protocol_number(data: darray[u8]&, cursor: mutable usize&, stop: usize) -> i64:

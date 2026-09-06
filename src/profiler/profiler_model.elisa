@@ -180,6 +180,25 @@ module ProfilerNative:
         const NATIVE_DETAIL_ARRAY_STACKS: i64 = 3
         const NATIVE_DETAIL_ARRAY_LOCATIONS: i64 = 4
 
+        def native_saturating_add(left: i64, right: i64) -> i64:
+            return NATIVE_I64_MAX if right > NATIVE_ZERO and left > NATIVE_I64_MAX - right
+            return NATIVE_I64_MIN if right < NATIVE_ZERO and left < NATIVE_I64_MIN - right
+            return left + right
+
+
+        def native_saturating_mul_nonnegative(left: i64, right: i64) -> i64:
+            return NATIVE_ZERO if left <= NATIVE_ZERO or right <= NATIVE_ZERO
+            return NATIVE_I64_MAX if left > NATIVE_I64_MAX / right
+            return left * right
+
+
+        def native_saturating_square(value: i64) -> i64:
+            return NATIVE_I64_MAX if value == NATIVE_I64_MIN
+            return NATIVE_ZERO if value == NATIVE_ZERO
+            magnitude: i64 = -value if value < NATIVE_ZERO else value
+            return NATIVE_I64_MAX if magnitude > NATIVE_I64_MAX / magnitude
+            return magnitude * magnitude
+
         struct TargetRunResult:
             status: i64
             elapsed_ns: i64

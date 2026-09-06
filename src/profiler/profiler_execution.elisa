@@ -188,7 +188,9 @@ extend ProfilerNative:
 
 
         def rusage_time_nanoseconds(seconds: i64, microseconds: i64) -> i64:
-            return seconds * NATIVE_NANOS_PER_SECOND + microseconds * NATIVE_NANOS_PER_MICROSECOND
+            return native_saturating_add(
+                native_saturating_mul_nonnegative(seconds, NATIVE_NANOS_PER_SECOND),
+                native_saturating_mul_nonnegative(microseconds, NATIVE_NANOS_PER_MICROSECOND))
 
 
         def native_host_is_linux() -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
