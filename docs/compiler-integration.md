@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-b3e799ee merge: integrate latest work harness fixes
+3e06208d Merge branch 'work' into codex/profiler
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -26,7 +26,7 @@ stage1 checkout, the Neural Workshop checkout, and the structpy checkout. Compat
 were independently verifiable; the remaining dirty portions are either already
 superseded or AST-incompatible. All owner worktrees remain untouched.
 
-The stage1 product was freshly reseeded from `b3e799ee` with the canonical
+The stage1 product was freshly reseeded from `3e06208d` with the canonical
 stage0 compiler and its usable build manifest was regenerated. The current
 `compiler-manifest-smoke`, `compiler-smoke`, `profiler-native-smoke`, and full
 profiler gates pass against that artifact. The separate fixed-point gate also
@@ -159,7 +159,7 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `b3e799ee` integration, the audit, ledger, manifest, compiler,
+For the current `3e06208d` integration, the audit, ledger, manifest, compiler,
 native profiler, and full profiler gates pass. Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
 remains a fixed point and deterministic after future compiler changes.
