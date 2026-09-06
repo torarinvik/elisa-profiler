@@ -94,6 +94,9 @@ def main() -> int:
         )
         assert recovered_html.returncode == 0, (recovered_html.returncode, recovered_html.stderr)
         assert b"<dt>Outcome</dt><dd>incomplete_artifact</dd>" in recovered_html.stdout, recovered_html.stdout
+        expected_source_hash = hashlib.sha256(source_bytes).hexdigest().encode("ascii")
+        assert b"<dt>Source SHA-256</dt><dd><code>" + expected_source_hash + b"</code>" in recovered_html.stdout, recovered_html.stdout
+        assert b"<dt>Capture completeness</dt><dd>partial</dd>" in recovered_html.stdout, recovered_html.stdout
         subprocess.run([sys.executable, str(ROOT / "test" / "profile_schema_smoke.py"), str(SCHEMA), str(output)], check=True)
         legacy_manifest = work / "legacy.manifest.json"
         legacy_payload = dict(manifest_payload)

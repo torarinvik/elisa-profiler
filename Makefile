@@ -111,6 +111,8 @@ profiler-native-smoke: profiler-native
 		grep -Fq '<!doctype html>' "$$native_work/offline.html"; \
 		grep -Fq 'Native Elisa offline renderer' "$$native_work/offline.html"; \
 		grep -Fq 'Outcome' "$$native_work/offline.html"; \
+		grep -Fq 'Source SHA-256' "$$native_work/offline.html"; \
+		grep -Fq 'Capture completeness' "$$native_work/offline.html"; \
 		grep -Fq 'Mean execution' "$$native_work/offline.html"; \
 		grep -Fq 'Peak RSS' "$$native_work/offline.html"; \
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --recent-path --format json --output "$$native_work/recent.json"; \
@@ -120,6 +122,8 @@ profiler-native-smoke: profiler-native
 		native_run "$(NATIVE_PROFILER_BIN)" profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format html --output "$$native_work/hot-loop.html"; \
 		grep -Fq '<!doctype html>' "$$native_work/hot-loop.html"; \
 		grep -Fq 'Hotspots' "$$native_work/hot-loop.html"; \
+		grep -Fq 'Source SHA-256' "$$native_work/hot-loop.html"; \
+		grep -Fq 'Capture completeness' "$$native_work/hot-loop.html"; \
 		grep -Fq 'function-filter' "$$native_work/hot-loop.html"; \
 		grep -Fq 'edge-filter' "$$native_work/hot-loop.html"; \
 		grep -Fq 'location-filter' "$$native_work/hot-loop.html"; \

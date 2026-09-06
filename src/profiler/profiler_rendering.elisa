@@ -232,6 +232,10 @@ extend ProfilerNative:
             completed_repetitions: mutable i64 = NATIVE_ZERO
             successful_repetitions: mutable i64 = NATIVE_ZERO
             outcome: mutable darray[u8] = []
+            source_digest: mutable darray[u8] = []
+            source_digest_available: mutable bool = false
+            capture_complete: mutable bool = false
+            capture_complete_available: mutable bool = false
             host: mutable NativeHostMetadata = NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false}
             host_os: mutable darray[u8] = []
             host_architecture: mutable darray[u8] = []
@@ -242,6 +246,15 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "dropped", summary_start.usize(), summary_stop.usize(), &dropped)
             return false if not json_read_number_field(data, "thread_count", summary_start.usize(), summary_stop.usize(), &thread_count)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &exit_code)
+            workload_start: i64 = json_key_value_start(data, "workload", NATIVE_ZERO.usize(), data.count)
+            if workload_start >= NATIVE_ZERO and data[workload_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
+                workload_stop: i64 = json_object_end(data, workload_start.usize(), data.count)
+                return false if workload_stop < NATIVE_ZERO
+                return false if not json_read_nullable_string_field(data, "source_sha256", workload_start.usize(), workload_stop.usize(), &source_digest, &source_digest_available)
+            capture_complete_start: i64 = json_key_value_start(data, "capture_complete", summary_start.usize(), summary_stop.usize())
+            if capture_complete_start >= NATIVE_ZERO:
+                return false if not json_read_bool_field(data, "capture_complete", summary_start.usize(), summary_stop.usize(), &capture_complete)
+                capture_complete_available <- true
             host_start: i64 = json_key_value_start(data, "host", NATIVE_ZERO.usize(), data.count)
             if host_start >= NATIVE_ZERO and data[host_start.usize()] == NATIVE_BYTE_LEFT_BRACE:
                 host_stop: i64 = json_object_end(data, host_start.usize(), data.count)
@@ -300,7 +313,10 @@ extend ProfilerNative:
                     thread_loss.push(data[index])
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa offline renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
-            append_text(buffer, "</code></p><dl><div><dt>Status</dt><dd>")
+            append_text(buffer, "</code></p><dl><div><dt>Source SHA-256</dt><dd><code>")
+            append_html_escaped(buffer, source_digest) if source_digest_available
+            append_text(buffer, "unavailable" if not source_digest_available else "")
+            append_text(buffer, "</code></dd></div><div><dt>Status</dt><dd>")
             append_text(buffer, "ok" if exit_code == NATIVE_ZERO else "target failed")
             append_text(buffer, "</dd></div><div><dt>Outcome</dt><dd>")
             append_html_escaped(buffer, outcome)
@@ -324,6 +340,8 @@ extend ProfilerNative:
                 append_text(buffer, "unavailable")
             append_text(buffer, "</dd></div><div><dt>Measured repetitions</dt><dd>")
             append_i64(buffer, successful_repetitions if successful_repetitions > NATIVE_ZERO else completed_repetitions)
+            append_text(buffer, "</dd></div><div><dt>Capture completeness</dt><dd>")
+            append_text(buffer, "complete" if capture_complete_available and capture_complete else "partial" if capture_complete_available else "not recorded")
             append_text(buffer, "</dd></div><div><dt>Events</dt><dd>")
             append_i64(buffer, events)
             append_text(buffer, "</dd></div><div><dt>Locations</dt><dd>")
