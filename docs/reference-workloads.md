@@ -69,3 +69,19 @@ Expected structural facts from the captured run:
 Execution duration, memory, and generated binary paths are expected to vary by
 host. When a baseline is regenerated, update this file with the new compiler
 manifest and artifact hashes, then record the reason in the change commit.
+
+## Multi-module pipeline
+
+Command:
+
+```sh
+bin/elisa-profiler profile examples/multi_module_pipeline.elisa \
+  --format html -- --large
+```
+
+This input-driven workload includes `pipeline_metrics.elisa` as a dependency.
+Its `PipelineMetrics` module exposes only `transform` and `checksum`; the
+normalization and mixing helpers remain private. The `--large` argument selects
+the 5,000-iteration path and is retained verbatim in workload metadata. Use it
+to exercise module/dependency identity, forwarded-argument provenance, and
+hotspot-to-source navigation together.

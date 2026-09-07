@@ -104,6 +104,11 @@ the local stage1 compiler using -ftrace -g, links a small host collector, runs
 the program, and reports function-entry, statement, and scalar-value events:
 
     bin/elisa-profiler profile examples/hot_loop.elisa
+
+For a realistic input-driven workload spanning a public module API and private
+helpers, try:
+
+    bin/elisa-profiler profile examples/multi_module_pipeline.elisa --format html -- --large
     bin/elisa-profiler profile examples/hot_loop.elisa --format json -o profiles/hot-loop.json
     bin/elisa-profiler profile examples/hot_loop.elisa --format folded \
         -o profiles/hot-loop.folded

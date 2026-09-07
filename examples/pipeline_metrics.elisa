@@ -1,0 +1,22 @@
+# Public API for the multi-module pipeline workload.
+# The private helpers keep implementation details out of the caller's namespace.
+
+module PipelineMetrics:
+    public:
+        def transform(value: i64, position: i64) -> i64:
+            shifted: i64 = value + position
+            return normalize(shifted)
+
+        def checksum(value: i64, position: i64) -> i64:
+            return mix(value, position)
+
+    private:
+        const PIPELINE_METRICS_SQUARE_BIAS: i64 = 3
+        const PIPELINE_METRICS_MIX_MULTIPLIER: i64 = 31
+        const PIPELINE_METRICS_MIX_BIAS: i64 = 17
+
+        def normalize(value: i64) -> i64:
+            return value * value + PIPELINE_METRICS_SQUARE_BIAS
+
+        def mix(value: i64, position: i64) -> i64:
+            return value * PIPELINE_METRICS_MIX_MULTIPLIER + position + PIPELINE_METRICS_MIX_BIAS

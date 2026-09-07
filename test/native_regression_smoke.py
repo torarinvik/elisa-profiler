@@ -707,6 +707,16 @@ def main():
         assert b"thread loss records: present" in run("report", threaded_output, "--format", "text")
         assert b"Thread loss" in run("report", threaded_output, "--format", "html")
 
+        pipeline_output = work / "multi-module-pipeline.json"
+        run("profile", ROOT / "examples/multi_module_pipeline.elisa", "--format", "json",
+            "--output", pipeline_output, "--", "--large")
+        pipeline = json.loads(pipeline_output.read_text(encoding="utf-8"))
+        assert pipeline["workload"]["arguments"] == ["--large"]
+        assert pipeline["workload"]["source_tree_sha256"] is not None
+        pipeline_functions = {item["function"] for item in pipeline["functions"]}
+        assert {"transform", "checksum", "normalize", "mix"}.issubset(pipeline_functions), pipeline_functions
+        assert pipeline["summary"]["events"] > 0
+
         functions_capture = work / "functions.json"
         values_capture = work / "values.json"
         run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "functions",

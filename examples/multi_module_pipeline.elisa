@@ -1,0 +1,31 @@
+# Input-driven multi-module workload used by the profiler's realistic example.
+# `--large` selects a larger run while preserving the same public pipeline API.
+
+include "pipeline_metrics.elisa"
+
+const PIPELINE_ZERO: i64 = 0
+const PIPELINE_ONE: i64 = 1
+const PIPELINE_DEFAULT_ITERATIONS: i64 = 500
+const PIPELINE_LARGE_ITERATIONS: i64 = 5000
+const PIPELINE_LARGE_ARGUMENT_COUNT: i64 = 2
+const PIPELINE_SUCCESS: i64 = 0
+const PIPELINE_ARGUMENT_ERROR: i64 = 1
+
+@link_name("strcmp")
+extern pipeline_strcmp(left: cstr, right: cstr) -> i64
+
+def selected_iterations(argc: i64, argv: mutable void&) -> i64:
+    return PIPELINE_DEFAULT_ITERATIONS if argc < PIPELINE_LARGE_ARGUMENT_COUNT
+    slots: mutable cstr&& = argv.cast[mutable cstr&&]
+    return PIPELINE_LARGE_ITERATIONS if pipeline_strcmp(slots[PIPELINE_ONE], "--large") == PIPELINE_ZERO
+    return PIPELINE_DEFAULT_ITERATIONS
+
+def main(argc: i64, argv: mutable void&) -> i64:
+    iterations: i64 = selected_iterations(argc, argv)
+    accumulator: mutable i64 = PIPELINE_ZERO
+    index: mutable i64 = PIPELINE_ZERO
+    while index < iterations |accumulator, index, iterations|:
+        transformed: i64 = PipelineMetrics::transform(index, iterations - index)
+        accumulator <- accumulator + PipelineMetrics::checksum(transformed, index)
+        index <- index + PIPELINE_ONE
+    return PIPELINE_SUCCESS if accumulator >= PIPELINE_ZERO else PIPELINE_ARGUMENT_ERROR
