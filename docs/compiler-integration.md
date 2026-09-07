@@ -8,7 +8,7 @@ experiments can repair compiler defects without modifying their owners.
 The current compiler integration commit is:
 
 ```text
-f5348305 fix: preserve root smt header through native expansion
+6c5f718b feat: support optional stage1 line directives
 ```
 
 The dedicated branch contains the reviewed source and regression-test deltas
@@ -19,8 +19,10 @@ fallback, lmut-threading/parity, region-owned-return, storage-invalidation,
 and process-tree termination fixes. The latest committed `work` tip added the
 byte-correct native include offset map (`9b3e33eb`) and was merged into the
 dedicated branch as `f1f0dde7`. A reviewed root-file `# smt` preservation fix
-from the same checkout was then committed as `f5348305`. All 11 local compiler
-branch tips are reachable from the dedicated branch.
+from the same checkout was then committed as `f5348305`; the latest committed
+`work` tip (`5650a7b8`) was merged, and the opt-in stage1 line-directive support
+was reviewed and committed as `6c5f718b`. All 11 local compiler branch tips are
+reachable from the dedicated branch.
 
 The audit is authoritative for branch/worktree provenance. The latest offline
 ledger records 11 local branches, 11 registered worktrees, nine dirty
@@ -31,9 +33,9 @@ the structpy checkout. Compatible deltas were imported where they
 were independently verifiable; the remaining dirty portions are either already
 superseded or AST-incompatible. All owner worktrees remain untouched.
 
-The stage1 product was freshly reseeded from `f5348305` with the canonical
+The stage1 product was freshly reseeded from `6c5f718b` with the canonical
 stage0 compiler and its usable build manifest was regenerated. The audit and
-manifest are current. The full gate passes as
+manifest are current. The recorded full gate passes as
 `DYLD_SHARED_REGION=avoid TMPDIR=/tmp make test`, including self-host stages
 A through D, compiler smoke, native profiler/report/artifact/comparison
 smokes, collector/ABI checks, timeout/recovery checks, and cleanup checks. A
@@ -41,6 +43,11 @@ normal run under concurrent compiler corpus jobs can hit a macOS dynamic-loader
 stall in `_dyld_start` before the profiler enters its main code; the explicit
 `DYLD_SHARED_REGION=avoid` setting is a verification workaround for that host
 condition and is not part of the profiler contract.
+
+The last uninterrupted full gate was recorded after the compiler integration
+and source-stability fix at profiler commit `e0c89eb`. Later profiler-only
+report, cache, UI-state, prebuilt-target, and offline-source changes have
+focused smoke coverage and are queued for the next full-gate refresh.
 
 Historical checkpoints below retain earlier commit and test evidence for the
 build pipeline, but must not be read as proof of the current stage1 identity.
@@ -171,7 +178,7 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `f5348305` integration, the audit, ledger, manifest, compiler,
+For the current `6c5f718b` integration, the audit, ledger, manifest, compiler,
 native profiler, and full profiler gates pass with the loader workaround above.
 Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
