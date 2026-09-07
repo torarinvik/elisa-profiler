@@ -269,6 +269,21 @@ extend ProfilerNative:
                 append_text(buffer, sview(NATIVE_COMPARISON_MATCH_AMBIGUOUS, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
 
 
+        def append_comparison_match_legend_html(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<details class='identity-legend'><summary>Identity pairing decisions</summary><p>The raw comparison rows carry a <code>match</code> label. The labels mean:</p><ul>")
+            append_text(buffer, "<li><code>")
+            append_text(buffer, sview(NATIVE_COMPARISON_MATCH_COMPILER_ID, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            append_text(buffer, "</code>: one compiler-issued identity paired exactly.</li><li><code>")
+            append_text(buffer, sview(NATIVE_COMPARISON_MATCH_READABLE_NAME, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            append_text(buffer, "</code>: a unique readable-name fallback paired the records.</li><li><code>")
+            append_text(buffer, sview(NATIVE_COMPARISON_MATCH_ADDED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            append_text(buffer, "</code> or <code>")
+            append_text(buffer, sview(NATIVE_COMPARISON_MATCH_REMOVED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            append_text(buffer, "</code>: evidence exists on only one side.</li><li><code>")
+            append_text(buffer, sview(NATIVE_COMPARISON_MATCH_AMBIGUOUS, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            append_text(buffer, "</code>: duplicate identity candidates made a one-to-one pairing unsafe.</li></ul></details>")
+
+
         def comparison_missing_function_count(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
@@ -982,6 +997,7 @@ extend ProfilerNative:
                 append_comparison_relative_delta_html(buffer, baseline.locations, candidate.locations, true)
                 append_text(buffer, "</td></tr></tbody></table>")
                 append_text(buffer, "<p class='panel-note'>Metric deltas show absolute change first, followed by exact relative change in percent. Relative change is unavailable when the baseline is zero or the metric is missing.</p>")
+                append_comparison_match_legend_html(buffer)
                 append_comparison_function_changes_html(buffer, baseline.functions, candidate.functions)
                 append_comparison_call_edge_changes_html(buffer, baseline.call_edges, candidate.call_edges)
                 append_comparison_stack_changes_html(buffer, baseline.stacks, candidate.stacks)
