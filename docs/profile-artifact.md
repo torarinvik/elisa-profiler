@@ -57,6 +57,15 @@ manifest/capture. Raw JSON reports can opt in to an exact source snapshot with
 `--embed-source`; the top-level `source_snapshot` contains the UTF-8 source
 bytes and their SHA-256 digest. Snapshots are intentionally optional because
 they increase report size.
+
+The framed transport reserves `ELISA_PROFILE\t1\textension\tNAME\t...` for
+forward-compatible optional records. Older decoders still verify the frame's
+sequence, declared length, and checksum, then ignore the extension payload so
+new metadata cannot silently corrupt the evidence they do understand. Recovery
+only treats an unterminated final frame as a recoverable tail when its header
+or declared payload is genuinely incomplete; a complete frame with a bad
+checksum or inconsistent length is rejected as malformed.
+
 The quality object inside the embedded capture is authoritative about target
 termination and bounded-detail loss.
 

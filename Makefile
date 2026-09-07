@@ -13,7 +13,7 @@ COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.js
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke collector-strict-smoke collector-content-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke collector-strict-smoke collector-content-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -188,6 +188,9 @@ fixture-diversity-smoke: profiler-native
 metamorphic-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/metamorphic_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
+protocol-property-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/protocol_property_smoke.py" "$(NATIVE_PROFILER_BIN)"
+
 sampling-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/sampling_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
@@ -269,4 +272,4 @@ bootstrap-path-smoke: profiler-native
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-self-host-smoke compiler-smoke compiler-identity-smoke profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke recovery-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke collector-content-smoke collector-identity-smoke collector-sanitizer-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
+test: compiler-self-host-smoke compiler-smoke compiler-identity-smoke profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke recovery-smoke protocol-property-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke collector-content-smoke collector-identity-smoke collector-sanitizer-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke

@@ -81,6 +81,20 @@ extend ProfilerNative:
             return checksum
 
 
+        def frame_tail_is_incomplete(frame_length: i64, frame_cursor: usize, line_stop: usize, checksum_field: darray[u8]&) -> bool can[Abort.Panic]:
+            # Recovery may ignore an actually incomplete final frame, but it must
+            # reject a complete frame whose checksum, length, or other integrity
+            # fields disagree. A missing/invalid header field is still recoverable
+            # because there is no complete frame boundary to trust.
+            return false if frame_length > NATIVE_MAX_PROTOCOL_FRAME_BYTES.i64()
+            return true if frame_length < NATIVE_ZERO
+            return true if frame_cursor > line_stop
+            return true if not protocol_unsigned_u64(checksum_field)
+            available_payload: i64 = (line_stop - frame_cursor).i64()
+            return true if frame_length > available_payload
+            return false
+
+
         def protocol_signed(value: darray[u8]&, allow_overflow: bool) -> bool can[Abort.Panic]:
             return true if allow_overflow and protocol_field_is(value, "overflow")
             false return if value.count == NATIVE_ZERO.usize()
@@ -732,6 +746,7 @@ extend ProfilerNative:
             thread_prefix: sview = "ELISA_PROFILE\t1\tthread\t"
             crash_prefix: sview = "ELISA_PROFILE\t1\tcrash\t"
             frame_prefix: sview = "ELISA_PROFILE\t1\tframe\t"
+            extension_prefix: sview = "ELISA_PROFILE\t1\textension\t"
             sample_prefix: sview = "ELISA_PROFILE\t1\tsample\t"
             protocol_prefix: sview = "ELISA_PROFILE\t1\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
@@ -776,7 +791,7 @@ extend ProfilerNative:
                                 summary.valid_frames <- summary.valid_frames + NATIVE_ONE
                                 summary.valid_capture_bytes <- (line_stop + (NATIVE_ONE.usize() if line_stop < data.count else NATIVE_ZERO.usize())).i64()
                         else:
-                            truncated_tail: bool = allow_partial_tail and line_stop == data.count and line_stop > line_start
+                            truncated_tail: bool = allow_partial_tail and line_stop == data.count and line_stop > line_start and frame_tail_is_incomplete(frame_length, frame_cursor, line_stop, checksum_field)
                             if truncated_tail:
                                 break
                             next_line_start: usize = line_stop + NATIVE_ONE.usize()
@@ -888,6 +903,12 @@ extend ProfilerNative:
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
                         append_event_record(&summary, &event_records, data, &cursor, line_stop, source)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, extension_prefix):
+                        # Extensions are transport-level records. Their framing,
+                        # sequence, length, and checksum have already been
+                        # validated above; an older profiler deliberately ignores
+                        # the payload while preserving the surrounding evidence.
+                        pass
                     elif frame_valid and line_prefix(data, record_start, line_stop, protocol_prefix):
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
