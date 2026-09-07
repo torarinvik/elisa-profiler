@@ -654,6 +654,56 @@ extend ProfilerNative:
             append_text(buffer, "</details>")
 
 
+        def append_comparison_differential_stack_row_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonStackRecord]&, baseline_index: i64, candidate: darray[ComparisonStackRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            baseline_available: bool = baseline_index >= NATIVE_ZERO
+            candidate_available: bool = candidate_index >= NATIVE_ZERO
+            baseline_self_ns: mutable i64 = NATIVE_ZERO
+            candidate_self_ns: mutable i64 = NATIVE_ZERO
+            if baseline_available:
+                baseline_self_ns <- baseline[baseline_index.usize()].self_ns
+            if candidate_available:
+                candidate_self_ns <- candidate[candidate_index.usize()].self_ns
+            append_text(buffer, "{\"baseline_path\":")
+            append_json_string(buffer, baseline[baseline_index.usize()].path) if baseline_available
+            append_text(buffer, "null") if not baseline_available
+            append_text(buffer, ",\"candidate_path\":")
+            append_json_string(buffer, candidate[candidate_index.usize()].path) if candidate_available
+            append_text(buffer, "null") if not candidate_available
+            append_text(buffer, ",\"baseline_ns\":")
+            append_i64(buffer, baseline_self_ns) if baseline_available
+            append_text(buffer, "null") if not baseline_available
+            append_text(buffer, ",\"candidate_ns\":")
+            append_i64(buffer, candidate_self_ns) if candidate_available
+            append_text(buffer, "null") if not candidate_available
+            append_text(buffer, ",\"delta_ns\":")
+            append_i64(buffer, native_signed_delta(candidate_self_ns, baseline_self_ns))
+            append_text(buffer, ",\"match\":\"")
+            append_comparison_match_label(buffer, comparison_stack_match_kind(baseline, baseline_index, candidate, candidate_index))
+            append_text(buffer, "\"}")
+
+
+        def append_comparison_differential_stacks_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonStackRecord]&, candidate: darray[ComparisonStackRecord]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "[")
+            first: mutable bool = true
+            emitted: mutable i64 = NATIVE_ZERO
+            for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, first, emitted, buffer|:
+                break if emitted >= NATIVE_COMPARISON_HTML_DETAIL_LIMIT
+                candidate_index: i64 = comparison_stack_index(candidate, baseline[baseline_index])
+                append_text(buffer, ",") if not first
+                append_comparison_differential_stack_row_json(buffer, baseline, baseline_index.i64(), candidate, candidate_index)
+                first <- false
+                emitted <- emitted + NATIVE_ONE
+            for candidate_index in 0..<candidate.count |candidate_index, baseline, candidate, first, emitted, buffer|:
+                break if emitted >= NATIVE_COMPARISON_HTML_DETAIL_LIMIT
+                baseline_index: i64 = comparison_stack_index(baseline, candidate[candidate_index])
+                continue if baseline_index >= NATIVE_ZERO
+                append_text(buffer, ",") if not first
+                append_comparison_differential_stack_row_json(buffer, baseline, baseline_index, candidate, candidate_index.i64())
+                first <- false
+                emitted <- emitted + NATIVE_ONE
+            append_text(buffer, "]")
+
+
         def append_comparison_stack_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonStackRecord]&, baseline_index: i64, candidate: darray[ComparisonStackRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
             baseline_available: bool = baseline_index >= NATIVE_ZERO
             candidate_available: bool = candidate_index >= NATIVE_ZERO
@@ -933,6 +983,8 @@ extend ProfilerNative:
             gate_failed: bool = wall_percent_failed or wall_absolute_failed or cpu_percent_failed or cpu_absolute_failed or rss_percent_failed or rss_absolute_failed or function_failed
             if format_html:
                 json_details: mutable darray[u8] = []
+                differential_stacks: mutable darray[u8] = []
+                append_comparison_differential_stacks_json(&differential_stacks, baseline.stacks, candidate.stacks)
                 _ = append_comparison_report(&json_details, baseline_path, candidate_path, baseline, candidate, true, false, policy)
                 append_text(buffer, "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Elisa profile comparison</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1180px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;margin-top:1rem}th,td{padding:.55rem .7rem;border-bottom:1px solid #d8dee4;text-align:left}th{font-size:.8rem;color:#57606a}td:not(:first-child){font-family:ui-monospace,SFMono-Regular,Menlo,monospace}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}.warning{border-left:4px solid #bf8700;background:#fff8c5;padding:.75rem;margin-top:1rem}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}th,td{border-color:#30363d}details{border-color:#30363d}.warning{background:#9a670033}}</style></head><body><main><h1>Elisa profile comparison</h1><p>Native comparison view; identity differences and evidence quality are explicit.</p><dl><div><dt>Baseline</dt><dd><code>")
                 append_text(buffer, "<style>summary:focus-visible{outline:3px solid #0969da;outline-offset:2px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:0.01ms!important;animation-duration:0.01ms!important;animation-iteration-count:1!important}}@media print{body{background:#fff!important;color:#000!important}main{box-shadow:none!important;border:0!important;max-width:none!important}table{break-inside:avoid}details[open] > pre{max-height:none!important}}</style>")
@@ -1001,6 +1053,9 @@ extend ProfilerNative:
                 append_comparison_function_changes_html(buffer, baseline.functions, candidate.functions)
                 append_comparison_call_edge_changes_html(buffer, baseline.call_edges, candidate.call_edges)
                 append_comparison_stack_changes_html(buffer, baseline.stacks, candidate.stacks)
+                append_text(buffer, "<section class='diff-flame-panel' aria-labelledby='diff-flame-title'><h2 id='diff-flame-title'>Differential flame graph</h2><p class='panel-note'>Each row is an identity-matched folded stack. Green means the candidate spent more observed self time; red means it spent less. Added and removed identities remain visible, while ambiguous matches are labeled instead of being silently merged.</p><label for='diff-flame-filter'>Search differential stacks</label><input id='diff-flame-filter' type='search' autocomplete='off' placeholder='function or stack'><p id='diff-flame-status' role='status' aria-live='polite'>Loading differential stacks…</p><div id='diff-flame-graph' class='diff-flame-graph' role='tree' aria-label='Differential folded-stack flame graph'></div><details><summary>Raw differential stack data</summary><pre id='diff-flame-raw' hidden>")
+                append_html_escaped(buffer, differential_stacks)
+                append_text(buffer, "</pre></details></section><style>.diff-flame-panel{margin-top:1.25rem}.diff-flame-panel label{display:block;font-weight:650;margin:.7rem 0 .25rem}.diff-flame-panel input{width:100%;box-sizing:border-box;padding:.55rem .7rem;border:1px solid #8c959f;border-radius:6px;font:inherit;background:inherit;color:inherit}.diff-flame-panel input:focus-visible{outline:3px solid #0969da;outline-offset:2px}.diff-flame-graph{margin-top:.75rem;border:1px solid #d8dee4;border-radius:8px;overflow:auto;padding:.5rem}.diff-flame-row{display:flex;align-items:center;gap:.5rem;min-width:52rem;min-height:2.15rem;padding:.2rem .4rem;border-bottom:1px solid #d8dee4;box-sizing:border-box}.diff-flame-label{flex:0 0 22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:13px ui-monospace,SFMono-Regular,Menlo,monospace}.diff-flame-meter{height:1.25rem;min-width:2px;border-radius:3px}.diff-flame-meter.positive{background:#2da44e99}.diff-flame-meter.negative{background:#cf222e99}.diff-flame-value{flex:0 0 18rem;text-align:right;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}.diff-flame-empty{padding:.75rem;color:#57606a}@media(prefers-color-scheme:dark){.diff-flame-graph{border-color:#30363d}.diff-flame-row{border-color:#30363d}.diff-flame-meter.positive{background:#3fb95099}.diff-flame-meter.negative{background:#f8514999}.diff-flame-empty{color:#8b949e}}</style><script>(function(){'use strict';const raw=document.getElementById('diff-flame-raw');const graph=document.getElementById('diff-flame-graph');const filter=document.getElementById('diff-flame-filter');const status=document.getElementById('diff-flame-status');const ZERO=0n;const MAX_ROWS=200;function magnitude(value){try{return BigInt(value||'0');}catch(_error){return ZERO;}}function absolute(value){return value<ZERO?-value:value;}function signed(value){return value>ZERO?'+'+value.toString():value.toString();}function displayPath(row){return row.candidate_path||row.baseline_path||'';}function build(){const root={name:'all',baseline:ZERO,candidate:ZERO,delta:ZERO,children:new Map()};JSON.parse(raw.textContent||'[]').forEach(function(row){const baseline=magnitude(row.baseline_ns);const candidate=magnitude(row.candidate_ns);const delta=candidate-baseline;root.baseline+=baseline;root.candidate+=candidate;root.delta+=delta;let node=root;const frames=displayPath(row).split(';').filter(function(frame){return frame.length>0;});frames.forEach(function(frame){let child=node.children.get(frame);if(!child){child={name:frame,baseline:ZERO,candidate:ZERO,delta:ZERO,children:new Map()};node.children.set(frame,child);}child.baseline+=baseline;child.candidate+=candidate;child.delta+=delta;node=child;});});return root;}function hasMatch(node,query){return !query||node.name.toLowerCase().includes(query)||[...node.children.values()].some(function(child){return hasMatch(child,query);});}function render(){const root=build();const query=(filter.value||'').toLowerCase();graph.replaceChildren();const children=[...root.children.values()].filter(function(child){return hasMatch(child,query);}).sort(function(left,right){const leftMagnitude=absolute(left.delta);const rightMagnitude=absolute(right.delta);return leftMagnitude===rightMagnitude?left.name.localeCompare(right.name):(leftMagnitude>rightMagnitude?-1:1);});if(children.length===0){const empty=document.createElement('p');empty.className='diff-flame-empty';empty.textContent=query?'No differential stacks match the current filter.':'No bounded folded-stack evidence was captured.';graph.appendChild(empty);status.textContent=empty.textContent;return;}let maxMagnitude=ZERO;children.forEach(function(child){const value=absolute(child.delta);if(value>maxMagnitude){maxMagnitude=value;}});let emitted=0;function appendNode(node,depth){if(emitted>=MAX_ROWS){return;}const visible=hasMatch(node,query);if(visible){const row=document.createElement('div');row.className='diff-flame-row';row.setAttribute('role','treeitem');row.style.paddingLeft=(depth*1.1+.4)+'rem';const label=document.createElement('span');label.className='diff-flame-label';label.textContent=node.name;const meter=document.createElement('span');meter.className='diff-flame-meter '+(node.delta>=ZERO?'positive':'negative');const width=maxMagnitude===ZERO?0:Number((absolute(node.delta)*100n)/maxMagnitude);meter.style.width=Math.max(width,node.delta===ZERO?0:2)+'%';const value=document.createElement('span');value.className='diff-flame-value';value.textContent=signed(node.delta)+' ns; baseline '+node.baseline.toString()+', candidate '+node.candidate.toString();row.appendChild(label);row.appendChild(meter);row.appendChild(value);graph.appendChild(row);emitted+=1;}[...node.children.values()].filter(function(child){return hasMatch(child,query);}).sort(function(left,right){const leftMagnitude=absolute(left.delta);const rightMagnitude=absolute(right.delta);return leftMagnitude===rightMagnitude?left.name.localeCompare(right.name):(leftMagnitude>rightMagnitude?-1:1);}).forEach(function(child){appendNode(child,depth+1);});}children.forEach(function(child){appendNode(child,0);});status.textContent=emitted+' differential frame'+(emitted===1?'':'s')+' shown'+(emitted>=MAX_ROWS?' (bounded)':'')+'.';}filter.addEventListener('input',render);render();}());</script>")
                 append_comparison_location_changes_html(buffer, baseline.location_records, candidate.location_records)
                 append_text(buffer, "<p><strong>Gate:</strong> ")
                 append_text(buffer, "inconclusive" if gate_inconclusive else "failed" if gate_failed else "passed" if comparison_policy_requested(policy) else "not requested")
