@@ -85,3 +85,24 @@ normalization and mixing helpers remain private. The `--large` argument selects
 the 5,000-iteration path and is retained verbatim in workload metadata. Use it
 to exercise module/dependency identity, forwarded-argument provenance, and
 hotspot-to-source navigation together.
+
+## Failure diagnosis
+
+The small failure fixtures keep the diagnosis workflow reproducible:
+
+```sh
+bin/elisa-profiler profile examples/timeout.elisa \
+  --timeout 50ms --format text --output /tmp/timeout.txt
+bin/elisa-profiler profile examples/crash.elisa \
+  --format json --output /tmp/crash.json
+bin/elisa-profiler profile examples/fixture_diversity.elisa \
+  --format html --output /tmp/fixture-diversity.html
+```
+
+The timeout report should identify `timeout`, the crash report should preserve
+the target signal and capture-quality reasons, and the fixture-diversity
+report should remain navigable even when source names contain UTF-8. When a
+target exits nonzero, inspect `run.outcome`, `run.exit_code`, `run.signal`, and
+`quality.reasons` in JSON rather than treating the profiler command's own
+status as the target's exit code. These examples intentionally cover a
+successful realistic dependency graph alongside timeout and crash evidence.
