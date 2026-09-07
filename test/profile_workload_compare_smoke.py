@@ -215,6 +215,7 @@ def main() -> int:
             b"Call-edge identity changes",
             b"Stack identity changes",
             b"Differential flame graph",
+            b"diff-flame-identity-title",
             b"diff-flame-filter",
             b"baseline_ns",
             b"Source-location identity changes",
