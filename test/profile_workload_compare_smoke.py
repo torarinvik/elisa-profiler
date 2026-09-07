@@ -232,20 +232,30 @@ def main() -> int:
             raise SystemExit("native comparison did not retain added and removed functions")
         if function_changes["alpha"]["inclusive_ns"]["candidate"] is not None:
             raise SystemExit("native comparison did not mark the removed function as unavailable")
+        if function_changes["alpha"]["match"] != "removed":
+            raise SystemExit("native comparison did not label the removed function")
         if function_changes["alpha"]["self_ns"]["relative_delta_basis_points"] is not None:
             raise SystemExit("native comparison did not mark an unavailable relative delta as null")
         if function_changes["beta"]["inclusive_ns"]["baseline"] is not None:
             raise SystemExit("native comparison did not mark the added function as unavailable")
+        if function_changes["beta"]["match"] != "added":
+            raise SystemExit("native comparison did not label the added function")
         edge_changes = {(item["caller"], item["callee"]): item for item in comparison["call_edges"]}
         if set(edge_changes) != {("root", "alpha"), ("root", "beta")}:
             raise SystemExit("native comparison did not retain added and removed call edges")
         if edge_changes[("root", "alpha")]["inclusive_ns"]["candidate"] is not None:
             raise SystemExit("native comparison did not mark the removed call edge as unavailable")
+        if edge_changes[("root", "alpha")]["match"] != "removed":
+            raise SystemExit("native comparison did not label the removed call edge")
+        if edge_changes[("root", "beta")]["match"] != "added":
+            raise SystemExit("native comparison did not label the added call edge")
         stack_changes = {item["stack"]: item for item in comparison["stacks"]}
         if set(stack_changes) != {"root;alpha", "root;beta"}:
             raise SystemExit("native comparison did not retain added and removed stacks")
         if stack_changes["root;beta"]["self_ns"]["baseline"] is not None:
             raise SystemExit("native comparison did not mark the added stack as unavailable")
+        if stack_changes["root;alpha"]["match"] != "removed" or stack_changes["root;beta"]["match"] != "added":
+            raise SystemExit("native comparison did not label stack additions and removals")
         location_changes = {
             (item["source"], item["kind"], item["function"], item["line"], item["variable"], item["signed"]): item
             for item in comparison["locations"]
@@ -259,6 +269,8 @@ def main() -> int:
             raise SystemExit("native comparison did not mark the removed source location as unavailable")
         if location_changes[("fixture.elisa", "statement", "beta", 11, None, False)]["count"]["baseline"] is not None:
             raise SystemExit("native comparison did not mark the added source location as unavailable")
+        if location_changes[("fixture.elisa", "statement", "alpha", 10, None, False)]["match"] != "removed" or location_changes[("fixture.elisa", "statement", "beta", 11, None, False)]["match"] != "added":
+            raise SystemExit("native comparison did not label source-location additions and removals")
         if comparison["candidate"]["exit_code"] is not None:
             raise SystemExit("native comparison did not preserve a signaled null exit code")
         if "baseline or candidate target execution failed" not in comparison.get("warnings", []):

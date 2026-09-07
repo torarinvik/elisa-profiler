@@ -243,6 +243,31 @@ extend ProfilerNative:
             return false
 
 
+        # Return the pairing decision for one output row. An ambiguous identity
+        # is intentionally different from an added/removed record: both sides
+        # contain evidence, but no safe one-to-one pairing exists.
+        def comparison_function_match_kind(baseline: darray[ComparisonFunctionRecord]&, baseline_index: i64, candidate: darray[ComparisonFunctionRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
+            if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
+            if baseline_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_function_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
+            return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_function_match_is_ambiguous(baseline, candidate[candidate_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_ADDED
+
+
+        def append_comparison_match_label(buffer: mutable darray[u8]&, match_kind: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            if match_kind == NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID:
+                append_text(buffer, sview(NATIVE_COMPARISON_MATCH_COMPILER_ID, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            elif match_kind == NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME:
+                append_text(buffer, sview(NATIVE_COMPARISON_MATCH_READABLE_NAME, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            elif match_kind == NATIVE_COMPARISON_MATCH_KIND_ADDED:
+                append_text(buffer, sview(NATIVE_COMPARISON_MATCH_ADDED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            elif match_kind == NATIVE_COMPARISON_MATCH_KIND_REMOVED:
+                append_text(buffer, sview(NATIVE_COMPARISON_MATCH_REMOVED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            else:
+                append_text(buffer, sview(NATIVE_COMPARISON_MATCH_AMBIGUOUS, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+
+
         def comparison_missing_function_count(records: darray[ComparisonFunctionRecord]&, other: darray[ComparisonFunctionRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
@@ -328,8 +353,12 @@ extend ProfilerNative:
                 candidate_interval_ns <- candidate_record.interval_ns
                 candidate_max_interval_ns <- candidate_record.max_interval_ns
             function_name: darray[u8] = baseline_name if baseline_available else candidate_name
+            match_kind: i64 = comparison_function_match_kind(baseline, baseline_index, candidate, candidate_index)
             append_text(buffer, "{\"function\":")
             append_json_string(buffer, function_name)
+            append_text(buffer, ",\"match\":\"")
+            append_comparison_match_label(buffer, match_kind)
+            append_text(buffer, "\"")
             append_text(buffer, ",\"repetition\":")
             append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
             append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
@@ -402,6 +431,15 @@ extend ProfilerNative:
             return false
 
 
+        def comparison_call_edge_match_kind(baseline: darray[ComparisonCallEdgeRecord]&, baseline_index: i64, candidate: darray[ComparisonCallEdgeRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
+            if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and baseline[baseline_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
+            if baseline_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_call_edge_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
+            return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_call_edge_match_is_ambiguous(baseline, candidate[candidate_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_ADDED
+
+
         def append_comparison_call_edge_json(buffer: mutable darray[u8]&, baseline: darray[ComparisonCallEdgeRecord]&, baseline_index: i64, candidate: darray[ComparisonCallEdgeRecord]&, candidate_index: i64) -> void can[Abort.Panic, Memory.Allocate]:
             baseline_available: bool = baseline_index >= NATIVE_ZERO
             candidate_available: bool = candidate_index >= NATIVE_ZERO
@@ -421,12 +459,16 @@ extend ProfilerNative:
                 candidate_call_events <- candidate_record.call_events
                 candidate_completed_calls <- candidate_record.completed_calls
                 candidate_inclusive_ns <- candidate_record.inclusive_ns
+            match_kind: i64 = comparison_call_edge_match_kind(baseline, baseline_index, candidate, candidate_index)
             append_text(buffer, "{\"caller\":")
             append_json_string(buffer, baseline[baseline_index.usize()].caller) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].caller) if not baseline_available
             append_text(buffer, ",\"callee\":")
             append_json_string(buffer, baseline[baseline_index.usize()].callee) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].callee) if not baseline_available
+            append_text(buffer, ",\"match\":\"")
+            append_comparison_match_label(buffer, match_kind)
+            append_text(buffer, "\"")
             append_text(buffer, ",\"repetition\":")
             append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
             append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
@@ -540,6 +582,15 @@ extend ProfilerNative:
             return false
 
 
+        def comparison_stack_match_kind(baseline: darray[ComparisonStackRecord]&, baseline_index: i64, candidate: darray[ComparisonStackRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
+            if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_path.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_path.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
+            if baseline_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_stack_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
+            return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_stack_match_is_ambiguous(baseline, candidate[candidate_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_ADDED
+
+
         def comparison_missing_stack_count(records: darray[ComparisonStackRecord]&, other: darray[ComparisonStackRecord]&) -> i64 can[Abort.Panic]:
             missing: mutable i64 = NATIVE_ZERO
             for index in 0..<records.count |index, records, other, missing|:
@@ -604,9 +655,13 @@ extend ProfilerNative:
                 candidate_call_events <- candidate_record.call_events
                 candidate_completed_calls <- candidate_record.completed_calls
                 candidate_self_ns <- candidate_record.self_ns
+            match_kind: i64 = comparison_stack_match_kind(baseline, baseline_index, candidate, candidate_index)
             append_text(buffer, "{\"stack\":")
             append_json_string(buffer, baseline[baseline_index.usize()].path) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].path) if not baseline_available
+            append_text(buffer, ",\"match\":\"")
+            append_comparison_match_label(buffer, match_kind)
+            append_text(buffer, "\"")
             append_text(buffer, ",\"repetition\":")
             append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
             append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
@@ -669,6 +724,15 @@ extend ProfilerNative:
             for index in 0..<records.count |index, records, other|:
                 return true if comparison_location_match_is_ambiguous(other, records[index])
             return false
+
+
+        def comparison_location_match_kind(baseline: darray[ComparisonLocationRecord]&, baseline_index: i64, candidate: darray[ComparisonLocationRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
+            if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
+            if baseline_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_location_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
+            return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_location_match_is_ambiguous(baseline, candidate[candidate_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_ADDED
 
 
         def comparison_identity_has_ambiguous_matches(baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool can[Abort.Panic]:
@@ -757,6 +821,7 @@ extend ProfilerNative:
                 candidate_count <- candidate_record.count
                 candidate_interval_ns <- candidate_record.interval_ns
                 candidate_max_interval_ns <- candidate_record.max_interval_ns
+            match_kind: i64 = comparison_location_match_kind(baseline, baseline_index, candidate, candidate_index)
             append_text(buffer, "{\"source\":")
             if baseline_available and baseline[baseline_index.usize()].source_available:
                 append_json_string(buffer, baseline[baseline_index.usize()].source)
@@ -770,6 +835,9 @@ extend ProfilerNative:
             append_text(buffer, ",\"function\":")
             append_json_string(buffer, baseline[baseline_index.usize()].function) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].function) if not baseline_available
+            append_text(buffer, ",\"match\":\"")
+            append_comparison_match_label(buffer, match_kind)
+            append_text(buffer, "\"")
             append_text(buffer, ",\"repetition\":")
             append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
             append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available

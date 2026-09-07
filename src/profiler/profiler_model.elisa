@@ -71,6 +71,18 @@ module ProfilerNative:
         const NATIVE_COMPARISON_THRESHOLD_DISABLED: i64 = -1
         const NATIVE_COMPARISON_MAX_PERCENT: i64 = 1000000
         const NATIVE_COMPARISON_HTML_DETAIL_LIMIT: i64 = 200
+        # These labels are part of the comparison JSON contract. Centralizing
+        # them prevents the four detail families from drifting apart.
+        const NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID: i64 = 1
+        const NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME: i64 = 2
+        const NATIVE_COMPARISON_MATCH_KIND_ADDED: i64 = 3
+        const NATIVE_COMPARISON_MATCH_KIND_REMOVED: i64 = 4
+        const NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS: i64 = 5
+        const NATIVE_COMPARISON_MATCH_COMPILER_ID: cstr = "compiler_id"
+        const NATIVE_COMPARISON_MATCH_READABLE_NAME: cstr = "readable_name"
+        const NATIVE_COMPARISON_MATCH_ADDED: cstr = "added"
+        const NATIVE_COMPARISON_MATCH_REMOVED: cstr = "removed"
+        const NATIVE_COMPARISON_MATCH_AMBIGUOUS: cstr = "ambiguous"
         const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192

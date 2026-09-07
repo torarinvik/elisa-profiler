@@ -111,6 +111,7 @@ def main():
         identity_comparison = json.loads(run("compare", identity_baseline_path, identity_candidate_path, "--format", "json"))
         identity_changes = [row for row in identity_comparison["functions"] if row["function"] == "same_readable_name"]
         assert len(identity_changes) == 2, identity_changes
+        assert {row["match"] for row in identity_changes} == {"removed", "added"}, identity_changes
         assert any(row["events"]["baseline"] is not None and row["events"]["candidate"] is None for row in identity_changes)
         assert any(row["events"]["baseline"] is None and row["events"]["candidate"] is not None for row in identity_changes)
         assert identity_comparison["baseline"]["identity"] == "compiler_stable_ids"
@@ -143,10 +144,13 @@ def main():
         ambiguous_candidate_path.write_text(json.dumps(ambiguous_candidate), encoding="utf-8")
         ambiguity_comparison = json.loads(run("compare", legacy_identity_path, ambiguous_candidate_path, "--format", "json"))
         assert any("ambiguous additions/removals" in warning for warning in ambiguity_comparison["warnings"])
+        assert {row["match"] for row in ambiguity_comparison["functions"]} == {"ambiguous"}, ambiguity_comparison["functions"]
         run(
             "compare", legacy_identity_path, ambiguous_candidate_path, "--format", "json",
             "--max-function-self-regression-percent", "10", ok=False, expected=INCONCLUSIVE_STATUS,
         )
+        legacy_same_comparison = json.loads(run("compare", legacy_identity_path, legacy_identity_path, "--format", "json"))
+        assert {row["match"] for row in legacy_same_comparison["functions"]} == {"readable_name"}, legacy_same_comparison["functions"]
         mixed_identity = copy.deepcopy(identity_baseline)
         mixed_identity["functions"].append({key: value for key, value in identity_function.items() if key != "identity_id"})
         mixed_identity_path = work / "identity-mixed.json"

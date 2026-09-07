@@ -364,7 +364,14 @@ domain-specific.
   warning/inconclusive condition. If either side contains duplicate identities
   for a comparison key, the result includes an explicit ambiguous-identity
   warning and a requested gate is inconclusive; the renderer never chooses an
-  arbitrary duplicate.
+  arbitrary duplicate. Every function, caller-edge, folded-stack, and
+  source-location row in machine-readable comparison output carries `match`:
+  `compiler_id` means a one-to-one stable-ID pairing, `readable_name` means a
+  one-to-one legacy fallback pairing, `added`/`removed` means that the record
+  exists on only one side, and `ambiguous` means duplicate candidates prevented
+  a safe pairing. Null metrics on an added or removed row therefore describe
+  missing evidence, never a measured zero; ambiguous rows are not safe inputs
+  to a hard gate.
 
 ## Completeness and failure states
 

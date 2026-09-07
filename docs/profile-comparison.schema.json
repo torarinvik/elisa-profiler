@@ -190,9 +190,10 @@
     },
     "function_change": {
       "type": "object",
-      "required": ["function", "repetition", "events", "call_events", "completed_calls", "inclusive_ns", "self_ns", "interval_ns", "max_interval_ns"],
+      "required": ["function", "match", "repetition", "events", "call_events", "completed_calls", "inclusive_ns", "self_ns", "interval_ns", "max_interval_ns"],
       "properties": {
         "function": { "type": "string", "minLength": 1 },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "events": { "$ref": "#/$defs/resource_count_metric" },
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
@@ -206,10 +207,11 @@
     },
     "call_edge_change": {
       "type": "object",
-      "required": ["caller", "callee", "repetition", "call_events", "completed_calls", "inclusive_ns"],
+      "required": ["caller", "callee", "match", "repetition", "call_events", "completed_calls", "inclusive_ns"],
       "properties": {
         "caller": { "type": "string", "minLength": 1 },
         "callee": { "type": "string", "minLength": 1 },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
         "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
@@ -219,9 +221,10 @@
     },
     "stack_change": {
       "type": "object",
-      "required": ["stack", "repetition", "call_events", "completed_calls", "self_ns"],
+      "required": ["stack", "match", "repetition", "call_events", "completed_calls", "self_ns"],
       "properties": {
         "stack": { "type": "string", "minLength": 1 },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
         "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
@@ -231,11 +234,12 @@
     },
     "location_change": {
       "type": "object",
-      "required": ["source", "line", "function", "repetition", "kind", "variable", "signed", "count", "interval_ns", "max_interval_ns"],
+      "required": ["source", "line", "function", "match", "repetition", "kind", "variable", "signed", "count", "interval_ns", "max_interval_ns"],
       "properties": {
         "source": { "type": ["string", "null"] },
         "line": { "type": ["integer", "null"], "minimum": 0 },
         "function": { "type": "string", "minLength": 1 },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "kind": { "type": "string", "enum": ["statement", "value", "function"] },
         "variable": { "type": ["string", "null"] },
