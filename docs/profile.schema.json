@@ -171,7 +171,7 @@
           "properties": {
             "scope": { "const": "registered_collector_threads" },
             "lifetime": { "const": "capture_only" },
-            "identity": { "const": "local_capture_thread_id" }
+            "identity": { "const": "local_capture_thread_generation" }
           },
           "additionalProperties": false
         },
@@ -676,7 +676,9 @@
         "trace_dropped": { "type": "integer", "minimum": 0 },
         "bytes_dropped": { "type": "integer", "minimum": 0 },
         "event_start": { "type": ["integer", "null"], "minimum": 0 },
-        "event_end": { "type": ["integer", "null"], "minimum": 0 }
+        "event_end": { "type": ["integer", "null"], "minimum": 0 },
+        "ended": { "type": "boolean" },
+        "end_event": { "type": ["integer", "null"], "minimum": 0 }
       },
       "additionalProperties": false
     },

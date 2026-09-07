@@ -111,6 +111,8 @@ enum {
     PROFILE_MAX_SAMPLE_PERIOD_MICROSECONDS = 1000000,
     PROFILE_SAMPLE_HANDLER_IDLE = 0,
     PROFILE_SAMPLE_HANDLER_BUSY = 1,
+    PROFILE_THREAD_LIFECYCLE_ACTIVE = 0,
+    PROFILE_THREAD_LIFECYCLE_ENDED = 1,
     PROFILE_SAMPLE_SIGNAL = SIGPROF,
     PROFILE_COLLECTOR_FAILURE_STATUS = 126,
     PROFILE_COLLECTOR_STATUS_OK = 1,
@@ -195,6 +197,9 @@ static size_t profile_max_call_depth;
 static uint64_t profile_stack_overflow_entries;
 static FILE *profile_output_stream;
 static pthread_once_t profile_output_once = PTHREAD_ONCE_INIT;
+static pthread_key_t profile_thread_key;
+static pthread_once_t profile_thread_key_once = PTHREAD_ONCE_INIT;
+static int profile_thread_key_available;
 static int profile_event_trace_enabled;
 static uint64_t profile_event_trace_limit;
 static uint64_t profile_event_trace_captured;
@@ -570,6 +575,8 @@ typedef struct profile_thread_state profile_thread_state;
 struct profile_thread_state {
     profile_thread_state *next;
     uint64_t thread_id;
+    uint64_t end_event;
+    int lifecycle_ended;
     uint64_t event_count;
     uint64_t first_event;
     uint64_t last_event;
@@ -727,6 +734,8 @@ static _Thread_local profile_overflow_frame *profile_call_overflow_stack;
 static _Thread_local size_t profile_call_overflow_untracked_depth;
 static _Thread_local profile_thread_state *profile_current_thread;
 static profile_thread_state *profile_get_thread_locked(void);
+static void profile_initialize_thread_key(void);
+static void profile_thread_key_destructor(void *value);
 
 static void profile_push_overflow_frame(const char *function_name, uint32_t line,
                                         uint64_t function_id) {
@@ -1187,6 +1196,7 @@ static profile_thread_state *profile_get_thread_locked(void) {
     if (profile_current_thread != NULL) {
         return profile_current_thread;
     }
+    (void)pthread_once(&profile_thread_key_once, profile_initialize_thread_key);
     profile_thread_state *thread = NULL;
     if (!profile_reserve_bytes_locked(sizeof(*thread))) {
         return NULL;
@@ -1200,6 +1210,9 @@ static profile_thread_state *profile_get_thread_locked(void) {
     thread->thread_id = profile_thread_count;
     profile_threads = thread;
     profile_current_thread = thread;
+    if (profile_thread_key_available) {
+        (void)pthread_setspecific(profile_thread_key, thread);
+    }
     profile_thread_count =
         profile_saturating_increment_u64(profile_thread_count);
     return thread;
@@ -1277,6 +1290,32 @@ static void profile_close_timing_cursor(void) {
     pthread_mutex_unlock(&profile_lock);
 }
 #endif
+
+static void profile_thread_key_destructor(void *value) {
+    profile_thread_state *thread = (profile_thread_state *)value;
+    if (thread == NULL || profile_fork_child_disabled) {
+        return;
+    }
+    pthread_mutex_lock(&profile_lock);
+    if (!thread->lifecycle_ended) {
+#if ELISA_PROFILE_TIMING
+        if (!profile_dumped) {
+            profile_account_previous_locked(thread, profile_now_ns_for_thread(thread));
+        }
+#endif
+        thread->lifecycle_ended = PROFILE_THREAD_LIFECYCLE_ENDED;
+        thread->end_event = profile_event_count;
+    }
+    if (thread == profile_current_thread) {
+        profile_current_thread = NULL;
+    }
+    pthread_mutex_unlock(&profile_lock);
+}
+
+static void profile_initialize_thread_key(void) {
+    profile_thread_key_available =
+        pthread_key_create(&profile_thread_key, profile_thread_key_destructor) == 0;
+}
 
 static int profile_grow_locked(void) {
     size_t new_capacity;
@@ -2001,6 +2040,16 @@ static void profile_dump_thread_records(void) {
         } else {
             profile_record_append_uint64(thread->last_event);
         }
+        profile_record_append_char('\t');
+        profile_record_append_uint64(thread->lifecycle_ended
+                                         ? PROFILE_THREAD_LIFECYCLE_ENDED
+                                         : PROFILE_THREAD_LIFECYCLE_ACTIVE);
+        profile_record_append_char('\t');
+        if (thread->lifecycle_ended) {
+            profile_record_append_uint64(thread->end_event);
+        } else {
+            profile_record_append_char('-');
+        }
         profile_record_emit();
     }
 }
@@ -2437,7 +2486,9 @@ static void profile_dump_body(void) {
     for (profile_thread_state *thread = profile_threads;
          thread != NULL;
          thread = thread->next) {
-        profile_account_previous_locked(thread, profile_now_ns_for_thread(thread));
+        if (!thread->lifecycle_ended) {
+            profile_account_previous_locked(thread, profile_now_ns_for_thread(thread));
+        }
     }
 #endif
     profile_dumped = 1;

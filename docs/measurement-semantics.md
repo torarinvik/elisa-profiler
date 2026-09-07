@@ -459,6 +459,14 @@ run because collector thread IDs are local to a capture. `location_dropped`,
 sequence for that thread, so loss is localized to an evidence interval without
 claiming exact drop timestamps. They are nullable for legacy captures. A
 thread record is diagnostic evidence, not a replacement for aggregate counters.
+Current collector records also expose `ended` and nullable `end_event`: the
+monotonic capture-local `thread_id` is a generation ID, `ended` is true when
+the thread's pthread-key destructor ran before collection finalized, and
+`end_event` is the collector sequence observed at that lifecycle boundary.
+An active main thread is expected to report `ended: false`; a worker that has
+already returned reports `ended: true`. These fields describe observed
+collector-thread lifecycle only and are not logical task or cross-process
+identity.
 No individual trace event is treated as an independent statistical sample.
 The median is the middle value (the arithmetic mean of the two middle values
 for an even count), and standard deviation is the sample standard deviation of

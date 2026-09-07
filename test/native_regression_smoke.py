@@ -588,7 +588,7 @@ def main():
             "threads": {
                 "scope": "registered_collector_threads",
                 "lifetime": "capture_only",
-                "identity": "local_capture_thread_id",
+                "identity": "local_capture_thread_generation",
             },
             "tasks": {"status": "not_recorded"},
             "repetition": {"scope": "run.repetitions", "warmups_excluded": True},
@@ -680,6 +680,8 @@ def main():
                 "bytes_dropped",
                 "event_start",
                 "event_end",
+                "ended",
+                "end_event",
             }
             for record in measured["thread_loss"]
         )
@@ -754,6 +756,9 @@ def main():
         assert len(threaded["thread_loss"]) >= 3
         assert all(record["repetition"] == 1 for record in threaded["thread_loss"])
         assert all(record["events"] > 0 for record in threaded["thread_loss"])
+        assert any(record["ended"] for record in threaded["thread_loss"])
+        assert any(not record["ended"] for record in threaded["thread_loss"])
+        assert all(record["end_event"] is not None for record in threaded["thread_loss"] if record["ended"])
         assert any(function["function"] == "worker" for function in threaded["functions"])
         assert b"thread loss records: present" in run("report", threaded_output, "--format", "text")
         assert b"Thread loss" in run("report", threaded_output, "--format", "html")

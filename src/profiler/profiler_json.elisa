@@ -796,6 +796,9 @@ extend ProfilerNative:
                 stack_dropped: mutable i64 = NATIVE_ZERO
                 trace_dropped: mutable i64 = NATIVE_ZERO
                 bytes_dropped: mutable i64 = NATIVE_ZERO
+                lifecycle_ended: mutable bool = false
+                end_event: mutable i64 = NATIVE_ZERO
+                end_event_available: mutable bool = false
                 return false if not json_read_optional_number_field(data, "repetition", cursor, object_stop.usize(), &repetition)
                 return false if not json_read_number_field(data, "thread_id", cursor, object_stop.usize(), &thread_id)
                 return false if not json_read_number_field(data, "events", cursor, object_stop.usize(), &events)
@@ -804,7 +807,10 @@ extend ProfilerNative:
                 return false if not json_read_number_field(data, "stack_dropped", cursor, object_stop.usize(), &stack_dropped)
                 return false if not json_read_number_field(data, "trace_dropped", cursor, object_stop.usize(), &trace_dropped)
                 return false if not json_read_number_field(data, "bytes_dropped", cursor, object_stop.usize(), &bytes_dropped)
+                return false if not json_read_optional_bool_field(data, "ended", cursor, object_stop.usize(), &lifecycle_ended)
+                return false if not json_read_nullable_number_field(data, "end_event", cursor, object_stop.usize(), &end_event, &end_event_available)
                 return false if repetition < NATIVE_ZERO or repetition == NATIVE_ZERO and json_key_value_start(data, "repetition", cursor, object_stop.usize()) >= NATIVE_ZERO or thread_id < NATIVE_ZERO or events < NATIVE_ZERO or location_dropped < NATIVE_ZERO or call_edge_dropped < NATIVE_ZERO or stack_dropped < NATIVE_ZERO or trace_dropped < NATIVE_ZERO or bytes_dropped < NATIVE_ZERO
+                return false if lifecycle_ended and not end_event_available
                 thread_record_count <- thread_record_count + NATIVE_ONE
                 cursor <- object_stop.usize()
                 cursor <- json_skip_whitespace(data, cursor, content_stop)
