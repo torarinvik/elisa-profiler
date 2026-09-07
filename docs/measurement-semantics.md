@@ -322,6 +322,12 @@ domain-specific.
 - `inclusive_ns` includes observed child time. `self_ns` is the portion of an
   observed interval not attributed to a completed child. An incomplete frame
   never contributes a fabricated completion interval.
+- Folded timing output uses the recorded `self_ns` value, including zero, and
+  omits zero-weight rows; it never substitutes completed-call counts for a
+  timing row. Event-oriented folded output uses completed-call counts instead.
+  The live protocol parser and offline JSON reader apply the same rule so a
+  report rendered during capture cannot disagree with the same capture after
+  it is moved or regenerated.
 - Recursive calls are separate stack nodes when their parent path differs, but
   function summaries intentionally aggregate the readable function key.
   Readable names are not stable cross-build identities; source and compiler

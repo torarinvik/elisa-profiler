@@ -361,7 +361,7 @@ extend ProfilerNative:
             summary.call_edge_record_count <- native_saturating_add(summary.call_edge_record_count, NATIVE_ONE)
 
 
-        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64, location_timing: bool) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.stack_record_count, NATIVE_PROTOCOL_ERROR_STACK, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             stack_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
@@ -408,14 +408,13 @@ extend ProfilerNative:
                 append_text(stack_records, ",\"stack_ids\":")
                 append_json_string(stack_records, stack_ids_field)
             append_text(stack_records, "}")
-            append_folded_separator(folded_records)
-            for index in 0..<stack_field.count |folded_records, stack_field|:
-                folded_records.push(stack_field[index])
-            folded_records.push(NATIVE_BYTE_SPACE)
-            if protocol_number_field(self_field) > NATIVE_ZERO:
-                append_protocol_number(folded_records, self_field)
-            else:
-                append_protocol_number(folded_records, calls_field)
+            folded_weight: i64 = protocol_number_field(self_field) if location_timing else protocol_number_field(calls_field)
+            if folded_weight > NATIVE_ZERO:
+                append_folded_separator(folded_records)
+                for index in 0..<stack_field.count |folded_records, stack_field|:
+                    folded_records.push(stack_field[index])
+                folded_records.push(NATIVE_BYTE_SPACE)
+                append_i64(folded_records, folded_weight)
             summary.stack_record_count <- native_saturating_add(summary.stack_record_count, NATIVE_ONE)
 
 
@@ -628,7 +627,7 @@ extend ProfilerNative:
             return value
         
         
-        def parse_capture(data: darray[u8]&, source: darray[u8]&, allow_partial_tail: bool, repetition: i64) -> CaptureSummary:
+        def parse_capture(data: darray[u8]&, source: darray[u8]&, allow_partial_tail: bool, repetition: i64, location_timing: bool) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
@@ -849,7 +848,7 @@ extend ProfilerNative:
                         append_call_record(&summary, &call_edge_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
-                        append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop, repetition)
+                        append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop, repetition, location_timing)
                     elif frame_valid and line_prefix(data, record_start, line_stop, sample_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(sample_prefix)
                         append_sample_record(&summary, &sample_records, &folded_records, data, &cursor, line_stop, repetition)

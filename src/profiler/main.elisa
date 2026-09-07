@@ -1800,7 +1800,7 @@ extend ProfilerNative:
             source_bytes: darray[u8] = read_file(source)
             return report_error("source file could not be read for recovery") if source_bytes.count == NATIVE_ZERO.usize()
             return report_error("source changed since capture; recovery would misattribute locations") if not byte_arrays_equal(source_digest, sha256_hex(source_bytes))
-            summary: CaptureSummary = parse_capture(capture, source, true, NATIVE_ONE)
+            summary: CaptureSummary = parse_capture(capture, source, true, NATIVE_ONE, not protocol_field_is(mode, "sample"))
             return report_protocol_error(summary) if summary.malformed
             return report_error("capture contains no complete framed records") if summary.valid_frames == NATIVE_ZERO
             recovered: mutable darray[u8] = []
@@ -2410,7 +2410,7 @@ extend ProfilerNative:
                         cleanup_temp(temporary)
                         return report_error("native target produced no collector capture")
                 else:
-                    current_summary <- parse_capture(capture, display_source, run_result.timed_out, repetition)
+                    current_summary <- parse_capture(capture, display_source, run_result.timed_out, repetition, not protocol_field_is(mode, "sample"))
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)
