@@ -1098,6 +1098,7 @@ extend ProfilerNative:
             append_html_view_state(buffer)
             append_html_function_explorer_rebind(buffer)
             append_html_function_explorer_source_navigation(buffer)
+            append_html_empty_state_behaviors(buffer)
             append_text(buffer, "</main></body></html>\n")
 
 

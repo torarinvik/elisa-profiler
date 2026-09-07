@@ -163,7 +163,7 @@ extend ProfilerNative:
         # The small record scanner therefore extracts only the shallow scalar
         # fields needed by this table and never converts metric text to Number.
         def append_html_function_browser(buffer: mutable darray[u8]&, records: darray[u8]&, folded: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
-            append_text(buffer, "<style>.panel{margin-top:1.25rem}.panel h2{margin-bottom:.5rem}.panel label{display:block;font-weight:650;margin-bottom:.25rem}.panel input{width:100%;box-sizing:border-box;padding:.55rem .7rem;border:1px solid #8c959f;border-radius:6px;font:inherit;background:inherit;color:inherit}.table-scroll{overflow:auto;margin-top:.75rem}.panel table{width:100%;border-collapse:collapse;min-width:42rem}.panel th,.panel td{padding:.5rem .65rem;border-bottom:1px solid #d8dee4;text-align:left;white-space:nowrap}.panel th{font-size:.8rem;color:#57606a}.panel td:not(:first-child){font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right}.panel details{margin-top:.75rem}</style><section class='panel' aria-labelledby='hotspots-title'><h2 id='hotspots-title'>Hotspots</h2><label for='function-filter'>Filter functions</label><input id='function-filter' type='search' autocomplete='off' placeholder='name or percentage'><p id='function-status' role='status' aria-live='polite'></p><div class='table-scroll'><table><thead><tr><th scope='col'>Function</th><th scope='col'>Inclusive</th><th scope='col'>Self</th><th scope='col'>Calls</th><th scope='col'>Share</th></tr></thead><tbody id='function-rows'></tbody></table></div><details><summary>Raw function records</summary><pre id='function-records' hidden>")
+            append_text(buffer, "<style>.panel{margin-top:1.25rem}.panel h2{margin-bottom:.5rem}.panel label{display:block;font-weight:650;margin-bottom:.25rem}.panel input{width:100%;box-sizing:border-box;padding:.55rem .7rem;border:1px solid #8c959f;border-radius:6px;font:inherit;background:inherit;color:inherit}.table-scroll{overflow:auto;margin-top:.75rem}.panel table{width:100%;border-collapse:collapse;min-width:42rem}.panel th,.panel td{padding:.5rem .65rem;border-bottom:1px solid #d8dee4;text-align:left;white-space:nowrap}.panel th{font-size:.8rem;color:#57606a}.panel td:not(:first-child){font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right}.panel details{margin-top:.75rem}.empty-state{padding:.75rem;border:1px dashed #8c959f;border-radius:8px;color:#57606a}.panel noscript{display:block;margin-top:.75rem}@media(prefers-color-scheme:dark){.empty-state{color:#8b949e;border-color:#8b949e}}</style><section class='panel' aria-labelledby='hotspots-title'><h2 id='hotspots-title'>Hotspots</h2><label for='function-filter'>Filter functions</label><input id='function-filter' type='search' autocomplete='off' placeholder='name or percentage'><p id='function-status' role='status' aria-live='polite'>Loading function records…</p><p id='function-empty' class='empty-state' role='status' hidden></p><noscript><p class='empty-state'>Enable JavaScript to inspect hotspots interactively, or use <code>--format text</code> or <code>--format folded</code> for a script-free report.</p></noscript><div class='table-scroll'><table><thead><tr><th scope='col'>Function</th><th scope='col'>Inclusive</th><th scope='col'>Self</th><th scope='col'>Calls</th><th scope='col'>Share</th></tr></thead><tbody id='function-rows'></tbody></table></div><details><summary>Raw function records</summary><pre id='function-records' hidden>")
             append_html_escaped(buffer, records)
             append_text(buffer, "</pre></details><p class='panel-note'>Inclusive share is relative to observed folded root self time. Inclusive callers overlap their callees, so their shares can sum above 100%.</p><pre id='function-root-weights' hidden>")
             append_html_escaped(buffer, folded)
@@ -194,6 +194,12 @@ extend ProfilerNative:
         # location filtering while allowing the source panel to remain lazy.
         def append_html_function_explorer_source_navigation(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<script>(function(){'use strict';const rows=document.getElementById('function-rows');const SOURCE_FILTER_ID='source-filter';if(rows===null){return;}function focusSource(row){const first=row.firstElementChild;const input=document.getElementById(SOURCE_FILTER_ID);if(first===null||input===null){return;}input.value=first.textContent||'';input.dispatchEvent(new Event('input'));}function targetRow(event){const target=event.target;if(target===null||target.closest===undefined){return null;}return target.closest('tr');}rows.addEventListener('click',function(event){const row=targetRow(event);if(row!==null){focusSource(row);}});rows.addEventListener('keydown',function(event){if(event.key!=='Enter'&&event.key!==' '){return;}const row=targetRow(event);if(row!==null){event.preventDefault();focusSource(row);}}); }());</script>")
+
+        # Keep a real, visible explanation beside an empty function table. The
+        # renderer initially emits a loading status, and the mutation observer
+        # follows the delegated table renderer without parsing target data.
+        def append_html_empty_state_behaviors(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<script>(function(){'use strict';const body=document.getElementById('function-rows');const filter=document.getElementById('function-filter');const empty=document.getElementById('function-empty');if(body===null||empty===null){return;}function refresh(){const hasRows=body.children.length>0;empty.hidden=hasRows;if(!hasRows){empty.textContent=filter!==null&&(filter.value||'').length>0?'No function records match this filter. Clear the filter or inspect the raw records.':'No function records were captured. Check Diagnostics or try a richer collection mode.';}}new MutationObserver(refresh).observe(body,{childList:true});refresh();}());</script>")
 
 
         def append_html_flame_graph(buffer: mutable darray[u8]&, folded: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -297,6 +303,10 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details></section>")
 
 
+        def append_html_source_unavailable(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<section class='panel' aria-labelledby='source-unavailable-title'><h2 id='source-unavailable-title'>Source view unavailable</h2><p>This capture does not contain an embedded source snapshot, so source navigation and line heat cannot be reconstructed offline. Re-run profiling with <code>--embed-source</code> when the source can be included safely.</p></section>")
+
+
         def append_offline_html_profile(buffer: mutable darray[u8]&, profile: NativeOfflineProfile) -> bool can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa offline renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, profile.source)
@@ -350,7 +360,10 @@ extend ProfilerNative:
             append_text(buffer, "</dl>")
             append_html_workload_object(buffer, profile.workload) if profile.workload.count > NATIVE_ZERO.usize()
             append_html_diagnostics(buffer, profile.capture_complete if profile.capture_complete_available else true, profile.dropped, profile.call_edge_dropped, profile.stack_dropped, profile.frame_dropped, profile.capture_bytes_dropped, profile.stack_overflow_entries, profile.trace_omitted, profile.crash_signal if profile.crash_signal_available else NATIVE_NEGATIVE_ONE)
-            append_html_source_view(buffer, profile.source, profile.source_snapshot, profile.location_records, true) if profile.source_snapshot.count > NATIVE_ZERO.usize()
+            if profile.source_snapshot.count > NATIVE_ZERO.usize():
+                append_html_source_view(buffer, profile.source, profile.source_snapshot, profile.location_records, true)
+            else:
+                append_html_source_unavailable(buffer)
             append_html_function_browser(buffer, profile.functions, profile.folded_records)
             append_html_function_explorer(buffer)
             append_html_detail_browsers(buffer, profile.call_edges, profile.location_records)
@@ -361,6 +374,7 @@ extend ProfilerNative:
             append_html_view_state(buffer)
             append_html_function_explorer_rebind(buffer)
             append_html_function_explorer_source_navigation(buffer)
+            append_html_empty_state_behaviors(buffer)
             append_text(buffer, "</main></body></html>\n")
             return true
 

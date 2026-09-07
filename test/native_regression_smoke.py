@@ -269,11 +269,16 @@ def main():
         assert b"function formatShare(value)" in offline_html
         assert b"function-root-weights" in offline_html
         assert b"observed folded root self time" in offline_html
+        assert b"Loading function records" in offline_html
+        assert b"No function records were captured" in offline_html
+        assert b"Enable JavaScript to inspect hotspots interactively" in offline_html
         assert b"Workload reproducibility" in offline_html
         assert b"ELISA_FIXTURE" in offline_html
         assert b"&lt;unsafe&gt;" in offline_html
         assert b"Diagnostics" in offline_html
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
+        assert b"Source view unavailable" in offline_html
+        assert b"--embed-source" in offline_html
 
         large_weights = copy.deepcopy(report)
         large_weights["run"]["location_timing"] = True
@@ -316,6 +321,9 @@ def main():
         assert b"function formatShare(value)" in live_html
         assert b"function-root-weights" in live_html
         assert b"Inclusive callers overlap their callees" in live_html
+        assert b"Loading function records" in live_html
+        assert b"No function records match this filter" in live_html
+        assert b"Enable JavaScript to inspect hotspots interactively" in live_html
         assert b"rows.addEventListener('click'" in live_html
         assert b"row.addEventListener('click'" not in live_html
         assert b"row.addEventListener('keydown'" not in live_html
