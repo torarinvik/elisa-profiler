@@ -272,6 +272,10 @@ def main():
         assert b"Loading function records" in offline_html
         assert b"No function records were captured" in offline_html
         assert b"Enable JavaScript to inspect hotspots interactively" in offline_html
+        assert b"@media(prefers-reduced-motion:reduce)" in offline_html
+        assert b"@media print" in offline_html
+        assert b"color is paired with border patterns" in offline_html
+        assert b"search:(field(record,'function')+' '+formatShare" in offline_html
         assert b"Workload reproducibility" in offline_html
         assert b"ELISA_FIXTURE" in offline_html
         assert b"&lt;unsafe&gt;" in offline_html
@@ -330,6 +334,8 @@ def main():
         assert b"Loading function records" in live_html
         assert b"No function records match this filter" in live_html
         assert b"Enable JavaScript to inspect hotspots interactively" in live_html
+        assert b"@media(prefers-reduced-motion:reduce)" in live_html
+        assert b"color is paired with border patterns" in live_html
         assert b"rows.addEventListener('click'" in live_html
         assert b"row.addEventListener('click'" not in live_html
         assert b"row.addEventListener('keydown'" not in live_html
