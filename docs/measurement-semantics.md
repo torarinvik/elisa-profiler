@@ -143,6 +143,12 @@ individual trace records. A future versioned event protocol may add those
 fields; until then timeline views must remain explicitly unsupported rather than
 inventing timestamps or assigning events to threads.
 
+HTML diagnostics present each retained thread-loss record as a bounded table
+with repetition, capture-local thread, event-sequence range, and each loss
+counter. The table deliberately calls the range “collector order” and never
+formats it as a timestamp or duration. Filtering changes only presentation;
+the escaped raw records remain available for exact offline inspection.
+
 Native JSON captures also expose `run.capabilities`. Its event-class list is
 the authoritative retained detail set; `trace`, `recent_path`, `timing`, and
 `sampling` describe the active policies; `sampling_detail` states the scope and

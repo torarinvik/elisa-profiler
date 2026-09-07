@@ -306,6 +306,9 @@ def main():
         assert b"ELISA_FIXTURE" in offline_html
         assert b"&lt;unsafe&gt;" in offline_html
         assert b"Diagnostics" in offline_html
+        assert b"Thread-loss intervals" in offline_html
+        assert b"thread-loss-filter" in offline_html
+        assert b"Sequence ranges are collector order only" in offline_html
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
         assert b"Source view unavailable" in offline_html
         assert b"--embed-source" in offline_html
@@ -351,6 +354,9 @@ def main():
         assert b"ELISA_FIXTURE" in live_html
         assert b"supersecret" not in live_html
         assert b"Diagnostics" in live_html
+        assert b"Thread-loss intervals" in live_html
+        assert b"thread-loss-filter" in live_html
+        assert b"Sequence ranges are collector order only" in live_html
         assert b"No recorded capture-quality degradations" in live_html
         assert b"Source view" in live_html
         assert b"source-filter" in live_html

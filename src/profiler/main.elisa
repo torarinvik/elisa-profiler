@@ -1098,6 +1098,7 @@ extend ProfilerNative:
             append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source)
             append_html_program_output(buffer, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated)
             append_html_diagnostics(buffer, summary.capture_complete, summary.dropped, summary.call_edge_dropped, summary.stack_dropped, summary.frame_dropped, summary.capture_bytes_dropped, summary.stack_overflow_entries, summary.trace_omitted, summary.crash_signal)
+            append_html_thread_loss_diagnostics(buffer, summary.thread_loss_records)
             if summary.active_stack_available:
                 append_text(buffer, "<section class='panel' aria-labelledby='active-stack-title'><h2 id='active-stack-title'>Interrupted active stack</h2><p>Tracked depth ")
                 append_i64(buffer, summary.active_stack_tracked_depth)
