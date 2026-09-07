@@ -350,6 +350,10 @@ def main():
         assert b"function formatShare(value)" in live_html
         assert b"function-root-weights" in live_html
         assert b"Inclusive callers overlap their callees" in live_html
+        assert b"Observed callers" in live_html
+        assert b"Observed callees" in live_html
+        assert b"MAX_RELATED_ROWS=20" in live_html
+        assert b"new MutationObserver(render)" in live_html
         assert b"Loading function records" in live_html
         assert b"No function records match this filter" in live_html
         assert b"Enable JavaScript to inspect hotspots interactively" in live_html
