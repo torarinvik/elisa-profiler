@@ -315,6 +315,8 @@ def main():
         assert b"Diagnostics" in offline_html
         assert b"Thread-loss intervals" in offline_html
         assert b"thread-loss-filter" in offline_html
+        assert b"INPUT_IDS=['function-filter'" in offline_html
+        assert b"thread-loss-filter']" in offline_html
         assert b"Sequence ranges are collector order only" in offline_html
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
         assert b"Source view unavailable" in offline_html
