@@ -284,6 +284,25 @@ fixed-point value in hundredths of a percent: `10000` means `+100.00%`, and
 `-250` means `-2.50%`. A `null` value means the relative denominator is zero
 or the metric is unavailable; consumers must not reinterpret it as zero.
 
+### Exploratory comparison policy
+
+Function, caller-edge, folded-stack, and source-location change tables are
+exploratory evidence. They intentionally enumerate many identities, so a
+large table can contain apparently large changes by chance even when the
+workload has not regressed. The native comparison command does not attach a
+per-row significance claim, p-value, or automatic outlier decision to these
+rows, and it does not silently apply a multiple-comparisons correction.
+
+Hard regression gates are therefore limited to the explicitly declared
+aggregate wall/CPU/RSS policies and the declared shared-function self-time
+policy. A row in an exploratory table never changes `gate.status` by itself.
+Consumers that need family-wise or false-discovery control must export the
+machine-readable comparison, choose the relevant identity family in their
+own analysis, and apply a documented correction procedure before promoting a
+row-level observation to a release decision. This keeps the report honest
+about the evidence it has while leaving the correction choice auditable and
+domain-specific.
+
 ## Function and stack accounting
 
 - `call_events` is incremented when a function entry is observed.
