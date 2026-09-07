@@ -367,6 +367,9 @@ def main():
         assert b"No recorded capture-quality degradations" in live_html
         assert b"Source view" in live_html
         assert b"source-filter" in live_html
+        assert b"source-metric" in live_html
+        assert b"Observation count" in live_html
+        assert b"METRIC_INTERVAL='interval_ns'" in live_html
         assert b"source-line" in live_html
         assert b"function hasMatch(node,query)" in live_html
         assert b"function formatShare(value)" in live_html

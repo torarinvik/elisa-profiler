@@ -1108,6 +1108,7 @@ extend ProfilerNative:
                 append_html_escaped(buffer, summary.active_stack_path)
                 append_text(buffer, "</pre></section>")
             append_html_source_view(buffer, source, source_bytes, summary.location_records, false)
+            append_html_source_metric_explorer(buffer)
             append_html_function_browser(buffer, summary.function_records, summary.folded_records)
             append_html_actionable_summary(buffer)
             append_html_function_explorer(buffer)
