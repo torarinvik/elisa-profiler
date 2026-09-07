@@ -37,23 +37,21 @@ superseded or AST-incompatible. All owner worktrees remain untouched.
 
 The stage1 product was freshly reseeded from `85be462e` with the canonical
 stage0 compiler and its usable build manifest was regenerated. The audit and
-manifest are current. The recorded full gate passes as
-`DYLD_SHARED_REGION=avoid TMPDIR=/tmp make test`, including self-host stages
-A through D, compiler smoke, native profiler/report/artifact/comparison
-smokes, collector/ABI checks, timeout/recovery checks, and cleanup checks. A
+manifest are current. The latest full gate passes as
+`DYLD_SHARED_REGION=avoid TMPDIR=/tmp ELISA_COMPILER_AUDIT_FETCH=0 make test`,
+including self-host stages A through D, compiler smoke, native
+profiler/report/artifact/comparison smokes, collector/ABI checks,
+timeout/recovery checks, and cleanup checks. A
 normal run under concurrent compiler corpus jobs can hit a macOS dynamic-loader
 stall in `_dyld_start` before the profiler enters its main code; the explicit
 `DYLD_SHARED_REGION=avoid` setting is a verification workaround for that host
 condition and is not part of the profiler contract.
 
-The last uninterrupted full gate was recorded after the compiler integration
-and source-stability fix at profiler commit `e0c89eb`. The prior
-`6c5f718b` compiler audit/ledger/manifest evidence remains valid as historical
-evidence; the current `85be462e` compiler audit/ledger/manifest evidence is
-current, while later
-profiler-only report, cache, UI-state, prebuilt-target, offline-source,
-accessibility, comparison, source-mapping, and event-evidence changes have
-focused smoke coverage and are queued for the next full-gate refresh.
+The latest uninterrupted full gate was recorded after the compiler offset-order
+slice and the profiler comparison-evidence slice, at dedicated compiler
+`85be462e` and profiler `8ccad22`. The prior `6c5f718b` gate remains useful as
+historical evidence; current branch, manifest, compiler, and native gates are
+green.
 
 Historical checkpoints below retain earlier commit and test evidence for the
 build pipeline, but must not be read as proof of the current stage1 identity.
@@ -185,9 +183,8 @@ make profiler-native-smoke
 ```
 
 For the current `85be462e` integration, the audit, ledger, manifest, compiler,
-and focused native profiler gates pass with the loader workaround above. The
-repository-wide full profiler gate must be refreshed after the later
-profiler-only slices described above.
+focused native profiler gates, and repository-wide full gate pass with the
+loader workaround above.
 Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
 remains a fixed point and deterministic after future compiler changes.
