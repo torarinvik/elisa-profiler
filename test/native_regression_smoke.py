@@ -316,6 +316,9 @@ def main():
         assert b"function formatShare(value)" in live_html
         assert b"function-root-weights" in live_html
         assert b"Inclusive callers overlap their callees" in live_html
+        assert b"rows.addEventListener('click'" in live_html
+        assert b"row.addEventListener('click'" not in live_html
+        assert b"row.addEventListener('keydown'" not in live_html
         assert b".split(/\\n+/)" not in live_html
 
         invalid_millis = json.dumps(report).replace(
