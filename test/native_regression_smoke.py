@@ -238,6 +238,7 @@ def main():
         assert b"Source view" in embedded_html
         assert b"source-filter" in embedded_html
         assert b"source-line" in embedded_html
+        assert b"color is paired with border patterns" in embedded_html
         assert b"embedded &lt;source&gt;" in embedded_html
         report["source_snapshot"]["sha256"] = "0" * 64
         capture.write_text(json.dumps(report), encoding="utf-8")
@@ -274,7 +275,6 @@ def main():
         assert b"Enable JavaScript to inspect hotspots interactively" in offline_html
         assert b"@media(prefers-reduced-motion:reduce)" in offline_html
         assert b"@media print" in offline_html
-        assert b"color is paired with border patterns" in offline_html
         assert b"search:(field(record,'function')+' '+formatShare" in offline_html
         assert b"Workload reproducibility" in offline_html
         assert b"ELISA_FIXTURE" in offline_html
@@ -288,6 +288,7 @@ def main():
         overridden_html = run("report", capture, "--format", "html", "--source", source_override)
         assert b"Source view" in overridden_html
         assert b"source-filter" in overridden_html
+        assert b"color is paired with border patterns" in overridden_html
         assert b"Source view unavailable" not in overridden_html
 
         large_weights = copy.deepcopy(report)
@@ -548,6 +549,8 @@ def main():
         assert measured["run"]["capabilities"]["timing"] == "wall"
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True
+        assert measured["source_mapping"]["mapped_locations"] == len(measured["locations"])
+        assert measured["source_mapping"]["unmapped_locations"] == 0
         manifest = json.loads(Path(str(output) + ".manifest.json").read_text(encoding="utf-8"))
         assert manifest["capture_index"]["format"] == "record-framed-v1"
         assert manifest["capture_index"]["bytes"] >= manifest["capture_index"]["valid_bytes"] > 0
