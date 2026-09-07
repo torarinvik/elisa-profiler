@@ -199,6 +199,7 @@ static int profile_framing_enabled;
 static uint64_t profile_frame_sequence;
 static uint64_t profile_frame_dropped_count;
 static int profile_thread_records_enabled;
+static volatile sig_atomic_t profile_fork_child_disabled;
 static char profile_frame_buffer[PROFILE_FRAME_BUFFER_BYTES];
 static size_t profile_frame_length;
 static int profile_frame_overflowed;
@@ -468,6 +469,21 @@ static void profile_initialize_output(void) {
 static FILE *profile_output(void) {
     (void)pthread_once(&profile_output_once, profile_initialize_output);
     return profile_output_stream;
+}
+
+static void profile_after_fork_child(void) {
+    if (profile_environment_is_true(PROFILE_CHILD_ENVIRONMENT)) {
+        return;
+    }
+    profile_fork_child_disabled = 1;
+    if (profile_output_fd > STDERR_FILENO) {
+        (void)close(profile_output_fd);
+    }
+    profile_output_fd = -1;
+}
+
+static void profile_register_fork_policy(void) {
+    (void)pthread_atfork(NULL, NULL, profile_after_fork_child);
 }
 
 /* Keep the existing diagnostic formatting compact while allowing every
@@ -1261,6 +1277,9 @@ static void profile_record(const char *function_name, uint32_t line,
                            const char *variable_name, uint64_t value, uint8_t kind,
                            uint8_t is_signed, size_t call_depth,
                            int stack_overflowed, uint64_t identity_id) {
+    if (profile_fork_child_disabled) {
+        return;
+    }
     if (!profile_mode_allows_kind(kind)) {
         return;
     }
@@ -1443,6 +1462,9 @@ static int profile_function_matches(const char *expected_name, uint64_t expected
 
 static void profile_record_function_entry(const char *function_name, uint32_t line,
                                            uint64_t function_id) {
+    if (profile_fork_child_disabled) {
+        return;
+    }
     if (profile_mode == PROFILE_MODE_SAMPLES) {
         pthread_mutex_lock(&profile_lock);
         (void)profile_get_thread_locked();
@@ -1650,6 +1672,9 @@ static void profile_record_untimed_function_exit(const char *function_name, uint
 
 static void profile_record_function_exit(const char *function_name, uint32_t line,
                                           uint64_t function_id) {
+    if (profile_fork_child_disabled) {
+        return;
+    }
     if (profile_mode == PROFILE_MODE_SAMPLES) {
         if (profile_call_overflow_depth > 0) {
             --profile_call_overflow_depth;
@@ -2094,7 +2119,7 @@ static int profile_signal_write_all(const char *buffer, size_t length) {
 }
 
 static void profile_write_sample_marker(void) {
-    if (!profile_sampling_enabled || profile_frame_write_in_progress) {
+    if (profile_fork_child_disabled || !profile_sampling_enabled || profile_frame_write_in_progress) {
         profile_signal_increment(&profile_sample_missed);
         return;
     }
@@ -2522,6 +2547,9 @@ static void profile_dump_body(void) {
 }
 
 static void profile_dump(void) {
+    if (profile_fork_child_disabled) {
+        return;
+    }
     profile_stop_sampling();
     pthread_mutex_lock(&profile_lock);
     profile_dump_body();
@@ -2623,6 +2651,7 @@ int main(int argc, char **argv) {
     profile_capture_byte_limit = profile_read_limit_environment(
         PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT, PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT);
     (void)profile_output();
+    profile_register_fork_policy();
     profile_install_crash_handlers();
     if (profile_mode == PROFILE_MODE_SAMPLES) {
         uint64_t sample_period = profile_read_limit_environment(

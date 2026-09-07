@@ -318,9 +318,11 @@ or the metric is unavailable; consumers must not reinterpret it as zero.
   not reconstructed from per-thread CPU clocks.
 - Fork and exec are boundary events, not implicit profiling expansion. The
   launched target owns the capture descriptor; ordinary descendants receive
-  neither the descriptor nor profiler transport variables. A child is included
-  only when the explicit child-profiling opt-in is configured, and that child
-  policy remains subject to the same bounded capture and cleanup rules.
+  neither the descriptor nor profiler transport variables. A forked descendant
+  is disabled immediately unless the explicit child-profiling opt-in is
+  configured; the disabled child closes its collector descriptor and cannot
+  emit inherited aggregate state. An opted-in child remains subject to the
+  same bounded capture and cleanup rules.
 - Native offline readers reject normalized detail records whose accounting is
   impossible: completed calls cannot exceed observed calls, self time cannot
   exceed inclusive time, and a maximum interval cannot exceed its aggregate

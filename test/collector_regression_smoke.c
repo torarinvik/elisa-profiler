@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/wait.h>
 
 static int fail_allocations;
 
@@ -86,6 +87,17 @@ int main(void) {
     assert(profile_previous_crash_actions[sigterm_index].sa_handler == SIG_IGN);
     assert(sigaction(SIGINT, &previous_sigint, NULL) == 0);
     assert(sigaction(SIGTERM, &previous_sigterm, NULL) == 0);
+    profile_register_fork_policy();
+    pid_t fork_child = fork();
+    assert(fork_child >= 0);
+    if (fork_child == 0) {
+        _exit(profile_fork_child_disabled ? EXIT_SUCCESS : EXIT_FAILURE);
+    }
+    int fork_status = 0;
+    assert(waitpid(fork_child, &fork_status, 0) == fork_child);
+    assert(WIFEXITED(fork_status));
+    assert(WEXITSTATUS(fork_status) == EXIT_SUCCESS);
+    assert(profile_fork_child_disabled == 0);
     profile_capture_byte_limit = 1;
     profile_capture_bytes_used = 2;
     assert(!profile_reserve_bytes_locked(1));
