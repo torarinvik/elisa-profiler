@@ -1,0 +1,141 @@
+# Explicit local baseline promotion for the native Elisa profiler.
+#
+# A baseline is history, not a cache entry: promotion requires a validated,
+# successful capture, a caller-provided name, and an auditable reason. Existing
+# names are never overwritten implicitly.
+extend ProfilerNative:
+    private:
+        const NATIVE_BASELINE_SCHEMA_VERSION: i64 = 1
+        const NATIVE_BASELINE_CAPTURE_SUFFIX: cstr = ".elisaprof"
+        const NATIVE_BASELINE_METADATA_SUFFIX: cstr = ".json"
+        const NATIVE_BASELINE_FIRST_ARGUMENT_INDEX: i64 = 3
+        const NATIVE_BASELINE_MAX_NAME_BYTES: usize = 128
+        const NATIVE_BASELINE_ASCII_LETTER_LAST_OFFSET: u8 = 25
+
+        def baseline_name_valid(name: darray[u8]&) -> bool:
+            return false if name.count == NATIVE_ZERO.usize() or name.count > NATIVE_BASELINE_MAX_NAME_BYTES
+            return false if name.count == NATIVE_ONE.usize() and name[NATIVE_ZERO.usize()] == NATIVE_BYTE_PERIOD
+            return false if name.count == NATIVE_TWO.usize() and name[NATIVE_ZERO.usize()] == NATIVE_BYTE_PERIOD and name[NATIVE_ONE.usize()] == NATIVE_BYTE_PERIOD
+            for index in 0..<name.count |index, name|:
+                byte: u8 = name[index]
+                allowed: bool = byte == NATIVE_BYTE_PERIOD or byte == NATIVE_BYTE_MINUS or byte == NATIVE_BYTE_UNDERSCORE or byte >= NATIVE_BYTE_ASCII_ZERO and byte <= NATIVE_BYTE_ASCII_NINE or byte >= NATIVE_BYTE_ASCII_UPPER_A and byte <= NATIVE_BYTE_ASCII_UPPER_A + NATIVE_BASELINE_ASCII_LETTER_LAST_OFFSET or byte >= NATIVE_BYTE_ASCII_LOWER_A and byte <= NATIVE_BYTE_ASCII_LOWER_A + NATIVE_BASELINE_ASCII_LETTER_LAST_OFFSET
+                return false if not allowed
+            return true
+
+
+        def baseline_append_path(result: mutable darray[u8]&, directory: darray[u8]&, name: darray[u8]&, suffix: cstr) -> void can[Abort.Panic, Memory.Allocate]:
+            result <- []
+            result.extend(directory)
+            result.push(NATIVE_BYTE_SLASH) if result.count == NATIVE_ZERO.usize() or result[result.count - NATIVE_ONE.usize()] != NATIVE_BYTE_SLASH
+            result.extend(name)
+            append_cstr(result, suffix)
+
+
+        def baseline_unlink(path: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path_copy: mutable darray[u8] = []
+            path_copy.extend(path)
+            path_copy.push(NATIVE_BYTE_NUL)
+            _ = profiler_ffi_unlink((&path_copy[0]).cast[cstr] can Unsafe.PointerCast)
+
+
+        def baseline_append_metadata(buffer: mutable darray[u8]&, name: darray[u8]&, relative_capture: darray[u8]&, capture_digest: darray[u8]&, profile: NativeOfflineProfile, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, mode: darray[u8]&, reason: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"kind\":\"elisa_profiler_baseline\",\"schema_version\":")
+            append_i64(buffer, NATIVE_BASELINE_SCHEMA_VERSION)
+            append_text(buffer, ",\"name\":")
+            append_json_string(buffer, name)
+            append_text(buffer, ",\"capture\":")
+            append_json_string(buffer, relative_capture)
+            append_text(buffer, ",\"capture_sha256\":")
+            append_json_string(buffer, capture_digest)
+            append_text(buffer, ",\"source\":")
+            append_json_string(buffer, profile.source)
+            append_text(buffer, ",\"source_sha256\":")
+            append_json_string(buffer, profile.source_digest) if profile.source_digest_available
+            append_text(buffer, "null") if not profile.source_digest_available
+            append_text(buffer, ",\"compiler_branch\":")
+            append_json_string(buffer, compiler_branch)
+            append_text(buffer, ",\"compiler_commit\":")
+            append_json_string(buffer, compiler_commit)
+            append_text(buffer, ",\"collection_mode\":")
+            append_json_string(buffer, mode)
+            append_text(buffer, ",\"outcome\":")
+            append_json_string(buffer, profile.outcome)
+            append_text(buffer, ",\"reason\":")
+            append_json_string(buffer, reason)
+            append_text(buffer, "}\n")
+
+
+        def baseline_promote(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return report_error("usage: elisa-profiler baseline promote CAPTURE --store DIR --name NAME --reason TEXT") if argc < NATIVE_BASELINE_FIRST_ARGUMENT_INDEX + NATIVE_ONE
+            return report_error("baseline supports only promote") if profiler_ffi_strcmp(slots[NATIVE_TWO.usize()].cast[cstr], "promote") != NATIVE_ZERO
+            capture_path: mutable darray[u8] = []
+            copy_cstr(capture_path, slots[NATIVE_BASELINE_FIRST_ARGUMENT_INDEX.usize()].cast[cstr])
+            store: mutable darray[u8] = []
+            name: mutable darray[u8] = []
+            reason: mutable darray[u8] = []
+            index: mutable i64 = NATIVE_BASELINE_FIRST_ARGUMENT_INDEX + NATIVE_ONE
+            while index < argc |index, slots, store, name, reason|:
+                argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--store") == NATIVE_ZERO:
+                    return report_error("baseline --store requires a directory") if index + NATIVE_ONE >= argc
+                    copy_cstr(store, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--name") == NATIVE_ZERO:
+                    return report_error("baseline --name requires a name") if index + NATIVE_ONE >= argc
+                    copy_cstr(name, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--reason") == NATIVE_ZERO:
+                    return report_error("baseline --reason requires text") if index + NATIVE_ONE >= argc
+                    copy_cstr(reason, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                return report_error("unknown baseline option")
+            return report_error("baseline requires --store DIR") if store.count == NATIVE_ZERO.usize()
+            return report_error("baseline requires --name NAME") if not baseline_name_valid(name)
+            return report_error("baseline requires a non-empty --reason") if reason.count == NATIVE_ZERO.usize()
+            return report_error("baseline store is unavailable") if not cache_directory_ready(store)
+
+            raw: darray[u8] = read_file(capture_path)
+            return report_error("baseline capture could not be read") if raw.count == NATIVE_ZERO.usize()
+            capture: mutable darray[u8] = []
+            return report_error("baseline capture artifact is malformed or unsupported") if not unwrap_profile_artifact(raw, &capture)
+            profile: mutable NativeOfflineProfile = empty_native_offline_profile()
+            return report_error("baseline capture report is malformed or unsupported") if not read_offline_profile(capture, &profile)
+            return report_error("only successful complete captures may become baselines") if not protocol_field_is(profile.outcome, "success") or not profile.capture_complete or not profile.capture_complete_available
+
+            compiler_branch: mutable darray[u8] = []
+            compiler_commit: mutable darray[u8] = []
+            mode: mutable darray[u8] = []
+            compiler_start: i64 = json_key_value_start(capture, "compiler", NATIVE_ZERO.usize(), capture.count)
+            run_start: i64 = json_key_value_start(capture, "run", NATIVE_ZERO.usize(), capture.count)
+            return report_error("baseline capture is missing compiler or run metadata") if compiler_start < NATIVE_ZERO or run_start < NATIVE_ZERO
+            compiler_stop: i64 = json_object_end(capture, compiler_start.usize(), capture.count)
+            run_stop: i64 = json_object_end(capture, run_start.usize(), capture.count)
+            return report_error("baseline capture metadata is malformed") if compiler_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
+            return report_error("baseline capture is missing compiler metadata") if not json_read_string_field(capture, "branch", compiler_start.usize(), compiler_stop.usize(), &compiler_branch) or not json_read_string_field(capture, "commit", compiler_start.usize(), compiler_stop.usize(), &compiler_commit)
+            return report_error("baseline capture is missing collection mode") if not json_read_string_field(capture, "collection_mode", run_start.usize(), run_stop.usize(), &mode)
+
+            relative_capture: mutable darray[u8] = []
+            relative_metadata: mutable darray[u8] = []
+            baseline_append_path(&relative_capture, store, name, NATIVE_BASELINE_CAPTURE_SUFFIX)
+            baseline_append_path(&relative_metadata, store, name, NATIVE_BASELINE_METADATA_SUFFIX)
+            return report_error("baseline name already exists; choose a new name") if readable_file(relative_capture) or readable_file(relative_metadata)
+            capture_digest: darray[u8] = sha256_hex(raw)
+            metadata: mutable darray[u8] = []
+            relative_name: mutable darray[u8] = []
+            relative_name.extend(name)
+            append_cstr(relative_name, NATIVE_BASELINE_CAPTURE_SUFFIX)
+            baseline_append_metadata(&metadata, name, relative_name, capture_digest, profile, compiler_branch, compiler_commit, mode, reason)
+            return report_error("could not publish baseline capture") if not write_file(relative_capture, raw)
+            if not write_file(relative_metadata, metadata):
+                baseline_unlink(relative_capture)
+                return report_error("could not publish baseline metadata")
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, metadata) can Console
+            return NATIVE_ZERO
+
+
+        public:
+            def baseline(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+                return baseline_promote(argc, slots)

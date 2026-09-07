@@ -32,3 +32,23 @@ Intermediate reports use `<output>.baseline.json` and
 intermediate names and removes both reports and their progress manifests after
 the comparison completes. A failed side is surfaced as a benchmark failure and
 does not produce a misleading comparison.
+
+## Promote a local baseline
+
+Keep release or reference history separate from the build cache with an
+explicit promotion:
+
+```sh
+bin/elisa-profiler baseline promote capture.json \
+  --store .elisa-profiler/baselines \
+  --name release-1 \
+  --reason "validated reference workload"
+```
+
+Promotion accepts only a schema-valid successful complete capture. It writes
+the original capture as `release-1.elisaprof` and an adjacent
+`release-1.json` audit record containing source/compiler/mode identity, the
+capture digest, and the human reason. Names are restricted to portable
+basename characters and existing names are refused; replace-by-default is
+deliberately unavailable so history cannot be rewritten accidentally. Compare
+the stored `.elisaprof` path explicitly when selecting a baseline.
