@@ -200,6 +200,7 @@ static uint64_t profile_frame_sequence;
 static uint64_t profile_frame_dropped_count;
 static int profile_thread_records_enabled;
 static volatile sig_atomic_t profile_fork_child_disabled;
+static int profile_child_profiling_enabled;
 static char profile_frame_buffer[PROFILE_FRAME_BUFFER_BYTES];
 static size_t profile_frame_length;
 static int profile_frame_overflowed;
@@ -433,6 +434,8 @@ static void profile_write_fallback_capture_begin(void) {
 static void profile_initialize_output(void) {
     profile_output_stream = stderr;
     profile_output_fd = STDERR_FILENO;
+    profile_child_profiling_enabled =
+        profile_environment_is_true(PROFILE_CHILD_ENVIRONMENT);
     profile_framing_enabled = profile_environment_is_true(PROFILE_FRAMED_ENVIRONMENT);
     const char *fd_text = getenv(PROFILE_FD_ENVIRONMENT);
     if (fd_text == NULL || *fd_text == '\0') {
@@ -472,7 +475,7 @@ static FILE *profile_output(void) {
 }
 
 static void profile_after_fork_child(void) {
-    if (profile_environment_is_true(PROFILE_CHILD_ENVIRONMENT)) {
+    if (profile_child_profiling_enabled) {
         return;
     }
     profile_fork_child_disabled = 1;
