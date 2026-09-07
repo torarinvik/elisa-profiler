@@ -181,6 +181,11 @@ is `complete`, `partial`, or not recorded by an older report. HTML also exposes
 the source SHA-256 and host provenance so a visual report does not hide the
 identity or limitations of its evidence.
 
+When source lines are available, the source view repeats the exact snapshot
+SHA-256 beside the displayed path. Offline `report --source PATH` only enables
+the view after verifying that the replacement bytes match the capture identity;
+therefore the heat map cannot silently refer to a different source file.
+
 The HTML flame graph labels the metric used to build its folded records:
 `nanoseconds` for timing captures, `samples` for sampling captures, and
 `events` for event-oriented captures. Its default path direction is caller to

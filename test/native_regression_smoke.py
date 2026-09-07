@@ -314,6 +314,7 @@ def main():
         overridden_html = run("report", capture, "--format", "html", "--source", source_override)
         assert b"Source view" in overridden_html
         assert b"source-filter" in overridden_html
+        assert b"snapshot SHA-256" in overridden_html
         assert b"color is paired with border patterns" in overridden_html
         assert b"Source view unavailable" not in overridden_html
 
