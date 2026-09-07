@@ -724,6 +724,8 @@ extend ProfilerNative:
             append_i64(manifest, summary.sample_period_microseconds)
             append_text(manifest, ",\"sampling_setup_failed\":")
             append_i64(manifest, summary.sampling_setup_failed)
+            append_text(manifest, ",\"collector_status\":")
+            append_i64(manifest, summary.collector_status)
             append_text(manifest, ",\"capture_index\":{\"format\":\"record-framed-v1\",\"bytes\":")
             append_i64(manifest, capture_bytes)
             append_text(manifest, ",\"valid_frames\":")
@@ -768,6 +770,8 @@ extend ProfilerNative:
             append_i64(progress, summary.sample_period_microseconds)
             append_text(progress, ",\"sampling_setup_failed\":")
             append_i64(progress, summary.sampling_setup_failed)
+            append_text(progress, ",\"collector_status\":")
+            append_i64(progress, summary.collector_status)
             append_text(progress, "}\n")
             return write_file(path, progress)
 
@@ -818,50 +822,55 @@ extend ProfilerNative:
 
         def append_observed_exit_code(buffer: mutable darray[u8]&, status: i64, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
             signal: i64 = observed_signal(status, summary)
-            append_text(buffer, "null") if status < NATIVE_ZERO or signal >= NATIVE_ZERO
-            append_i64(buffer, system_exit_code(status)) if status >= NATIVE_ZERO and signal < NATIVE_ZERO
+            append_text(buffer, "null") if summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE or status < NATIVE_ZERO or signal >= NATIVE_ZERO
+            append_i64(buffer, system_exit_code(status)) if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and signal < NATIVE_ZERO
 
 
         def append_run_outcome(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             signal: i64 = observed_signal(status, summary)
             target_exit: i64 = system_exit_code(status)
             append_text(buffer, "\"incomplete_artifact\"") if recovered
-            append_text(buffer, "\"profiler_failure\"") if not recovered and status < NATIVE_ZERO
-            append_text(buffer, "\"timeout\"") if not recovered and status >= NATIVE_ZERO and timed_out
-            append_text(buffer, "\"target_signal\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
-            append_text(buffer, "\"target_exit\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit != NATIVE_ZERO
-            append_text(buffer, "\"success\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and summary.capture_complete
-            append_text(buffer, "\"incomplete_capture\"") if not recovered and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and not summary.capture_complete
+            append_text(buffer, "\"collector_failure\"") if not recovered and summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
+            append_text(buffer, "\"profiler_failure\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status < NATIVE_ZERO
+            append_text(buffer, "\"timeout\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and timed_out
+            append_text(buffer, "\"target_signal\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "\"target_exit\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit != NATIVE_ZERO
+            append_text(buffer, "\"success\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and summary.capture_complete
+            append_text(buffer, "\"incomplete_capture\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and not summary.capture_complete
 
 
         def append_html_outcome(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
             signal: i64 = observed_signal(status, summary)
-            append_text(buffer, "profiler failure") if status < NATIVE_ZERO
-            append_text(buffer, "timeout") if status >= NATIVE_ZERO and timed_out
-            append_text(buffer, "target signal") if status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
-            append_text(buffer, "target exit") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
-            append_text(buffer, "success") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
-            append_text(buffer, "incomplete capture") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
+            append_text(buffer, "collector failure") if summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
+            append_text(buffer, "profiler failure") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status < NATIVE_ZERO
+            append_text(buffer, "timeout") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and timed_out
+            append_text(buffer, "target signal") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "target exit") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
+            append_text(buffer, "success") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
+            append_text(buffer, "incomplete capture") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
 
 
         def append_text_outcome(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, timed_out: bool) -> void can[Abort.Panic, Memory.Allocate]:
             signal: i64 = observed_signal(status, summary)
-            append_text(buffer, "profiler_failure") if status < NATIVE_ZERO
-            append_text(buffer, "timeout") if status >= NATIVE_ZERO and timed_out
-            append_text(buffer, "target_signal") if status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
-            append_text(buffer, "target_exit") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
-            append_text(buffer, "success") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
-            append_text(buffer, "incomplete_capture") if status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
+            append_text(buffer, "collector_failure") if summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
+            append_text(buffer, "profiler_failure") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status < NATIVE_ZERO
+            append_text(buffer, "timeout") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and timed_out
+            append_text(buffer, "target_signal") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "target_exit") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
+            append_text(buffer, "success") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
+            append_text(buffer, "incomplete_capture") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
 
 
         def append_quality(buffer: mutable darray[u8]&, summary: CaptureSummary, status: i64, event_trace: bool, timed_out: bool, recovered: bool) -> void can[Abort.Panic, Memory.Allocate]:
             target_exit: i64 = system_exit_code(status)
             signal: i64 = observed_signal(status, summary)
-            capture_incomplete: bool = recovered or status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out
+            capture_incomplete: bool = recovered or status < NATIVE_ZERO or signal >= NATIVE_ZERO or timed_out or summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
             detail_degraded: bool = capture_incomplete or summary.dropped > NATIVE_ZERO or summary.call_edge_dropped > NATIVE_ZERO or summary.stack_dropped > NATIVE_ZERO or summary.capture_bytes_dropped > NATIVE_ZERO or summary.frame_dropped > NATIVE_ZERO or summary.stack_overflow_entries > NATIVE_ZERO or summary.sample_missed > NATIVE_ZERO or (event_trace and summary.trace_omitted > NATIVE_ZERO)
             append_text(buffer, "\"quality\":{\"capture\":\"")
             if recovered:
                 append_text(buffer, "recovered")
+            elif summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE:
+                append_text(buffer, "collector_failure")
             elif status < NATIVE_ZERO:
                 append_text(buffer, "profiler_failure")
             elif timed_out:
@@ -1326,6 +1335,8 @@ extend ProfilerNative:
             append_i64(buffer, summary.sample_period_microseconds)
             append_text(buffer, ",\"sampling_setup_failed\":")
             append_i64(buffer, summary.sampling_setup_failed)
+            append_text(buffer, ",\"collector_status\":")
+            append_i64(buffer, summary.collector_status)
             append_text(buffer, ",\"trace_event_limit\":")
             if not event_trace:
                 append_text(buffer, "null")
@@ -1705,6 +1716,7 @@ extend ProfilerNative:
             empty_host: NativeHostMetadata = empty_native_host_metadata()
             recovery_result: TargetRunResult = TargetRunResult{
                 status: NATIVE_NEGATIVE_ONE,
+                collector_status: NATIVE_COLLECTOR_STATUS_UNKNOWN,
                 elapsed_ns: NATIVE_ZERO,
                 timed_out: false,
                 resource_available: false,
@@ -2280,6 +2292,7 @@ extend ProfilerNative:
             collector_object: darray[u8] = path_with_suffix(temporary, "/profiler-runtime.o")
             executable: mutable darray[u8] = path_with_suffix(temporary, "/profiled-program")
             capture_path: darray[u8] = path_with_suffix(temporary, "/capture.txt")
+            collector_status_path: darray[u8] = path_with_suffix(temporary, "/collector-status.txt")
             dependency_path: darray[u8] = path_with_suffix(temporary, "/dependencies.txt")
             capture_manifest_path: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
@@ -2376,10 +2389,11 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport for warmup")
-                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, sample_period_microseconds, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
+                warmup_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, collector_status_path, mode, sample_period_microseconds, false, false, NATIVE_ZERO, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
+                warmup_result.collector_status <- read_collector_status(collector_status_path)
                 warmup_ns <- native_saturating_add(warmup_ns, warmup_result.elapsed_ns)
-                if warmup_result.status != NATIVE_ZERO:
+                if warmup_result.status != NATIVE_ZERO or warmup_result.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE:
                     cleanup_temp(temporary)
                     return report_error("native profiler warmup failed")
                 if not write_progress(progress_path, "warmup_complete", warmup_index, warmup_repetitions, warmup_result.elapsed_ns, summary):
@@ -2405,8 +2419,9 @@ extend ProfilerNative:
                 if capture_fd < NATIVE_ZERO:
                     cleanup_temp(temporary)
                     return report_error("could not open native collector transport")
-                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, mode, sample_period_microseconds, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
+                run_result: TargetRunResult = run_target_direct(executable, target_arguments, run_output_path, run_error_path, working_directory, stdin_path, environment, capture_fd, collector_status_path, mode, sample_period_microseconds, event_trace, recent_path, trace_limit, capture_byte_limit, timeout_ns)
                 _ = profiler_ffi_close(capture_fd)
+                run_result.collector_status <- read_collector_status(collector_status_path)
                 capture: darray[u8] = read_file(capture_path)
                 current_summary: mutable CaptureSummary = empty_capture_summary()
                 if capture.count == NATIVE_ZERO.usize():
@@ -2418,9 +2433,10 @@ extend ProfilerNative:
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)
-                    if run_result.status == NATIVE_ZERO and (not current_summary.capture_started or not current_summary.capture_complete):
+                    if run_result.status == NATIVE_ZERO and run_result.collector_status == NATIVE_COLLECTOR_STATUS_UNKNOWN and (not current_summary.capture_started or not current_summary.capture_complete):
                         cleanup_temp(temporary)
                         return report_error("native collector capture missing a complete frame")
+                current_summary.collector_status <- run_result.collector_status
                 last_capture_bytes <- capture.count.i64()
                 last_valid_frames <- current_summary.valid_frames
                 last_valid_capture_bytes <- current_summary.valid_capture_bytes
@@ -2450,6 +2466,8 @@ extend ProfilerNative:
                 else:
                     failed_repetitions <- failed_repetitions + NATIVE_ONE
                     overall_status <- run_result.status if overall_status == NATIVE_ZERO
+                if run_result.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and overall_status == NATIVE_ZERO:
+                    overall_status <- NATIVE_COLLECTOR_FAILURE_STATUS
                 overall_timed_out <- true if run_result.timed_out
                 if not write_progress(progress_path, "repetition_complete", repetition, requested_repetitions, run_result.elapsed_ns, summary):
                     cleanup_temp(temporary)

@@ -22,6 +22,8 @@ IDENTITY_ID_BASELINE = 2**63
 IDENTITY_ID_CANDIDATE = 2**64 - 1
 IDENTITY_CONTRACT_LEGACY_VERSION = 1
 IDENTITY_CONTRACT_CURRENT_VERSION = 2
+TARGET_EXIT_CODE = 126
+COLLECTOR_STATUS_OK = 1
 
 
 def run(*args, ok=True, expected=None):
@@ -729,6 +731,21 @@ def main():
         assert recursive_edges[("countdown", "countdown")]["completed_calls"] == RECURSIVE_CALLS - 1
         assert recursive["stacks"]
         assert all(item["completed_calls"] <= item["call_events"] for item in recursive["stacks"])
+
+        target_exit_source = work / "target-exit-126.elisa"
+        target_exit_source.write_text(
+            "const TARGET_EXIT_CODE: i64 = 126\n\n"
+            "def main() -> i64:\n"
+            "    return TARGET_EXIT_CODE\n",
+            encoding="utf-8",
+        )
+        target_exit_output = work / "target-exit-126.json"
+        run("profile", target_exit_source, "--format", "json", "--output", target_exit_output, expected=TARGET_EXIT_CODE)
+        target_exit_report = json.loads(target_exit_output.read_text(encoding="utf-8"))
+        assert target_exit_report["run"]["outcome"] == "target_exit"
+        assert target_exit_report["run"]["exit_code"] == TARGET_EXIT_CODE
+        assert target_exit_report["summary"]["collector_status"] == COLLECTOR_STATUS_OK
+        assert target_exit_report["quality"]["capture"] == "target_exit"
 
         threaded_output = work / "threaded.json"
         run("profile", ROOT / "examples/threaded.elisa", "--format", "json", "--output", threaded_output)

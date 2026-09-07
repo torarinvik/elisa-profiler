@@ -146,6 +146,7 @@
         ,"sample_missed": { "type": "integer", "minimum": 0 }
         ,"sample_period_microseconds": { "type": "integer", "minimum": 0 }
         ,"sampling_setup_failed": { "type": "integer", "minimum": 0, "maximum": 1 }
+        ,"collector_status": { "type": "integer", "enum": [0, 1, 2, 3] }
         ,"trace_event_limit": { "type": ["integer", "null"], "minimum": 0 }
         ,"trace_complete": { "type": ["boolean", "null"] }
       },
@@ -219,7 +220,7 @@
       "properties": {
         "capture": {
           "type": "string",
-          "enum": ["complete", "target_exit", "target_signal", "timeout", "profiler_failure", "recovered"]
+          "enum": ["complete", "target_exit", "target_signal", "timeout", "collector_failure", "profiler_failure", "recovered"]
         },
         "detail": { "type": "string", "enum": ["complete", "degraded"] },
         "event_counts": { "type": "string", "enum": ["exact", "partial"] },
@@ -287,7 +288,7 @@
       ],
       "properties": {
         "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "sample", "diagnostic"] },
-        "outcome": { "type": "string", "enum": ["success", "target_exit", "target_signal", "timeout", "profiler_failure", "incomplete_capture", "incomplete_artifact"] },
+        "outcome": { "type": "string", "enum": ["success", "target_exit", "target_signal", "timeout", "collector_failure", "profiler_failure", "incomplete_capture", "incomplete_artifact"] },
         "capabilities": {
           "type": "object",
           "required": ["event_classes", "trace", "recent_path", "timing", "sampling", "detail_limits"],

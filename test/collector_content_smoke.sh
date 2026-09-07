@@ -22,10 +22,16 @@ exit_status=$?
 timing_exit_status=$?
 ELISA_PROFILE_FRAMED=1 "$WORK/collector" 2>"$WORK/framed-profile.txt"
 framed_exit_status=$?
+exec 9>"$WORK/status.txt"
+ELISA_PROFILE_STATUS_FD=9 ELISA_PROFILE_MODE=sample ELISA_PROFILE_SAMPLE_PERIOD_US=50 "$WORK/collector" 2>"$WORK/sample-failure-profile.txt"
+sample_failure_exit_status=$?
+exec 9>&-
 set -e
 test "$exit_status" -eq 0
 test "$timing_exit_status" -eq 0
 test "$framed_exit_status" -eq 0
+test "$sample_failure_exit_status" -eq 0
+test "$(cat "$WORK/status.txt")" = $'ELISA_PROFILE_STATUS\t1\tfailure\t2'
 
 python3 - "$WORK/profile.txt" "$WORK/timing-profile.txt" "$WORK/framed-profile.txt" <<'PY'
 import sys

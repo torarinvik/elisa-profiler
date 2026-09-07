@@ -113,6 +113,9 @@ enum {
     PROFILE_SAMPLE_HANDLER_BUSY = 1,
     PROFILE_SAMPLE_SIGNAL = SIGPROF,
     PROFILE_COLLECTOR_FAILURE_STATUS = 126,
+    PROFILE_COLLECTOR_STATUS_OK = 1,
+    PROFILE_COLLECTOR_STATUS_SAMPLING_FAILURE = 2,
+    PROFILE_COLLECTOR_STATUS_OUTPUT_FAILURE = 3,
     PROFILE_SIGNAL_EXIT_BASE = 128,
     PROFILE_EXIT_CODE_MASK = 0xff,
 };
@@ -121,6 +124,7 @@ static const uint64_t PROFILE_FNV_OFFSET_BASIS = UINT64_C(14695981039346656037);
 static const uint64_t PROFILE_FNV_PRIME = UINT64_C(1099511628211);
 static const char PROFILE_CHILD_ENVIRONMENT[] = "ELISA_PROFILE_CHILD";
 static const char PROFILE_FD_ENVIRONMENT[] = "ELISA_PROFILE_FD";
+static const char PROFILE_STATUS_FD_ENVIRONMENT[] = "ELISA_PROFILE_STATUS_FD";
 static const char PROFILE_FRAMED_ENVIRONMENT[] = "ELISA_PROFILE_FRAMED";
 static const char PROFILE_THREAD_RECORDS_ENVIRONMENT[] = "ELISA_PROFILE_THREAD_RECORDS";
 static const char PROFILE_MODE_ENVIRONMENT[] = "ELISA_PROFILE_MODE";
@@ -135,6 +139,7 @@ static const char PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT[] = "ELISA_PROFILE_MAX_C
 static const char PROFILE_RECENT_PATH_ENVIRONMENT[] = "ELISA_PROFILE_RECENT_PATH";
 static const char *const PROFILE_INTERNAL_ENVIRONMENTS[] = {
     PROFILE_FD_ENVIRONMENT,
+    PROFILE_STATUS_FD_ENVIRONMENT,
     PROFILE_FRAMED_ENVIRONMENT,
     PROFILE_THREAD_RECORDS_ENVIRONMENT,
     PROFILE_MODE_ENVIRONMENT,
@@ -195,6 +200,9 @@ static uint64_t profile_event_trace_limit;
 static uint64_t profile_event_trace_captured;
 static uint64_t profile_event_trace_omitted;
 static int profile_output_fd = STDERR_FILENO;
+static int profile_status_fd = -1;
+static volatile sig_atomic_t profile_output_write_failed;
+static volatile sig_atomic_t profile_status_written;
 static int profile_framing_enabled;
 static uint64_t profile_frame_sequence;
 static uint64_t profile_frame_dropped_count;
@@ -273,9 +281,11 @@ static int profile_write_all(const char *buffer, size_t length) {
             if (errno == EINTR) {
                 continue;
             }
+            profile_output_write_failed = 1;
             return 0;
         }
         if (written == 0) {
+            profile_output_write_failed = 1;
             return 0;
         }
         offset += (size_t)written;
@@ -378,9 +388,13 @@ static void profile_record_emit(void) {
     }
     if (!profile_framing_enabled) {
         profile_frame_write_in_progress = 1;
-        (void)profile_write_all(profile_frame_buffer, profile_frame_length);
+        int payload_written = profile_write_all(profile_frame_buffer, profile_frame_length);
         static const char newline[] = "\n";
-        (void)profile_write_all(newline, sizeof(newline) - 1);
+        int newline_written = payload_written &&
+                             profile_write_all(newline, sizeof(newline) - 1);
+        if (!newline_written) {
+            profile_budget_exceeded = 1;
+        }
         profile_frame_write_in_progress = 0;
         return;
     }
@@ -413,6 +427,44 @@ static void profile_record_emit(void) {
     profile_frame_write_in_progress = 0;
 }
 
+static int profile_status_write_all(const char *buffer, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        ssize_t written = write(profile_status_fd, buffer + offset, length - offset);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            profile_output_write_failed = 1;
+            return 0;
+        }
+        if (written == 0) {
+            profile_output_write_failed = 1;
+            return 0;
+        }
+        offset += (size_t)written;
+    }
+    return 1;
+}
+
+static void profile_write_status(void) {
+    if (profile_status_fd < 0 || profile_status_written) {
+        return;
+    }
+    profile_status_written = 1;
+    static const char ok_status[] = "ELISA_PROFILE_STATUS\t1\tok\n";
+    static const char sampling_failure_status[] =
+        "ELISA_PROFILE_STATUS\t1\tfailure\t2\n";
+    static const char output_failure_status[] =
+        "ELISA_PROFILE_STATUS\t1\tfailure\t3\n";
+    const char *status = profile_sampling_setup_failed
+                             ? sampling_failure_status
+                             : profile_output_write_failed
+                                 ? output_failure_status
+                                 : ok_status;
+    (void)profile_status_write_all(status, strlen(status));
+}
+
 static void profile_record_begin(void) {
     profile_record_reset();
     profile_record_append_text("ELISA_PROFILE\t1\t");
@@ -436,6 +488,21 @@ static void profile_initialize_output(void) {
     profile_output_fd = STDERR_FILENO;
     profile_child_profiling_enabled =
         profile_environment_is_true(PROFILE_CHILD_ENVIRONMENT);
+    const char *status_fd_text = getenv(PROFILE_STATUS_FD_ENVIRONMENT);
+    if (status_fd_text != NULL && *status_fd_text != '\0') {
+        char *status_end = NULL;
+        long requested_status_fd = strtol(status_fd_text, &status_end, 10);
+        if (status_end != status_fd_text && *status_end == '\0' &&
+            requested_status_fd >= 0 && requested_status_fd <= INT_MAX) {
+            int duplicate_status_fd = dup((int)requested_status_fd);
+            if (duplicate_status_fd >= 0) {
+                if (duplicate_status_fd != (int)requested_status_fd) {
+                    (void)close((int)requested_status_fd);
+                }
+                profile_status_fd = duplicate_status_fd;
+            }
+        }
+    }
     profile_framing_enabled = profile_environment_is_true(PROFILE_FRAMED_ENVIRONMENT);
     const char *fd_text = getenv(PROFILE_FD_ENVIRONMENT);
     if (fd_text == NULL || *fd_text == '\0') {
@@ -482,7 +549,11 @@ static void profile_after_fork_child(void) {
     if (profile_output_fd > STDERR_FILENO) {
         (void)close(profile_output_fd);
     }
+    if (profile_status_fd >= 0) {
+        (void)close(profile_status_fd);
+    }
     profile_output_fd = -1;
+    profile_status_fd = -1;
 }
 
 static void profile_register_fork_policy(void) {
@@ -2111,9 +2182,11 @@ static int profile_signal_write_all(const char *buffer, size_t length) {
             if (errno == EINTR) {
                 continue;
             }
+            profile_output_write_failed = 1;
             return 0;
         }
         if (written == 0) {
+            profile_output_write_failed = 1;
             return 0;
         }
         offset += (size_t)written;
@@ -2557,6 +2630,7 @@ static void profile_dump(void) {
     pthread_mutex_lock(&profile_lock);
     profile_dump_body();
     pthread_mutex_unlock(&profile_lock);
+    profile_write_status();
 }
 
 #ifndef ELISA_PROFILE_NO_MAIN
@@ -2639,6 +2713,16 @@ int main(int argc, char **argv) {
             profile_mode = PROFILE_MODE_SAMPLES;
         }
     }
+    uint64_t sample_period = PROFILE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS;
+    if (profile_mode == PROFILE_MODE_SAMPLES) {
+        sample_period = profile_read_limit_environment(
+            PROFILE_SAMPLE_PERIOD_ENVIRONMENT,
+            PROFILE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS);
+        uint64_t mode_sample_period = profile_read_sample_period_from_mode(mode);
+        if (mode_sample_period != 0) {
+            sample_period = mode_sample_period;
+        }
+    }
     const char *event_trace = getenv(PROFILE_EVENT_TRACE_ENVIRONMENT);
     profile_event_trace_enabled = event_trace != NULL && strcmp(event_trace, "1") == 0;
     const char *thread_records = getenv(PROFILE_THREAD_RECORDS_ENVIRONMENT);
@@ -2657,13 +2741,6 @@ int main(int argc, char **argv) {
     profile_register_fork_policy();
     profile_install_crash_handlers();
     if (profile_mode == PROFILE_MODE_SAMPLES) {
-        uint64_t sample_period = profile_read_limit_environment(
-            PROFILE_SAMPLE_PERIOD_ENVIRONMENT,
-            PROFILE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS);
-        uint64_t mode_sample_period = profile_read_sample_period_from_mode(mode);
-        if (mode_sample_period != 0) {
-            sample_period = mode_sample_period;
-        }
         if (!profile_start_sampling(sample_period)) {
             profile_sampling_setup_failed = 1;
         }
@@ -2671,9 +2748,6 @@ int main(int argc, char **argv) {
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main((int64_t)argc, argv);
     profile_dump();
-    if (profile_sampling_setup_failed) {
-        result = PROFILE_COLLECTOR_FAILURE_STATUS;
-    }
     /* The native toolchain may link this collector without a CRT startup
      * object, so returning from main would return into the dyld entry frame.
      * Exit explicitly after the final dump to make the collector's ABI

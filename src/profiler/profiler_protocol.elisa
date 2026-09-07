@@ -653,6 +653,7 @@ extend ProfilerNative:
                 sample_missed: NATIVE_ZERO,
                 sample_period_microseconds: NATIVE_ZERO,
                 sampling_setup_failed: NATIVE_ZERO,
+                collector_status: NATIVE_COLLECTOR_STATUS_UNKNOWN,
                 location_limit: NATIVE_ZERO,
                 call_edge_limit: NATIVE_ZERO,
                 stack_limit: NATIVE_ZERO,

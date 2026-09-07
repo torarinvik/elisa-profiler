@@ -16,6 +16,7 @@ module ProfilerNative:
         const NATIVE_THREE: i64 = 3
         const NATIVE_NEGATIVE_ONE: i64 = -1
         const NATIVE_CHILD_FAILURE_STATUS: i64 = 127
+        const NATIVE_COLLECTOR_FAILURE_STATUS: i64 = 126
         # Stable profiler-owned exit codes. Target exit/signal values remain
         # represented inside a successful capture; these values describe the
         # command's ability to produce or gate a comparison report.
@@ -29,6 +30,7 @@ module ProfilerNative:
         const NATIVE_TIMEOUT_GRACE_MILLISECONDS: i64 = 2000
         const NATIVE_ENV_OVERWRITE: i64 = 1
         const NATIVE_PROFILE_FD_ENVIRONMENT: cstr = "ELISA_PROFILE_FD"
+        const NATIVE_PROFILE_STATUS_FD_ENVIRONMENT: cstr = "ELISA_PROFILE_STATUS_FD"
         const NATIVE_PROFILE_FRAMED_ENVIRONMENT: cstr = "ELISA_PROFILE_FRAMED"
         const NATIVE_PROFILE_THREAD_RECORDS_ENVIRONMENT: cstr = "ELISA_PROFILE_THREAD_RECORDS"
         const NATIVE_PROFILE_MODE_ENVIRONMENT: cstr = "ELISA_PROFILE_MODE"
@@ -38,6 +40,10 @@ module ProfilerNative:
         const NATIVE_PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT: cstr = "ELISA_PROFILE_MAX_CAPTURE_BYTES"
         const NATIVE_PROFILE_RECENT_PATH_ENVIRONMENT: cstr = "ELISA_PROFILE_RECENT_PATH"
         const NATIVE_RANDOM_SEED_ENVIRONMENT: cstr = "ELISA_RANDOM_SEED"
+        const NATIVE_COLLECTOR_STATUS_UNKNOWN: i64 = 0
+        const NATIVE_COLLECTOR_STATUS_OK: i64 = 1
+        const NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE: i64 = 2
+        const NATIVE_COLLECTOR_STATUS_OUTPUT_FAILURE: i64 = 3
         const NATIVE_ACCESS_EXECUTE: i64 = 1
         const NATIVE_EXIT_STATUS_BASE: i64 = 256
         const NATIVE_SIGNAL_STATUS_BASE: i64 = 128
@@ -285,6 +291,7 @@ module ProfilerNative:
 
         struct TargetRunResult:
             status: i64
+            collector_status: mutable i64
             elapsed_ns: i64
             timed_out: bool
             resource_available: bool
@@ -344,6 +351,7 @@ module ProfilerNative:
             sample_missed: mutable i64
             sample_period_microseconds: mutable i64
             sampling_setup_failed: mutable i64
+            collector_status: mutable i64
             crash_signal: mutable i64
             crash_signal_available: mutable bool
             capture_complete: mutable bool
@@ -377,6 +385,7 @@ module ProfilerNative:
                 stack_overflow_entries: NATIVE_ZERO, trace_omitted: NATIVE_ZERO,
                 sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO,
                 sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
+                collector_status: NATIVE_COLLECTOR_STATUS_UNKNOWN,
                 crash_signal: NATIVE_ZERO, crash_signal_available: false,
                 capture_complete: false, capture_complete_available: false,
                 execution_mean_micros: NATIVE_ZERO, execution_mean_available: false,
@@ -417,6 +426,7 @@ module ProfilerNative:
             sample_missed: mutable i64
             sample_period_microseconds: mutable i64
             sampling_setup_failed: mutable i64
+            collector_status: mutable i64
             location_limit: mutable i64
             call_edge_limit: mutable i64
             stack_limit: mutable i64

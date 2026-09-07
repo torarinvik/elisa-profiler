@@ -58,6 +58,7 @@ extend ProfilerNative:
                 sample_missed: NATIVE_ZERO,
                 sample_period_microseconds: NATIVE_ZERO,
                 sampling_setup_failed: NATIVE_ZERO,
+                collector_status: NATIVE_COLLECTOR_STATUS_UNKNOWN,
                 sample_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
@@ -89,6 +90,7 @@ extend ProfilerNative:
             destination.sample_missed <- native_saturating_add(destination.sample_missed, incoming.sample_missed)
             destination.sample_period_microseconds <- incoming.sample_period_microseconds if incoming.sample_period_microseconds > NATIVE_ZERO
             destination.sampling_setup_failed <- incoming.sampling_setup_failed if incoming.sampling_setup_failed != NATIVE_ZERO
+            destination.collector_status <- incoming.collector_status if incoming.collector_status > destination.collector_status
             destination.location_limit <- incoming.location_limit
             destination.call_edge_limit <- incoming.call_edge_limit
             destination.stack_limit <- incoming.stack_limit
@@ -166,6 +168,8 @@ extend ProfilerNative:
             append_millis(buffer, result.elapsed_ns)
             append_text(buffer, ",\"timed_out\":")
             append_text(buffer, "true" if result.timed_out else "false")
+            append_text(buffer, ",\"collector_status\":")
+            append_i64(buffer, result.collector_status)
             append_text(buffer, ",\"capture_started\":")
             append_text(buffer, "true" if summary.capture_started else "false")
             append_text(buffer, ",\"capture_complete\":")

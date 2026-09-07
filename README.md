@@ -356,6 +356,11 @@ strict sequence numbers, byte lengths, and FNV-1a-64 checksums, followed by
 begin/end markers; successful runs require a complete marker pair, while
 timeout and signal captures retain explicit partial-capture state. Framed
 transport loss is reported separately from aggregate event loss.
+The collector also writes an independent status record for each launch. A
+successful target therefore cannot silently become a successful profiling
+operation when sampling setup or collector output fails: `run.outcome` becomes
+`collector_failure`, `summary.collector_status` identifies the failure class,
+and a target's own nonzero exit remains separately observable.
 Internal collector environment variables and the capture descriptor are cleared
 before an ordinary descendant `exec`; set `ELISA_PROFILE_CHILD=1` explicitly
 when a child process is intentionally part of the profiled capture.

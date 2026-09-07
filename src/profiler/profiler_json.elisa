@@ -978,6 +978,7 @@ extend ProfilerNative:
             return false if not json_read_optional_number_field(data, "sample_missed", summary_start.usize(), summary_stop.usize(), &profile.sample_missed)
             return false if not json_read_optional_number_field(data, "sample_period_microseconds", summary_start.usize(), summary_stop.usize(), &profile.sample_period_microseconds)
             return false if not json_read_optional_number_field(data, "sampling_setup_failed", summary_start.usize(), summary_stop.usize(), &profile.sampling_setup_failed)
+            return false if not json_read_optional_number_field(data, "collector_status", summary_start.usize(), summary_stop.usize(), &profile.collector_status)
             return false if not json_read_nullable_number_field(data, "crash_signal", summary_start.usize(), summary_stop.usize(), &profile.crash_signal, &profile.crash_signal_available)
             return false if not json_read_exit_code_field(data, run_start.usize(), run_stop.usize(), &profile.exit_code)
 
