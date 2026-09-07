@@ -62,6 +62,11 @@ module ProfilerNative:
         const NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR: i64 = 100000000
         const NATIVE_MICROSECONDS_PER_MILLISECOND: i64 = 1000
         const NATIVE_PERCENT_DENOMINATOR: i64 = 100
+        # Relative comparison output uses hundredths of a percent so JSON
+        # consumers never have to round an exact integer metric into a binary
+        # floating-point value. A value of 10000 therefore means +100.00%.
+        const NATIVE_RELATIVE_BASIS_POINTS_PER_PERCENT: i64 = 100
+        const NATIVE_RELATIVE_BASIS_POINTS_SCALE: i64 = 10000
         const NATIVE_COMPARISON_THRESHOLD_DISABLED: i64 = -1
         const NATIVE_COMPARISON_MAX_PERCENT: i64 = 1000000
         const NATIVE_COMPARISON_HTML_DETAIL_LIMIT: i64 = 200

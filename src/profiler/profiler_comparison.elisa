@@ -19,6 +19,38 @@ extend ProfilerNative:
             return available and maximum >= NATIVE_ZERO and candidate > maximum
 
 
+        def comparison_relative_delta_basis_points(baseline: i64, candidate: i64, available: bool) -> i64:
+            # A zero baseline has no meaningful relative denominator. Keep the
+            # unavailable sentinel distinct from a real negative delta.
+            return NATIVE_I64_MIN if not available or baseline <= NATIVE_ZERO
+            delta: i64 = native_signed_delta(candidate, baseline)
+            if delta >= NATIVE_ZERO:
+                return native_saturating_mul_nonnegative(delta, NATIVE_RELATIVE_BASIS_POINTS_SCALE) / baseline
+            magnitude: i64 = -delta
+            return -(native_saturating_mul_nonnegative(magnitude, NATIVE_RELATIVE_BASIS_POINTS_SCALE) / baseline)
+
+
+        def append_comparison_relative_delta(buffer: mutable darray[u8]&, baseline: i64, candidate: i64, available: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            relative_delta: i64 = comparison_relative_delta_basis_points(baseline, candidate, available)
+            append_i64(buffer, relative_delta) if relative_delta != NATIVE_I64_MIN
+            append_text(buffer, "null") if relative_delta == NATIVE_I64_MIN
+
+
+        def append_comparison_relative_delta_html(buffer: mutable darray[u8]&, baseline: i64, candidate: i64, available: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            relative_delta: i64 = comparison_relative_delta_basis_points(baseline, candidate, available)
+            if relative_delta == NATIVE_I64_MIN:
+                append_text(buffer, "unavailable")
+                return
+            append_text(buffer, "-") if relative_delta < NATIVE_ZERO
+            magnitude: i64 = -relative_delta if relative_delta < NATIVE_ZERO else relative_delta
+            append_i64(buffer, magnitude / NATIVE_RELATIVE_BASIS_POINTS_PER_PERCENT)
+            append_text(buffer, ".")
+            fraction: i64 = magnitude % NATIVE_RELATIVE_BASIS_POINTS_PER_PERCENT
+            append_text(buffer, "0") if fraction < NATIVE_DECIMAL_BASE
+            append_i64(buffer, fraction)
+            append_text(buffer, "%")
+
+
         def comparison_function_self_exceeded(baseline: darray[ComparisonFunctionRecord]&, candidate: darray[ComparisonFunctionRecord]&, percent: i64) -> bool can[Abort.Panic]:
             return false if percent < NATIVE_ZERO
             for baseline_index in 0..<baseline.count |baseline_index, baseline, candidate, percent|:
@@ -156,6 +188,8 @@ extend ProfilerNative:
             append_text(buffer, ",\"delta_micros\":")
             append_i64(buffer, native_signed_delta(candidate, baseline)) if baseline_available and candidate_available
             append_text(buffer, "null") if not baseline_available or not candidate_available
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline, candidate, baseline_available and candidate_available)
             append_text(buffer, "}")
 
 
@@ -169,6 +203,8 @@ extend ProfilerNative:
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate, baseline)) if baseline_available and candidate_available
             append_text(buffer, "null") if not baseline_available or not candidate_available
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline, candidate, baseline_available and candidate_available)
             append_text(buffer, "}")
 
 
@@ -818,37 +854,50 @@ extend ProfilerNative:
                 append_micros_as_millis(buffer, candidate.execution_mean_micros)
                 append_text(buffer, " ms</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.execution_mean_micros, baseline.execution_mean_micros))
-                append_text(buffer, " µs</td></tr><tr><th scope='row'>Compilation</th><td>")
+                append_text(buffer, " µs; ")
+                append_comparison_relative_delta_html(buffer, baseline.execution_mean_micros, candidate.execution_mean_micros, true)
+                append_text(buffer, "</td></tr><tr><th scope='row'>Compilation</th><td>")
                 append_micros_as_millis(buffer, baseline.compile_micros)
                 append_text(buffer, " ms</td><td>")
                 append_micros_as_millis(buffer, candidate.compile_micros)
                 append_text(buffer, " ms</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.compile_micros, baseline.compile_micros))
-                append_text(buffer, " µs</td></tr><tr><th scope='row'>CPU</th><td>")
+                append_text(buffer, " µs; ")
+                append_comparison_relative_delta_html(buffer, baseline.compile_micros, candidate.compile_micros, true)
+                append_text(buffer, "</td></tr><tr><th scope='row'>CPU</th><td>")
                 append_micros_as_millis(buffer, baseline.cpu_micros) if baseline.resource_metrics_available else append_text(buffer, "unavailable")
                 append_text(buffer, "</td><td>")
                 append_micros_as_millis(buffer, candidate.cpu_micros) if candidate.resource_metrics_available else append_text(buffer, "unavailable")
                 append_text(buffer, "</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.cpu_micros, baseline.cpu_micros)) if baseline.resource_metrics_available and candidate.resource_metrics_available else append_text(buffer, "unavailable")
-                append_text(buffer, " µs</td></tr><tr><th scope='row'>Peak RSS</th><td>")
+                append_text(buffer, " µs; ") if baseline.resource_metrics_available and candidate.resource_metrics_available else append_text(buffer, "; ")
+                append_comparison_relative_delta_html(buffer, baseline.cpu_micros, candidate.cpu_micros, baseline.resource_metrics_available and candidate.resource_metrics_available)
+                append_text(buffer, "</td></tr><tr><th scope='row'>Peak RSS</th><td>")
                 append_i64(buffer, baseline.peak_rss_bytes) if baseline.resource_metrics_available else append_text(buffer, "unavailable")
                 append_text(buffer, " bytes</td><td>")
                 append_i64(buffer, candidate.peak_rss_bytes) if candidate.resource_metrics_available else append_text(buffer, "unavailable")
                 append_text(buffer, " bytes</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.peak_rss_bytes, baseline.peak_rss_bytes)) if baseline.resource_metrics_available and candidate.resource_metrics_available else append_text(buffer, "unavailable")
+                append_text(buffer, "; ")
+                append_comparison_relative_delta_html(buffer, baseline.peak_rss_bytes, candidate.peak_rss_bytes, baseline.resource_metrics_available and candidate.resource_metrics_available)
                 append_text(buffer, "</td></tr><tr><th scope='row'>Events</th><td>")
                 append_i64(buffer, baseline.events)
                 append_text(buffer, "</td><td>")
                 append_i64(buffer, candidate.events)
                 append_text(buffer, "</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.events, baseline.events))
+                append_text(buffer, "; ")
+                append_comparison_relative_delta_html(buffer, baseline.events, candidate.events, true)
                 append_text(buffer, "</td></tr><tr><th scope='row'>Locations</th><td>")
                 append_i64(buffer, baseline.locations)
                 append_text(buffer, "</td><td>")
                 append_i64(buffer, candidate.locations)
                 append_text(buffer, "</td><td>")
                 append_i64(buffer, native_signed_delta(candidate.locations, baseline.locations))
+                append_text(buffer, "; ")
+                append_comparison_relative_delta_html(buffer, baseline.locations, candidate.locations, true)
                 append_text(buffer, "</td></tr></tbody></table>")
+                append_text(buffer, "<p class='panel-note'>Metric deltas show absolute change first, followed by exact relative change in percent. Relative change is unavailable when the baseline is zero or the metric is missing.</p>")
                 append_comparison_function_changes_html(buffer, baseline.functions, candidate.functions)
                 append_comparison_call_edge_changes_html(buffer, baseline.call_edges, candidate.call_edges)
                 append_comparison_stack_changes_html(buffer, baseline.stacks, candidate.stacks)
@@ -1057,12 +1106,16 @@ extend ProfilerNative:
             append_micros_as_millis(buffer, candidate.execution_mean_micros)
             append_text(buffer, ",\"delta_micros\":")
             append_i64(buffer, native_signed_delta(candidate.execution_mean_micros, baseline.execution_mean_micros))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.execution_mean_micros, candidate.execution_mean_micros, true)
             append_text(buffer, "},\"compile_ms\":{\"baseline\":")
             append_micros_as_millis(buffer, baseline.compile_micros)
             append_text(buffer, ",\"candidate\":")
             append_micros_as_millis(buffer, candidate.compile_micros)
             append_text(buffer, ",\"delta_micros\":")
             append_i64(buffer, native_signed_delta(candidate.compile_micros, baseline.compile_micros))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.compile_micros, candidate.compile_micros, true)
             append_text(buffer, "},\"cpu_ms\":")
             append_comparison_nullable_timed_metric(buffer, baseline.cpu_micros, candidate.cpu_micros, baseline.resource_metrics_available, candidate.resource_metrics_available)
             append_text(buffer, ",\"peak_rss_bytes\":")
@@ -1073,60 +1126,80 @@ extend ProfilerNative:
             append_i64(buffer, candidate.events)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.events, baseline.events))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.events, candidate.events, true)
             append_text(buffer, "},\"locations\":{\"baseline\":")
             append_i64(buffer, baseline.locations)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.locations)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.locations, baseline.locations))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.locations, candidate.locations, true)
             append_text(buffer, "},\"dropped_events\":{\"baseline\":")
             append_i64(buffer, baseline.dropped)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.dropped)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.dropped, baseline.dropped))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.dropped, candidate.dropped, true)
             append_text(buffer, "},\"thread_count\":{\"baseline\":")
             append_i64(buffer, baseline.thread_count)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.thread_count)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.thread_count, baseline.thread_count))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.thread_count, candidate.thread_count, true)
             append_text(buffer, "},\"stack_overflow_entries\":{\"baseline\":")
             append_i64(buffer, baseline.stack_overflow_entries)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.stack_overflow_entries)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.stack_overflow_entries, baseline.stack_overflow_entries))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.stack_overflow_entries, candidate.stack_overflow_entries, true)
             append_text(buffer, "},\"trace_events_omitted\":{\"baseline\":")
             append_i64(buffer, baseline.trace_events_omitted)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.trace_events_omitted)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.trace_events_omitted, baseline.trace_events_omitted))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.trace_events_omitted, candidate.trace_events_omitted, true)
             append_text(buffer, "},\"sample_count\":{\"baseline\":")
             append_i64(buffer, baseline.sample_count)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.sample_count)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.sample_count, baseline.sample_count))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.sample_count, candidate.sample_count, true)
             append_text(buffer, "},\"sample_missed\":{\"baseline\":")
             append_i64(buffer, baseline.sample_missed)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.sample_missed)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.sample_missed, baseline.sample_missed))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.sample_missed, candidate.sample_missed, true)
             append_text(buffer, "},\"sample_period_microseconds\":{\"baseline\":")
             append_i64(buffer, baseline.sample_period_microseconds)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.sample_period_microseconds)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.sample_period_microseconds, baseline.sample_period_microseconds))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.sample_period_microseconds, candidate.sample_period_microseconds, true)
             append_text(buffer, "},\"sampling_setup_failed\":{\"baseline\":")
             append_i64(buffer, baseline.sampling_setup_failed)
             append_text(buffer, ",\"candidate\":")
             append_i64(buffer, candidate.sampling_setup_failed)
             append_text(buffer, ",\"delta\":")
             append_i64(buffer, native_signed_delta(candidate.sampling_setup_failed, baseline.sampling_setup_failed))
+            append_text(buffer, ",\"relative_delta_basis_points\":")
+            append_comparison_relative_delta(buffer, baseline.sampling_setup_failed, candidate.sampling_setup_failed, true)
             append_text(buffer, "}}")
             append_comparison_gate_json(buffer, policy, gate_inconclusive, gate_failed, wall_percent_failed, wall_absolute_failed, cpu_percent_failed, cpu_absolute_failed, rss_percent_failed, rss_absolute_failed, function_failed)
             append_text(buffer, ",\"warnings\":[")

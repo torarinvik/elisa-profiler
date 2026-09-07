@@ -112,6 +112,9 @@ def main() -> int:
             "max_interval_ns": 200,
         }]
         candidate_capture = capture(["--beta"], exit_code=None)
+        candidate_capture["run"]["execution_ms_mean"] = 1.5  # type: ignore[index]
+        candidate_capture["run"]["cpu_ms"] = 0.75  # type: ignore[index]
+        candidate_capture["run"]["peak_rss_bytes"] = 6144  # type: ignore[index]
         candidate_capture["functions"] = [{
             "function": "beta",
             "events": 9,
@@ -175,6 +178,14 @@ def main() -> int:
             raise SystemExit("native comparison did not report warning status")
         if comparison["metrics"]["cpu_ms"]["baseline"] != 0.5:
             raise SystemExit("native comparison omitted CPU timing")
+        if comparison["metrics"]["execution_ms_mean"]["relative_delta_basis_points"] != 5000:
+            raise SystemExit("native comparison omitted exact wall relative delta")
+        if comparison["metrics"]["cpu_ms"]["relative_delta_basis_points"] != 5000:
+            raise SystemExit("native comparison omitted exact CPU relative delta")
+        if comparison["metrics"]["peak_rss_bytes"]["relative_delta_basis_points"] != 5000:
+            raise SystemExit("native comparison omitted exact RSS relative delta")
+        if comparison["metrics"]["events"]["relative_delta_basis_points"] != 0:
+            raise SystemExit("native comparison omitted exact event relative delta")
         if comparison["metrics"]["peak_rss_bytes"]["baseline"] != 4096:
             raise SystemExit("native comparison omitted peak RSS")
         if any("resource-metric availability" in warning for warning in comparison.get("warnings", [])):
@@ -203,6 +214,9 @@ def main() -> int:
             b"@media(prefers-reduced-motion:reduce)",
             b"@media print",
             b"summary:focus-visible",
+            b"absolute change first",
+            b"50.00%",
+            b"relative_delta_basis_points",
             b">Removed<",
             b">Added<",
             b"Raw comparison JSON",
@@ -218,6 +232,8 @@ def main() -> int:
             raise SystemExit("native comparison did not retain added and removed functions")
         if function_changes["alpha"]["inclusive_ns"]["candidate"] is not None:
             raise SystemExit("native comparison did not mark the removed function as unavailable")
+        if function_changes["alpha"]["self_ns"]["relative_delta_basis_points"] is not None:
+            raise SystemExit("native comparison did not mark an unavailable relative delta as null")
         if function_changes["beta"]["inclusive_ns"]["baseline"] is not None:
             raise SystemExit("native comparison did not mark the added function as unavailable")
         edge_changes = {(item["caller"], item["callee"]): item for item in comparison["call_edges"]}

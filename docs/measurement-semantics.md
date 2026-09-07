@@ -265,6 +265,12 @@ shared-function metric is unavailable. Gate exit status `5` means regression,
 `4` means inconclusive, and `0` means the requested policy passed. The JSON
 `gate.violations` array contains stable policy names suitable for CI logs.
 
+Every comparison metric also exposes `relative_delta_basis_points` when its
+baseline is positive and both values are available. This is an exact integer
+fixed-point value in hundredths of a percent: `10000` means `+100.00%`, and
+`-250` means `-2.50%`. A `null` value means the relative denominator is zero
+or the metric is unavailable; consumers must not reinterpret it as zero.
+
 ## Function and stack accounting
 
 - `call_events` is incremented when a function entry is observed.

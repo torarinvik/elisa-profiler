@@ -125,7 +125,8 @@
       "properties": {
         "baseline": { "type": "number", "minimum": 0 },
         "candidate": { "type": "number", "minimum": 0 },
-        "delta_micros": { "type": "integer" }
+        "delta_micros": { "type": "integer" },
+        "relative_delta_basis_points": { "type": ["integer", "null"] }
       },
       "additionalProperties": false
     },
@@ -135,7 +136,8 @@
       "properties": {
         "baseline": { "type": ["number", "null"], "minimum": 0 },
         "candidate": { "type": ["number", "null"], "minimum": 0 },
-        "delta_micros": { "type": ["integer", "null"] }
+        "delta_micros": { "type": ["integer", "null"] },
+        "relative_delta_basis_points": { "type": ["integer", "null"] }
       },
       "additionalProperties": false
     },
@@ -145,7 +147,8 @@
       "properties": {
         "baseline": { "type": ["integer", "null"], "minimum": 0 },
         "candidate": { "type": ["integer", "null"], "minimum": 0 },
-        "delta": { "type": ["integer", "null"] }
+        "delta": { "type": ["integer", "null"] },
+        "relative_delta_basis_points": { "type": ["integer", "null"] }
       },
       "additionalProperties": false
     },
@@ -155,7 +158,8 @@
       "properties": {
         "baseline": { "type": "integer", "minimum": 0 },
         "candidate": { "type": "integer", "minimum": 0 },
-        "delta": { "type": "integer" }
+        "delta": { "type": "integer" },
+        "relative_delta_basis_points": { "type": ["integer", "null"] }
       },
       "additionalProperties": false
     },
