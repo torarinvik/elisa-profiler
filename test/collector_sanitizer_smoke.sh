@@ -33,6 +33,10 @@ SANITIZER_CFLAGS=(
     -o "$WORK/collector-content" \
     "$ROOT/scripts/profiler_runtime.c" \
     "$ROOT/test/collector_content_smoke.c"
+"$CC" "${SANITIZER_CFLAGS[@]}" \
+    -o "$WORK/collector-concurrency" \
+    "$ROOT/scripts/profiler_runtime.c" \
+    "$ROOT/test/profile_fd_target.c"
 
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
 UBSAN_OPTIONS=halt_on_error=1 \
@@ -40,8 +44,13 @@ UBSAN_OPTIONS=halt_on_error=1 \
 ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
 UBSAN_OPTIONS=halt_on_error=1 \
     "$WORK/collector-content" >"$WORK/content.log" 2>&1
+ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
+UBSAN_OPTIONS=halt_on_error=1 \
+    "$WORK/collector-concurrency" >"$WORK/concurrency.log" 2>&1
 
 grep -Fq "collector regression smoke OK" "$WORK/regression.log"
 grep -Fq $'ELISA_PROFILE\t1\tbegin\t1' "$WORK/content.log"
 grep -Fq $'ELISA_PROFILE\t1\tend\t1' "$WORK/content.log"
+grep -Fq "target diagnostic" "$WORK/concurrency.log"
+grep -Fq $'ELISA_PROFILE\t1\tend\t1' "$WORK/concurrency.log"
 echo "collector sanitizer smoke OK"
