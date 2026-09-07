@@ -279,6 +279,12 @@ def main():
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
         assert b"Source view unavailable" in offline_html
         assert b"--embed-source" in offline_html
+        source_override = work / "verified-source.elisa"
+        source_override.write_bytes(report["source"].encode("utf-8"))
+        overridden_html = run("report", capture, "--format", "html", "--source", source_override)
+        assert b"Source view" in overridden_html
+        assert b"source-filter" in overridden_html
+        assert b"Source view unavailable" not in overridden_html
 
         large_weights = copy.deepcopy(report)
         large_weights["run"]["location_timing"] = True

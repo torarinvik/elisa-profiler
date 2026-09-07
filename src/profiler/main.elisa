@@ -1854,6 +1854,8 @@ extend ProfilerNative:
                 source_bytes: darray[u8] = read_file(source_override)
                 return report_error("source file could not be read for report verification") if source_bytes.count == NATIVE_ZERO.usize()
                 return report_error("source changed since capture; report locations would be misattributed") if not byte_arrays_equal(offline_profile.source_digest, sha256_hex(source_bytes))
+                offline_profile.source_snapshot <- []
+                offline_profile.source_snapshot.extend(source_bytes)
             rendered: mutable darray[u8] = []
             if format_text:
                 return report_error("offline capture is not a native JSON profile") if not append_offline_text_profile(&rendered, offline_profile)
