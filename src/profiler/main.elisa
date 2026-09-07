@@ -455,29 +455,6 @@ extend ProfilerNative:
             return true
 
 
-        def path_has_prefix(path: darray[u8]&, prefix: darray[u8]&) -> bool can[Abort.Panic]:
-            return false if prefix.count == NATIVE_ZERO.usize() or path.count < prefix.count
-            for index in 0..<prefix.count |path, prefix|:
-                return false if path[index] != prefix[index]
-            return true if path.count == prefix.count
-            return path[prefix.count] == NATIVE_BYTE_SLASH
-
-
-        def remap_display_path(path: darray[u8]&, mappings: darray[NativePathMap]&) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
-            selected: mutable i64 = NATIVE_NEGATIVE_ONE
-            for mapping_index in 0..<mappings.count |mapping_index, mappings, path, selected|:
-                if path_has_prefix(path, mappings[mapping_index].from) and (selected < NATIVE_ZERO or mappings[mapping_index].from.count > mappings[selected.usize()].from.count):
-                    selected <- mapping_index.i64()
-            result: mutable darray[u8] = []
-            if selected < NATIVE_ZERO:
-                result.extend(path)
-                return result
-            result.extend(mappings[selected.usize()].replacement)
-            for index in mappings[selected.usize()].from.count..<path.count |result, path|:
-                result.push(path[index])
-            return result
-
-
         def environment_or_executable(name: sview, fallback: sview, argv_zero: cstr, suffix: sview, destination: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             destination <- []
             return if copy_environment(name, destination)
@@ -1823,7 +1800,8 @@ extend ProfilerNative:
             recovery_source_map_flat_lines: mutable darray[i64] = []
             recovery_source_map_source_lines: mutable darray[i64] = []
             recovery_source_map_data: mutable darray[u8] = []
-            summary: CaptureSummary = parse_capture(capture, source, recovery_source_map_data, recovery_source_map_flat_lines, recovery_source_map_source_lines, true, NATIVE_ONE, not protocol_field_is(mode, "sample"))
+            recovery_path_maps: mutable darray[NativePathMap] = []
+            summary: CaptureSummary = parse_capture(capture, source, recovery_path_maps, recovery_source_map_data, recovery_source_map_flat_lines, recovery_source_map_source_lines, true, NATIVE_ONE, not protocol_field_is(mode, "sample"))
             return report_protocol_error(summary) if summary.malformed
             return report_error("capture contains no complete framed records") if summary.valid_frames == NATIVE_ZERO
             recovered: mutable darray[u8] = []
@@ -2254,7 +2232,7 @@ extend ProfilerNative:
             return report_error("--artifact-output requires --format json") if artifact_output.count > NATIVE_ZERO.usize() and (format_text or format_folded or format_html or format_speedscope)
             source_check: darray[u8] = read_file(source)
             return report_error("source file could not be read") if source_check.count == NATIVE_ZERO.usize()
-            display_source: darray[u8] = remap_display_path(source, path_maps)
+            display_source: darray[u8] = native_remap_display_path(source, path_maps)
             host: NativeHostMetadata = native_host_metadata()
         
             compiler_root: mutable darray[u8] = []
@@ -2372,8 +2350,8 @@ extend ProfilerNative:
                 cleanup_temp(temporary)
                 return report_error("source dependency tree changed while the target was being built; retry with stable sources")
             source_map_data: darray[u8] = read_file(source_map_path)
-            source_map_available: bool = source_map_data.count > NATIVE_ZERO.usize()
             source_map: mutable NativeSourceMap = parse_native_source_map(source_map_data)
+            source_map_available: bool = source_map.available
             publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host) if not prebuilt_requested
             compile_elapsed_ns: i64 = NATIVE_ZERO if prebuilt_requested else elapsed_nanoseconds(build_start, read_monotonic())
             summary: mutable CaptureSummary = empty_capture_summary()
@@ -2441,7 +2419,7 @@ extend ProfilerNative:
                         cleanup_temp(temporary)
                         return report_error("native target produced no collector capture")
                 else:
-                    current_summary <- parse_capture(capture, display_source, source_map_data, source_map.flat_lines, source_map.source_lines, run_result.timed_out, repetition, not protocol_field_is(mode, "sample"))
+                    current_summary <- parse_capture(capture, display_source, path_maps, source_map_data, source_map.flat_lines, source_map.source_lines, run_result.timed_out, repetition, not protocol_field_is(mode, "sample"))
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)

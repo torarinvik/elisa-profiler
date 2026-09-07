@@ -402,6 +402,28 @@ module ProfilerNative:
             from: mutable darray[u8]
             replacement: mutable darray[u8]
 
+        def native_path_has_prefix(path: darray[u8]&, prefix: darray[u8]&) -> bool can[Abort.Panic]:
+            return false if prefix.count == NATIVE_ZERO.usize() or path.count < prefix.count
+            for index in 0..<prefix.count |path, prefix|:
+                return false if path[index] != prefix[index]
+            return true if path.count == prefix.count
+            return path[prefix.count] == NATIVE_BYTE_SLASH
+
+
+        def native_remap_display_path(path: darray[u8]&, mappings: darray[NativePathMap]&) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            selected: mutable i64 = NATIVE_NEGATIVE_ONE
+            for mapping_index in 0..<mappings.count |mapping_index, mappings, path, selected|:
+                if native_path_has_prefix(path, mappings[mapping_index].from) and (selected < NATIVE_ZERO or mappings[mapping_index].from.count > mappings[selected.usize()].from.count):
+                    selected <- mapping_index.i64()
+            result: mutable darray[u8] = []
+            if selected < NATIVE_ZERO:
+                result.extend(path)
+                return result
+            result.extend(mappings[selected.usize()].replacement)
+            for index in mappings[selected.usize()].from.count..<path.count |result, path|:
+                result.push(path[index])
+            return result
+
         struct NativeSourceMap:
             available: mutable bool
             flat_lines: mutable darray[i64]
