@@ -27,6 +27,14 @@ eliminated. Interleaved randomized execution remains a future optimization of
 the runner, while exact native comparison and machine-readable gate outcomes
 are already available.
 
+The checked-in example gates aggregate wall time only. It deliberately does not
+gate every function's self time: very short functions can quantize to zero in
+one capture and a microsecond in the other, which is useful evidence but makes
+a whole-workload example intermittently fail on timer quantization rather than
+on a meaningful regression. Use `max_function_self_regression_percent` for a
+workload with a documented minimum per-function duration, and keep the
+exploratory function rows for the remaining evidence.
+
 Intermediate reports use `<output>.baseline.json` and
 `<output>.candidate.json`. The native command refuses to reuse pre-existing
 intermediate names and removes both reports and their progress manifests after

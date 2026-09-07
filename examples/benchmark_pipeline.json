@@ -10,6 +10,5 @@
   "random_seed": "42",
   "target_arguments": ["--large"],
   "embed_source": true,
-  "max_wall_regression_percent": 1000,
-  "max_function_self_regression_percent": 1000
+  "max_wall_regression_percent": 1000
 }
