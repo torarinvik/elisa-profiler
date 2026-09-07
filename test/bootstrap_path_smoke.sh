@@ -11,6 +11,7 @@ trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 grep -Fq '"ok":true' "$WORK/doctor.json"
 grep -Fq '"compiler_manifest":true' "$WORK/doctor.json"
+grep -Fq '"branch_coverage":true' "$WORK/doctor.json"
 grep -Fq '"cpu_sampling":{"status":"experimental"' "$WORK/doctor.json"
 grep -Fq '"attach":{"status":"unsupported"' "$WORK/doctor.json"
 echo "bootstrap path smoke OK"

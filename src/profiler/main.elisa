@@ -1574,11 +1574,14 @@ extend ProfilerNative:
             collector: mutable darray[u8] = []
             environment_or_executable("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", argv_zero, "/../scripts/profiler_runtime.c", collector)
             manifest_path: darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
+            integration_ledger: mutable darray[u8] = []
+            environment_or_executable("ELISA_COMPILER_INTEGRATION_LEDGER", "build/compiler-integration-ledger.json", argv_zero, "/../build/compiler-integration-ledger.json", integration_ledger)
             compiler_ok: bool = readable_file(compiler_root)
             stage1_ok: bool = executable_available(stage1)
             runtime_ok: bool = readable_file(runtime)
             collector_ok: bool = readable_file(collector)
             manifest_data: darray[u8] = read_file(manifest_path)
+            ledger_data: darray[u8] = read_file(integration_ledger)
             manifest_ok: mutable bool = false
             if manifest_data.count > NATIVE_ZERO.usize():
                 freshness_start: i64 = json_key_value_start(manifest_data, "freshness", NATIVE_ZERO.usize(), manifest_data.count)
@@ -1586,7 +1589,14 @@ extend ProfilerNative:
                     freshness_stop: i64 = json_object_end(manifest_data, freshness_start.usize(), manifest_data.count)
                     manifest_usable: mutable bool = false
                     manifest_ok <- freshness_stop >= NATIVE_ZERO and json_read_bool_field(manifest_data, "usable", freshness_start.usize(), freshness_stop.usize(), &manifest_usable) and manifest_usable
-            all_ok: bool = compiler_ok and stage1_ok and runtime_ok and collector_ok and manifest_ok
+            ledger_ok: mutable bool = false
+            if ledger_data.count > NATIVE_ZERO.usize() and json_document_is_object(ledger_data):
+                ledger_summary: i64 = json_key_value_start(ledger_data, "summary", NATIVE_ZERO.usize(), ledger_data.count)
+                if ledger_summary >= NATIVE_ZERO:
+                    ledger_summary_stop: i64 = json_object_end(ledger_data, ledger_summary.usize(), ledger_data.count)
+                    ancestry_complete: mutable bool = false
+                    ledger_ok <- ledger_summary_stop >= NATIVE_ZERO and json_read_bool_field(ledger_data, "ancestry_complete", ledger_summary.usize(), ledger_summary_stop.usize(), &ancestry_complete) and ancestry_complete
+            all_ok: bool = compiler_ok and stage1_ok and runtime_ok and collector_ok and manifest_ok and ledger_ok
             host: NativeHostMetadata = native_host_metadata()
             report: mutable darray[u8] = []
             append_text(report, "{\"ok\":")
@@ -1603,6 +1613,8 @@ extend ProfilerNative:
             append_text(report, "true" if collector_ok else "false")
             append_text(report, ",\"compiler_manifest\":")
             append_text(report, "true" if manifest_ok else "false")
+            append_text(report, ",\"branch_coverage\":")
+            append_text(report, "true" if ledger_ok else "false")
             append_text(report, "},\"paths\":{\"stage1_binary\":")
             append_json_string(report, stage1)
             append_text(report, ",\"runtime_object\":")
@@ -1611,6 +1623,8 @@ extend ProfilerNative:
             append_json_string(report, collector)
             append_text(report, ",\"compiler_manifest\":")
             append_json_string(report, manifest_path)
+            append_text(report, ",\"integration_ledger\":")
+            append_json_string(report, integration_ledger)
             append_text(report, "},\"host\":")
             if host.available:
                 append_text(report, "{\"os\":")
