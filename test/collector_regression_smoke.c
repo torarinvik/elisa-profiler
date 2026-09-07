@@ -6,6 +6,10 @@
 
 static int fail_allocations;
 
+static void regression_signal_handler(int signal_number) {
+    (void)signal_number;
+}
+
 static void *regression_calloc(size_t count, size_t size) {
     if (fail_allocations) {
         return NULL;
@@ -61,6 +65,27 @@ int main(void) {
     assert(!profile_allocation_bytes(SIZE_MAX, sizeof(profile_entry),
                                      &allocation_bytes));
     assert(profile_table_requires_growth(SIZE_MAX, SIZE_MAX));
+    struct sigaction previous_sigint;
+    struct sigaction previous_sigterm;
+    struct sigaction custom_action = {0};
+    assert(sigemptyset(&custom_action.sa_mask) == 0);
+    custom_action.sa_handler = regression_signal_handler;
+    assert(sigaction(SIGINT, &custom_action, &previous_sigint) == 0);
+    struct sigaction ignored_action = {0};
+    assert(sigemptyset(&ignored_action.sa_mask) == 0);
+    ignored_action.sa_handler = SIG_IGN;
+    assert(sigaction(SIGTERM, &ignored_action, &previous_sigterm) == 0);
+    profile_install_crash_handlers();
+    const int sigint_index = profile_crash_signal_index(SIGINT);
+    const int sigterm_index = profile_crash_signal_index(SIGTERM);
+    assert(sigint_index >= 0 && sigterm_index >= 0);
+    assert(profile_previous_crash_action_valid[sigint_index]);
+    assert(profile_previous_crash_actions[sigint_index].sa_handler ==
+           regression_signal_handler);
+    assert(profile_previous_crash_action_valid[sigterm_index]);
+    assert(profile_previous_crash_actions[sigterm_index].sa_handler == SIG_IGN);
+    assert(sigaction(SIGINT, &previous_sigint, NULL) == 0);
+    assert(sigaction(SIGTERM, &previous_sigterm, NULL) == 0);
     profile_capture_byte_limit = 1;
     profile_capture_bytes_used = 2;
     assert(!profile_reserve_bytes_locked(1));

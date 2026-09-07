@@ -23,6 +23,13 @@ target or runtime must consume `ELISA_RANDOM_SEED` for it to affect execution.
 Consumers must not infer deterministic execution from the presence of hashes or
 seed metadata alone.
 
+The collector preserves target signal policy while adding diagnostic evidence:
+it saves the prior `sigaction` for supported crash/termination signals,
+restores that action before re-raising a terminating signal, and honors a
+target disposition of `SIG_IGN`. A target handler therefore remains the
+authority for a signal it intentionally handles; the profiler does not claim
+that a handled signal terminated the run.
+
 The optional top-level `host` object records the observation context captured by
 the native launcher. `os` and `architecture` come from `uname`; the
 `load_average_1m` value is the host's one-minute load average sampled before

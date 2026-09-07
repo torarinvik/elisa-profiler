@@ -216,6 +216,16 @@ static char profile_sample_frame_header[PROFILE_SAMPLE_FRAME_HEADER_BYTES];
 #if defined(__APPLE__) || defined(__linux__)
 static struct sigaction profile_previous_sample_action;
 static int profile_previous_sample_action_valid;
+enum {
+    PROFILE_CRASH_SIGNAL_COUNT = 7,
+};
+static const int profile_crash_signals[PROFILE_CRASH_SIGNAL_COUNT] = {
+    SIGABRT, SIGFPE, SIGILL, SIGSEGV, SIGBUS, SIGTERM, SIGINT,
+};
+static struct sigaction
+    profile_previous_crash_actions[PROFILE_CRASH_SIGNAL_COUNT];
+static volatile sig_atomic_t
+    profile_previous_crash_action_valid[PROFILE_CRASH_SIGNAL_COUNT];
 #endif
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
@@ -2243,18 +2253,69 @@ static void profile_write_crash_marker(int signal_number) {
     (void)profile_signal_write_all(buffer, offset);
 }
 
+static int profile_crash_signal_index(int signal_number) {
+#if defined(__APPLE__) || defined(__linux__)
+    for (int index = 0; index < PROFILE_CRASH_SIGNAL_COUNT; ++index) {
+        if (profile_crash_signals[index] == signal_number) {
+            return index;
+        }
+    }
+#else
+    (void)signal_number;
+#endif
+    return -1;
+}
+
 static void profile_crash_handler(int signal_number) {
+    int action_index = profile_crash_signal_index(signal_number);
+#if defined(__APPLE__) || defined(__linux__)
+    struct sigaction previous_action = {0};
+    if (action_index >= 0 &&
+        profile_previous_crash_action_valid[action_index]) {
+        previous_action = profile_previous_crash_actions[action_index];
+    } else {
+        previous_action.sa_handler = SIG_DFL;
+    }
+    if (previous_action.sa_handler == SIG_IGN) {
+        if (action_index >= 0) {
+            (void)sigaction(signal_number, &previous_action, NULL);
+        }
+        return;
+    }
+#endif
     if (!profile_crash_dumped) {
         profile_crash_dumped = 1;
         profile_write_crash_marker(signal_number);
     }
+#if defined(__APPLE__) || defined(__linux__)
+    (void)sigaction(signal_number, &previous_action, NULL);
+#else
     (void)signal(signal_number, SIG_DFL);
-    (void)kill(getpid(), signal_number);
+#endif
     (void)raise(signal_number);
+#if defined(__APPLE__) || defined(__linux__)
+    if (previous_action.sa_handler == SIG_DFL) {
+        _exit(PROFILE_SIGNAL_EXIT_BASE + signal_number);
+    }
+#else
     _exit(PROFILE_SIGNAL_EXIT_BASE + signal_number);
+#endif
 }
 
 static void profile_install_crash_handlers(void) {
+#if defined(__APPLE__) || defined(__linux__)
+    for (int index = 0; index < PROFILE_CRASH_SIGNAL_COUNT; ++index) {
+        struct sigaction action = {0};
+        if (sigemptyset(&action.sa_mask) != 0) {
+            continue;
+        }
+        action.sa_handler = profile_crash_handler;
+        if (sigaction(profile_crash_signals[index], &action,
+                      &profile_previous_crash_actions[index]) == 0) {
+            profile_previous_crash_action_valid[index] = 1;
+        }
+    }
+#else
     (void)signal(SIGABRT, profile_crash_handler);
     (void)signal(SIGFPE, profile_crash_handler);
     (void)signal(SIGILL, profile_crash_handler);
@@ -2262,6 +2323,7 @@ static void profile_install_crash_handlers(void) {
     (void)signal(SIGBUS, profile_crash_handler);
     (void)signal(SIGTERM, profile_crash_handler);
     (void)signal(SIGINT, profile_crash_handler);
+#endif
 }
 
 static void profile_dump_body(void) {
