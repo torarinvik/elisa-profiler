@@ -290,6 +290,9 @@ def main():
         assert b"flame-direction" in offline_html
         assert b"flame-metric-title" in offline_html
         assert b"flame-metric" in offline_html
+        assert b"flame-metric-filter" in offline_html
+        assert b"DEFAULT_VALUES" in offline_html
+        assert b"CHANGE_EVENT='change'" in offline_html
         assert b"completed_calls" in offline_html
         assert b"call_events" in offline_html
         assert b"Direction: caller" in offline_html
