@@ -16,6 +16,7 @@
     "sample_period_microseconds": { "type": "integer", "minimum": 100, "maximum": 1000000 },
     "max_capture_bytes": { "type": "integer", "minimum": 0 },
     "random_seed": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "execution_order": { "type": "string", "enum": ["baseline_first", "candidate_first", "randomized"] },
     "working_directory": { "type": "string" },
     "stdin": { "type": "string" },
     "environment": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$" } },

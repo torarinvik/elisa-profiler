@@ -10,6 +10,9 @@ extend ProfilerNative:
         const NATIVE_BENCHMARK_BASELINE_SUFFIX: cstr = ".baseline.json"
         const NATIVE_BENCHMARK_CANDIDATE_SUFFIX: cstr = ".candidate.json"
         const NATIVE_BENCHMARK_MANIFEST_SUFFIX: cstr = ".manifest.json"
+        const NATIVE_BENCHMARK_ORDER_BASELINE_FIRST: cstr = "baseline_first"
+        const NATIVE_BENCHMARK_ORDER_CANDIDATE_FIRST: cstr = "candidate_first"
+        const NATIVE_BENCHMARK_ORDER_RANDOMIZED: cstr = "randomized"
 
         def benchmark_optional_string(data: darray[u8]&, key: sview, result: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
             value_start: i64 = json_key_value_start(data, key, NATIVE_ZERO.usize(), data.count)
@@ -65,6 +68,25 @@ extend ProfilerNative:
             benchmark_unlink(candidate_output)
             benchmark_unlink(baseline_manifest)
             benchmark_unlink(candidate_manifest)
+
+
+        def benchmark_resolve_randomized_order(baseline_source: darray[u8]&, candidate_source: darray[u8]&, random_seed: darray[u8]&, result: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            material: mutable darray[u8] = []
+            material.extend(baseline_source)
+            material.push(NATIVE_BYTE_NUL)
+            material.extend(candidate_source)
+            material.push(NATIVE_BYTE_NUL)
+            material.extend(random_seed)
+            digest: darray[u8] = sha256_hex(material)
+            result <- []
+            if digest.count > NATIVE_ZERO.usize() and digest[NATIVE_ZERO.usize()].i64() % NATIVE_TWO == NATIVE_ZERO:
+                append_text(result, NATIVE_COMPARISON_ORDER_RANDOMIZED_BASELINE_FIRST)
+            else:
+                append_text(result, NATIVE_COMPARISON_ORDER_RANDOMIZED_CANDIDATE_FIRST)
+
+
+        def benchmark_order_is_candidate_first(order: darray[u8]&) -> bool can[Abort.Panic]:
+            return protocol_field_is(order, NATIVE_COMPARISON_ORDER_CANDIDATE_FIRST) or protocol_field_is(order, NATIVE_COMPARISON_ORDER_RANDOMIZED_CANDIDATE_FIRST)
 
 
         def benchmark_append_decimal[@r](arguments: mutable darray[darray[u8]]& @r, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
@@ -130,7 +152,7 @@ extend ProfilerNative:
             benchmark_append_decimal(arguments, value)
 
 
-        def benchmark_compare(argv_zero: cstr, baseline: darray[u8]&, candidate: darray[u8]&, output: darray[u8]&, format: darray[u8]&, wall_percent: i64, wall_ms: i64, cpu_percent: i64, cpu_ms: i64, rss_percent: i64, rss_bytes: i64, function_percent: i64) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+        def benchmark_compare(argv_zero: cstr, baseline: darray[u8]&, candidate: darray[u8]&, output: darray[u8]&, format: darray[u8]&, execution_order: darray[u8]&, wall_percent: i64, wall_ms: i64, cpu_percent: i64, cpu_ms: i64, rss_percent: i64, rss_bytes: i64, function_percent: i64) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             arguments: mutable darray[darray[u8]] = []
             append_command_argument(arguments, "compare")
             append_command_path_argument(arguments, baseline)
@@ -139,6 +161,8 @@ extend ProfilerNative:
             append_command_path_argument(arguments, format)
             append_command_argument(arguments, "--output")
             append_command_path_argument(arguments, output)
+            append_command_argument(arguments, "--execution-order")
+            append_command_path_argument(arguments, execution_order)
             benchmark_append_compare_threshold(arguments, "--max-wall-regression-percent", wall_percent)
             benchmark_append_compare_threshold(arguments, "--max-wall-ms", wall_ms)
             benchmark_append_compare_threshold(arguments, "--max-cpu-regression-percent", cpu_percent)
@@ -198,6 +222,17 @@ extend ProfilerNative:
             working_directory: mutable darray[u8] = []
             stdin_path: mutable darray[u8] = []
             return report_error("benchmark manifest has an invalid random_seed") if not benchmark_optional_string(manifest, "random_seed", &random_seed)
+            requested_order: mutable darray[u8] = []
+            return report_error("benchmark manifest has an invalid execution_order") if not benchmark_optional_string(manifest, "execution_order", &requested_order)
+            append_text(requested_order, NATIVE_BENCHMARK_ORDER_BASELINE_FIRST) if requested_order.count == NATIVE_ZERO.usize()
+            return report_error("benchmark manifest has an invalid execution_order") if not protocol_field_is(requested_order, NATIVE_BENCHMARK_ORDER_BASELINE_FIRST) and not protocol_field_is(requested_order, NATIVE_BENCHMARK_ORDER_CANDIDATE_FIRST) and not protocol_field_is(requested_order, NATIVE_BENCHMARK_ORDER_RANDOMIZED)
+            execution_order: mutable darray[u8] = []
+            if protocol_field_is(requested_order, NATIVE_BENCHMARK_ORDER_RANDOMIZED):
+                benchmark_resolve_randomized_order(baseline_source, candidate_source, random_seed, &execution_order)
+            elif protocol_field_is(requested_order, NATIVE_BENCHMARK_ORDER_CANDIDATE_FIRST):
+                append_text(execution_order, NATIVE_COMPARISON_ORDER_CANDIDATE_FIRST)
+            else:
+                append_text(execution_order, NATIVE_COMPARISON_ORDER_BASELINE_FIRST)
             return report_error("benchmark manifest has an invalid working_directory") if not benchmark_optional_string(manifest, "working_directory", &working_directory)
             return report_error("benchmark manifest has an invalid stdin") if not benchmark_optional_string(manifest, "stdin", &stdin_path)
             environment: mutable darray[darray[u8]] = []
@@ -228,14 +263,26 @@ extend ProfilerNative:
             candidate_manifest: darray[u8] = benchmark_path_with_suffix(candidate_output, NATIVE_BENCHMARK_MANIFEST_SUFFIX)
             return report_error("benchmark intermediate output already exists; choose a fresh --output path") if readable_file(baseline_output) or readable_file(candidate_output) or readable_file(baseline_manifest) or readable_file(candidate_manifest)
             argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
-            baseline_status: i64 = benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
-            if baseline_status != NATIVE_ZERO:
-                benchmark_cleanup_intermediates(baseline_output, candidate_output)
-                return report_error("benchmark baseline capture failed")
-            candidate_status: i64 = benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
-            if candidate_status != NATIVE_ZERO:
-                benchmark_cleanup_intermediates(baseline_output, candidate_output)
-                return report_error("benchmark candidate capture failed")
-            comparison_status: i64 = benchmark_compare(argv_zero, baseline_output, candidate_output, output_path, format, wall_percent, wall_ms, cpu_percent, cpu_ms, rss_percent, rss_bytes, function_percent)
+            baseline_status: mutable i64 = NATIVE_ZERO
+            candidate_status: mutable i64 = NATIVE_ZERO
+            if benchmark_order_is_candidate_first(execution_order):
+                candidate_status <- benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                if candidate_status != NATIVE_ZERO:
+                    benchmark_cleanup_intermediates(baseline_output, candidate_output)
+                    return report_error("benchmark candidate capture failed")
+                baseline_status <- benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                if baseline_status != NATIVE_ZERO:
+                    benchmark_cleanup_intermediates(baseline_output, candidate_output)
+                    return report_error("benchmark baseline capture failed")
+            else:
+                baseline_status <- benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                if baseline_status != NATIVE_ZERO:
+                    benchmark_cleanup_intermediates(baseline_output, candidate_output)
+                    return report_error("benchmark baseline capture failed")
+                candidate_status <- benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                if candidate_status != NATIVE_ZERO:
+                    benchmark_cleanup_intermediates(baseline_output, candidate_output)
+                    return report_error("benchmark candidate capture failed")
+            comparison_status: i64 = benchmark_compare(argv_zero, baseline_output, candidate_output, output_path, format, execution_order, wall_percent, wall_ms, cpu_percent, cpu_ms, rss_percent, rss_bytes, function_percent)
             benchmark_cleanup_intermediates(baseline_output, candidate_output)
             return comparison_status

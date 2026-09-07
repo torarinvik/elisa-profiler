@@ -19,13 +19,16 @@ exec boundary as `profile`. `random_seed` becomes the explicit
 intermediate captures independently navigable before they are cleaned up.
 
 `repetitions` and `warmups` are passed unchanged to both captures. The two
-captures are executed in deterministic baseline-then-candidate order and the
-comparison output contains the per-repetition observations, workload identity,
-quality state, and any requested gate. This is a paired configuration with a
-shared workload definition; it is not a claim that scheduler noise has been
-eliminated. Interleaved randomized execution remains a future optimization of
-the runner, while exact native comparison and machine-readable gate outcomes
-are already available.
+captures are executed in `baseline_first` order by default. Set
+`execution_order` to `candidate_first` to reverse that order, or to
+`randomized` to choose a deterministic order from the baseline/candidate
+source identities and optional `random_seed`. The comparison output records
+the actual order as `execution_order`, including whether a randomized choice
+selected the baseline or candidate first. These are paired executions with a
+shared workload definition; they do not claim to eliminate scheduler noise.
+True within-repetition alternation remains a future optimization of the
+runner, while exact native comparison and machine-readable gate outcomes are
+already available.
 
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in

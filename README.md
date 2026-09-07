@@ -318,9 +318,11 @@ The manifest format is documented in [docs/benchmark.md](docs/benchmark.md)
 and validated by [docs/benchmark.schema.json](docs/benchmark.schema.json).
 Intermediate captures are refused when their paths already exist and are
 removed after comparison, while the final comparison retains the paired
-metrics, quality state, threshold gate, and workload provenance. Execution is
-baseline-then-candidate; the benchmark is paired and reproducible by
-configuration, but does not claim to eliminate scheduler noise.
+metrics, quality state, threshold gate, workload provenance, and actual
+`execution_order`. Execution is `baseline_first` by default; manifests may
+select `candidate_first` or deterministic `randomized` ordering. The benchmark
+is paired and reproducible by configuration, but does not claim to eliminate
+scheduler noise.
 
 Promote a validated capture into explicit local baseline history with an audit
 reason:

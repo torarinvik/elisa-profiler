@@ -91,6 +91,11 @@ module ProfilerNative:
         const NATIVE_COMPARISON_MATCH_ADDED: cstr = "added"
         const NATIVE_COMPARISON_MATCH_REMOVED: cstr = "removed"
         const NATIVE_COMPARISON_MATCH_AMBIGUOUS: cstr = "ambiguous"
+        const NATIVE_COMPARISON_ORDER_UNSPECIFIED: cstr = "unspecified"
+        const NATIVE_COMPARISON_ORDER_BASELINE_FIRST: cstr = "baseline_first"
+        const NATIVE_COMPARISON_ORDER_CANDIDATE_FIRST: cstr = "candidate_first"
+        const NATIVE_COMPARISON_ORDER_RANDOMIZED_BASELINE_FIRST: cstr = "randomized_baseline_first"
+        const NATIVE_COMPARISON_ORDER_RANDOMIZED_CANDIDATE_FIRST: cstr = "randomized_candidate_first"
         const NATIVE_MILLIS_HUNDREDS_DIVISOR: i64 = 100
         const NATIVE_DECIMAL_TENS_DIVISOR: i64 = 10
         const NATIVE_READ_CHUNK_BYTES: usize = 8192

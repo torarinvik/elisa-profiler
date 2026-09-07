@@ -41,6 +41,7 @@
     "workload_metadata_match": { "type": "boolean" },
     "collection_mode_match": { "type": "boolean" },
     "sampling_configuration_match": { "type": "boolean" },
+    "execution_order": { "type": "string", "enum": ["unspecified", "baseline_first", "candidate_first", "randomized_baseline_first", "randomized_candidate_first"] },
     "functions": {
       "type": "array",
       "items": { "$ref": "#/$defs/function_change" }

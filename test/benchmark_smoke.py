@@ -56,6 +56,7 @@ def main() -> None:
             comparison_schema_check.stdout, comparison_schema_check.stderr,
         )
         assert comparison["status"] == "ok", comparison
+        assert comparison["execution_order"] == "baseline_first", comparison
         assert comparison["baseline"]["source"].endswith("multi_module_pipeline.elisa")
         assert comparison["candidate"]["source"].endswith("multi_module_pipeline.elisa")
         assert comparison["metrics"]["execution_ms_mean"]["baseline"] is not None
@@ -66,6 +67,51 @@ def main() -> None:
         assert not Path(f"{output}.candidate.json").exists()
         assert not Path(f"{output}.baseline.json.manifest.json").exists()
         assert not Path(f"{output}.candidate.json.manifest.json").exists()
+
+        ordered_manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+        ordered_manifest_payload["repetitions"] = 1
+        ordered_manifest_payload["warmups"] = 0
+        ordered_manifest_payload["execution_order"] = "candidate_first"
+        candidate_first_manifest = Path(directory) / "candidate-first.json"
+        candidate_first_manifest.write_text(json.dumps(ordered_manifest_payload), encoding="utf-8")
+        candidate_first_output = Path(directory) / "candidate-first-comparison.json"
+        candidate_first = subprocess.run(
+            [
+                str(NATIVE), "benchmark", str(candidate_first_manifest),
+                "--format", "json", "--output", str(candidate_first_output),
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert candidate_first.returncode == 0, (candidate_first.returncode, candidate_first.stdout, candidate_first.stderr)
+        assert json.loads(candidate_first_output.read_text(encoding="utf-8"))["execution_order"] == "candidate_first"
+
+        ordered_manifest_payload["execution_order"] = "randomized"
+        randomized_manifest = Path(directory) / "randomized.json"
+        randomized_manifest.write_text(json.dumps(ordered_manifest_payload), encoding="utf-8")
+        randomized_outputs = [Path(directory) / "randomized-one.json", Path(directory) / "randomized-two.json"]
+        randomized_orders = []
+        for randomized_output in randomized_outputs:
+            randomized = subprocess.run(
+                [
+                    str(NATIVE), "benchmark", str(randomized_manifest),
+                    "--format", "json", "--output", str(randomized_output),
+                ],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            assert randomized.returncode == 0, (randomized.returncode, randomized.stdout, randomized.stderr)
+            randomized_orders.append(json.loads(randomized_output.read_text(encoding="utf-8"))["execution_order"])
+        assert randomized_orders[0] == randomized_orders[1]
+        assert randomized_orders[0] in {"randomized_baseline_first", "randomized_candidate_first"}
 
         collision = Path(directory) / "collision.json"
         collision_baseline = Path(f"{collision}.baseline.json")
