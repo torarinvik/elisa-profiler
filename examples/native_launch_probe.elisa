@@ -13,6 +13,7 @@ const LAUNCH_PROBE_SUCCESS: i64 = 0
 const LAUNCH_PROBE_ENV_ERROR: i64 = 2
 const LAUNCH_PROBE_STDIN_ERROR: i64 = 3
 const LAUNCH_PROBE_CWD_ERROR: i64 = 4
+const LAUNCH_PROBE_SEED_ERROR: i64 = 5
 const LAUNCH_PROBE_MARKER_BYTE: u8 = 35
 const LAUNCH_PROBE_MARKER_LENGTH: i64 = 4
 
@@ -35,6 +36,10 @@ def main() -> i64 can[Console, Memory.Allocate, Unsafe.PointerCast]:
         return LAUNCH_PROBE_ENV_ERROR if launch_probe_strcmp(value_cstr, "enabled") != LAUNCH_PROBE_SUCCESS
     else:
         return LAUNCH_PROBE_ENV_ERROR
+
+    if launch_probe_getenv("ELISA_RANDOM_SEED") is seed_value:
+        seed_cstr: cstr = seed_value.cast[cstr] can Unsafe.PointerCast
+        return LAUNCH_PROBE_SEED_ERROR if launch_probe_strcmp(seed_cstr, "42") != LAUNCH_PROBE_SUCCESS
 
     first_byte: mutable u8 = 0
     return LAUNCH_PROBE_STDIN_ERROR if launch_probe_read(LAUNCH_PROBE_STDIN_FD, &first_byte, LAUNCH_PROBE_ONE.usize()) != LAUNCH_PROBE_ONE

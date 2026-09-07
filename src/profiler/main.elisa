@@ -424,6 +424,12 @@ extend ProfilerNative:
                     cursor <- cursor + NATIVE_ONE
                 return true
             return false
+
+
+        def append_random_seed_environment(environment: mutable darray[u8]&, random_seed: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(environment, "ELISA_RANDOM_SEED=")
+            environment.extend(random_seed)
+            environment.push(NATIVE_BYTE_NUL)
         
         
         def environment_or(name: sview, fallback: sview, destination: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -946,7 +952,7 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details>")
 
 
-        def append_html_workload_summary(buffer: mutable darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def append_html_workload_summary(buffer: mutable darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]], random_seed: darray[u8]&, random_seed_source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "<section class='panel' aria-labelledby='workload-title'><h2 id='workload-title'>Workload reproducibility</h2><dl class='workload-grid'><div><dt>Working directory</dt><dd><code>")
             if working_directory.count == NATIVE_ZERO.usize():
                 append_text(buffer, ".")
@@ -992,7 +998,15 @@ extend ProfilerNative:
                 for argument_index in 0..<target_arguments.count |argument_index, target_arguments, buffer|:
                     append_text(buffer, " " if argument_index > NATIVE_ZERO.usize() else "")
                     append_html_escaped(buffer, target_arguments[argument_index])
-            append_text(buffer, "</code></dd></div><div><dt>Reproducibility policy</dt><dd>random seed not controlled; environment values redacted; inputs hashed</dd></div></dl></section>")
+            append_text(buffer, "</code></dd></div><div><dt>Random seed</dt><dd>")
+            if random_seed.count == NATIVE_ZERO.usize():
+                append_text(buffer, "not controlled")
+            else:
+                append_html_escaped(buffer, random_seed)
+                append_text(buffer, " (")
+                append_html_escaped(buffer, random_seed_source)
+                append_text(buffer, ")")
+            append_text(buffer, "</dd></div><div><dt>Reproducibility policy</dt><dd>environment values redacted; inputs hashed; seed control is opt-in</dd></div></dl></section>")
 
 
         def append_html_program_output(buffer: mutable darray[u8]&, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool) -> void can[Abort.Panic, Memory.Allocate]:
@@ -1009,7 +1023,7 @@ extend ProfilerNative:
             append_text(buffer, "</pre></details></section>")
 
 
-        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, dependency_digest: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def append_html_report(buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, dependency_digest: darray[u8]&, mode: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary, exit_code: i64, status: i64, timed_out: bool, timeout_ns: i64, execution_ns: i64, execution_mean_ns: i64, compile_ns: i64, cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool, completed_repetitions: i64, successful_repetitions: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]], random_seed: darray[u8]&, random_seed_source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Elisa profile</title><style>body{font:15px system-ui,sans-serif;line-height:1.45;max-width:1120px;margin:2rem auto;padding:0 1rem;color:#17202a;background:#f6f8fa}main{background:white;border:1px solid #d0d7de;border-radius:12px;padding:1.5rem;box-shadow:0 4px 20px #0001}h1{margin-top:0}code,pre{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}dl div{padding:.8rem;background:#f6f8fa;border-radius:8px}dt{color:#57606a;font-size:.8rem}dd{margin:.2rem 0 0;font-weight:650}details{margin-top:1rem;border:1px solid #d8dee4;border-radius:8px;padding:.75rem}summary{cursor:pointer;font-weight:650}pre{overflow:auto;white-space:pre-wrap;word-break:break-word;margin:.75rem 0 0}@media(prefers-color-scheme:dark){body{color:#e6edf3;background:#0d1117}main{background:#161b22;border-color:#30363d}dl div{background:#21262d}details{border-color:#30363d}dt{color:#8b949e}}</style></head><body><main><h1>Elisa profile</h1><p>Native Elisa renderer; records are escaped and shown as inspectable detail.</p><p><strong>Source:</strong> <code>")
             append_html_escaped(buffer, source)
             append_text(buffer, "</code></p><dl><div><dt>Source SHA-256</dt><dd><code>")
@@ -1079,7 +1093,7 @@ extend ProfilerNative:
             append_capability_html_summary(buffer, mode, summary)
             append_html_host_summary(buffer, host)
             append_text(buffer, "</dl>")
-            append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments)
+            append_html_workload_summary(buffer, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source)
             append_html_program_output(buffer, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated)
             append_html_diagnostics(buffer, summary.capture_complete, summary.dropped, summary.call_edge_dropped, summary.stack_dropped, summary.frame_dropped, summary.capture_bytes_dropped, summary.stack_overflow_entries, summary.trace_omitted, summary.crash_signal)
             if summary.active_stack_available:
@@ -1106,7 +1120,7 @@ extend ProfilerNative:
             append_text(buffer, "</main></body></html>\n")
 
 
-        def append_json_workload(buffer: mutable darray[u8]&, source_bytes: darray[u8]&, dependency_digest: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+        def append_json_workload(buffer: mutable darray[u8]&, source_bytes: darray[u8]&, dependency_digest: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]], random_seed: darray[u8]&, random_seed_source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, ",\"workload\":{\"source_sha256\":")
             source_digest: darray[u8] = sha256_hex(source_bytes)
             append_json_string(buffer, source_digest)
@@ -1161,7 +1175,14 @@ extend ProfilerNative:
             for argument_index in 0..<target_arguments.count |buffer, target_arguments|:
                 append_text(buffer, "," if argument_index > NATIVE_ZERO.usize() else "")
                 append_json_string(buffer, target_arguments[argument_index])
-            append_text(buffer, "],\"reproducibility\":{\"random_seed\":null,\"random_seed_source\":\"not_controlled\",\"environment_values\":\"redacted\",\"inputs_hashed\":true}}")
+            append_text(buffer, "],\"reproducibility\":{\"random_seed\":")
+            if random_seed.count == NATIVE_ZERO.usize():
+                append_text(buffer, "null")
+            else:
+                append_json_string(buffer, random_seed)
+            append_text(buffer, ",\"random_seed_source\":")
+            append_json_string(buffer, random_seed_source)
+            append_text(buffer, ",\"environment_values\":\"redacted\",\"inputs_hashed\":true}}")
 
 
         def append_build_cache(buffer: mutable darray[u8]&, cache: NativeBuildCache) -> void can[Abort.Panic, Memory.Allocate]:
@@ -1196,7 +1217,7 @@ extend ProfilerNative:
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64, execution_ci95_low_ns: i64, execution_ci95_high_ns: i64, execution_ci95_available: bool,
             cpu_user_ns: i64, cpu_system_ns: i64, peak_rss_bytes: i64, resource_metrics_available: bool,
-            dependency_digest: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]]
+            dependency_digest: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[u8], target_arguments: darray[darray[u8]], random_seed: darray[u8]&, random_seed_source: darray[u8]&
         ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             append_text(buffer, "{\"schema_version\":")
             append_i64(buffer, NATIVE_REPORT_SCHEMA_VERSION)
@@ -1228,7 +1249,7 @@ extend ProfilerNative:
             append_build_cache(buffer, build_cache)
             append_target_build(buffer, build_kind, prebuilt_executable)
             append_json_host(buffer, host)
-            append_json_workload(buffer, source_bytes, dependency_digest, working_directory, stdin_path, environment, target_arguments)
+            append_json_workload(buffer, source_bytes, dependency_digest, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source)
             if embed_source:
                 source_digest: darray[u8] = sha256_hex(source_bytes)
                 append_text(buffer, ",\"source_snapshot\":{\"sha256\":")
@@ -1646,6 +1667,9 @@ extend ProfilerNative:
             empty_stdin_path: mutable darray[u8] = []
             empty_environment: mutable darray[u8] = []
             empty_target_arguments: mutable darray[darray[u8]] = []
+            empty_random_seed: mutable darray[u8] = []
+            empty_random_seed_source: mutable darray[u8] = []
+            append_text(empty_random_seed_source, "not_controlled")
             empty_host: NativeHostMetadata = empty_native_host_metadata()
             recovery_result: TargetRunResult = TargetRunResult{
                 status: NATIVE_NEGATIVE_ONE,
@@ -1664,7 +1688,7 @@ extend ProfilerNative:
                 NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO,
                 NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO,
                 false, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, false,
-                empty_dependency_digest, empty_working_directory, empty_stdin_path, empty_environment, empty_target_arguments)
+                empty_dependency_digest, empty_working_directory, empty_stdin_path, empty_environment, empty_target_arguments, empty_random_seed, empty_random_seed_source)
             append_recovery_metadata(buffer, manifest_path, capture_path, state, source_digest, capture_bytes, summary)
 
 
@@ -1887,7 +1911,7 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--random-seed SEED] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -1916,6 +1940,12 @@ extend ProfilerNative:
             stdin_path: mutable darray[u8] = []
             environment: mutable darray[u8] = []
             target_arguments: mutable darray[darray[u8]] = []
+            random_seed: mutable darray[u8] = []
+            random_seed_source: mutable darray[u8] = []
+            if copy_environment("ELISA_RANDOM_SEED", random_seed):
+                append_text(random_seed_source, "environment")
+            else:
+                append_text(random_seed_source, "not_controlled")
             cache_directory: mutable darray[u8] = []
             cache_requested: mutable bool = false
             cache_disabled: mutable bool = false
@@ -1923,7 +1953,7 @@ extend ProfilerNative:
             prebuilt_requested: mutable bool = false
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -2055,6 +2085,22 @@ extend ProfilerNative:
                     copy_cstr(assignment, slots[index + NATIVE_ONE].cast[cstr])
                     return report_error("--env requires KEY=VALUE") if not environment_assignment_valid(assignment)
                     return report_error("--env cannot override profiler transport variables") if profiler_internal_environment_assignment(assignment)
+                    environment_equals: mutable usize = assignment.count
+                    for assignment_index in 0..<assignment.count |assignment_index, assignment, environment_equals|:
+                        if assignment[assignment_index] == NATIVE_BYTE_EQUALS:
+                            environment_equals <- assignment_index
+                            break
+                    environment_name: mutable darray[u8] = []
+                    for assignment_index in 0..<environment_equals |assignment_index, assignment, environment_name|:
+                        environment_name.push(assignment[assignment_index])
+                    if protocol_field_is(environment_name, "ELISA_RANDOM_SEED"):
+                        return report_error("--env ELISA_RANDOM_SEED conflicts with --random-seed") if protocol_field_is(random_seed_source, "cli")
+                        random_seed <- []
+                        for assignment_index in environment_equals + NATIVE_ONE.usize()..<assignment.count |assignment_index, assignment, random_seed|:
+                            random_seed.push(assignment[assignment_index])
+                        random_seed_source <- []
+                        append_text(random_seed_source, "environment") if random_seed.count > NATIVE_ZERO.usize()
+                        append_text(random_seed_source, "not_controlled") if random_seed.count == NATIVE_ZERO.usize()
                     environment.extend(assignment)
                     environment.push(NATIVE_BYTE_NUL)
                     index <- index + NATIVE_TWO
@@ -2102,6 +2148,20 @@ extend ProfilerNative:
                     capture_byte_limit <- byte_limit
                     index <- index + NATIVE_TWO
                     continue
+                if profiler_ffi_strcmp(argument, "--random-seed") == NATIVE_ZERO:
+                    return report_error("--random-seed requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    seed_text: mutable darray[u8] = []
+                    copy_cstr(seed_text, slots[index + NATIVE_ONE].cast[cstr])
+                    seed_cstr: mutable darray[u8] = []
+                    seed_cstr.extend(seed_text)
+                    seed_cstr.push(NATIVE_BYTE_NUL)
+                    seed_value: i64 = parse_nonnegative_cstr((&seed_cstr[0]).cast[cstr] can Unsafe.PointerCast)
+                    return report_error("--random-seed requires a non-negative integer") if seed_value < NATIVE_ZERO
+                    random_seed <- seed_text
+                    random_seed_source <- []
+                    append_text(random_seed_source, "cli")
+                    index <- index + NATIVE_TWO
+                    continue
                 if profiler_ffi_strcmp(argument, "--timeout") == NATIVE_ZERO:
                     return report_error("--timeout requires a finite positive number of seconds") if index + NATIVE_ONE >= argc
                     timeout_value: i64 = parse_positive_timeout_ns(slots[index + NATIVE_ONE].cast[cstr])
@@ -2132,6 +2192,8 @@ extend ProfilerNative:
                 source_seen <- true
                 index <- index + NATIVE_ONE
 
+            if protocol_field_is(random_seed_source, "cli"):
+                append_random_seed_environment(environment, random_seed)
             return report_error("profile requires a source path") if not source_seen
             if diagnostic_mode:
                 event_trace <- true
@@ -2437,9 +2499,9 @@ extend ProfilerNative:
             elif format_speedscope:
                 append_speedscope_report(report, display_source, summary.folded_records, not protocol_field_is(mode, "sample"), protocol_field_is(mode, "sample"))
             elif format_html:
-                append_html_report(report, display_source, source_check, dependency_digest, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments)
+                append_html_report(report, display_source, source_check, dependency_digest, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source)
             else:
-                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, build_cache, build_kind, prebuilt_executable, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, build_cache, build_kind, prebuilt_executable, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

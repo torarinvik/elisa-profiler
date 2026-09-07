@@ -581,6 +581,24 @@ def main():
             "environment_values": "redacted",
             "inputs_hashed": True,
         }
+        seeded_output = work / "seeded.json"
+        run("profile", ROOT / "examples/hot_loop.elisa", "--random-seed", "42",
+            "--format", "json", "--output", seeded_output)
+        seeded = json.loads(seeded_output.read_text(encoding="utf-8"))
+        assert seeded["workload"]["reproducibility"] == {
+            "random_seed": "42",
+            "random_seed_source": "cli",
+            "environment_values": "redacted",
+            "inputs_hashed": True,
+        }
+        environment_seed_output = work / "environment-seeded.json"
+        run("profile", ROOT / "examples/hot_loop.elisa", "--env", "ELISA_RANDOM_SEED=17",
+            "--format", "json", "--output", environment_seed_output)
+        environment_seeded = json.loads(environment_seed_output.read_text(encoding="utf-8"))
+        assert environment_seeded["workload"]["reproducibility"]["random_seed"] == "17"
+        assert environment_seeded["workload"]["reproducibility"]["random_seed_source"] == "environment"
+        run("profile", ROOT / "examples/hot_loop.elisa", "--random-seed", "42",
+            "--env", "ELISA_RANDOM_SEED=17", "--format", "json", ok=False)
         repetitions = measured["run"]["repetitions"]
         assert len(repetitions) == 2
         assert all(

@@ -84,7 +84,8 @@ the native `compare` command emits schema-validated summary deltas and explicit
 warnings for mismatched or incomplete evidence.
 
 The native launcher also accepts `--cwd PATH`, `--stdin PATH`, repeatable
-`--env KEY=VALUE` controls, and a `--` separator followed by verbatim target
+`--env KEY=VALUE` controls, `--random-seed SEED` reproducibility control, and a
+`--` separator followed by verbatim target
 arguments. These are applied only to the profiled child and are exercised by
 the native launch probes. The collector wrapper passes `argc`/`argv` to
 argv-aware Elisa targets while remaining compatible with the legacy
@@ -262,6 +263,7 @@ Useful controls:
     --cwd PATH             run the target from PATH
     --stdin PATH           provide PATH as target standard input
     --env KEY=VALUE        set a target environment variable (repeatable)
+    --random-seed SEED     set ELISA_RANDOM_SEED and record the exact seed
     -- TARGET_ARG...       forward target arguments without shell re-parsing
 
 `--prebuilt PATH` keeps the source argument for dependency/source identity but
@@ -277,6 +279,10 @@ framing, mode, trace, sample-period, capture-budget, and recent-path keys). This
 target override from replacing the collector channel; documented target-facing
 controls such as `ELISA_PROFILE_MAX_LOCATIONS`, `ELISA_PROFILE_MAX_CALL_EDGES`,
 `ELISA_PROFILE_MAX_STACKS`, and `ELISA_PROFILE_CHILD` remain available.
+`--random-seed SEED` sets `ELISA_RANDOM_SEED` for warmups and measured runs and
+records it as CLI-controlled workload provenance. An inherited or explicit
+`--env ELISA_RANDOM_SEED=SEED` value is recorded as environment-controlled;
+targets must consume this convention for it to affect their random state.
 
 The runtime collector uses the backend's complete-run trace callbacks, rather
 than the runtime's bounded crash-debug ring, so loop counts are not truncated to

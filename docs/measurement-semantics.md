@@ -14,8 +14,14 @@ an unreadable optional input digest is represented as `null`.
 `workload.reproducibility` makes the policy explicit: input bytes are hashed,
 environment values are redacted, and `random_seed` is `null` with source
 `not_controlled` until a target/runtime seed is deliberately supplied through a
-documented control. Consumers must not infer deterministic execution from the
-presence of hashes alone.
+documented control. `--random-seed SEED` supplies an exact non-negative decimal
+seed through the `ELISA_RANDOM_SEED` target environment variable and records
+the seed with source `cli`; an inherited or explicit `--env
+ELISA_RANDOM_SEED=SEED` value is recorded with source `environment`. This is a
+control contract, not a guarantee that arbitrary targets use the value: a
+target or runtime must consume `ELISA_RANDOM_SEED` for it to affect execution.
+Consumers must not infer deterministic execution from the presence of hashes or
+seed metadata alone.
 
 The optional top-level `host` object records the observation context captured by
 the native launcher. `os` and `architecture` come from `uname`; the
