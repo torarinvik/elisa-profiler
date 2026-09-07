@@ -1587,6 +1587,7 @@ extend ProfilerNative:
                     manifest_usable: mutable bool = false
                     manifest_ok <- freshness_stop >= NATIVE_ZERO and json_read_bool_field(manifest_data, "usable", freshness_start.usize(), freshness_stop.usize(), &manifest_usable) and manifest_usable
             all_ok: bool = compiler_ok and stage1_ok and runtime_ok and collector_ok and manifest_ok
+            host: NativeHostMetadata = native_host_metadata()
             report: mutable darray[u8] = []
             append_text(report, "{\"ok\":")
             append_text(report, "true" if all_ok else "false")
@@ -1610,7 +1611,18 @@ extend ProfilerNative:
             append_json_string(report, collector)
             append_text(report, ",\"compiler_manifest\":")
             append_json_string(report, manifest_path)
-            append_text(report, "}}\n")
+            append_text(report, "},\"host\":")
+            if host.available:
+                append_text(report, "{\"os\":")
+                append_json_string(report, host.os) if host.os.count > NATIVE_ZERO.usize()
+                append_text(report, "null") if host.os.count == NATIVE_ZERO.usize()
+                append_text(report, ",\"architecture\":")
+                append_json_string(report, host.architecture) if host.architecture.count > NATIVE_ZERO.usize()
+                append_text(report, "null") if host.architecture.count == NATIVE_ZERO.usize()
+                append_text(report, "}")
+            else:
+                append_text(report, "null")
+            append_text(report, ",\"capabilities\":{\"launch\":{\"status\":\"supported\",\"mode\":\"direct_execv\"},\"wall_timing\":{\"status\":\"supported\",\"clock\":\"CLOCK_MONOTONIC\"},\"cpu_sampling\":{\"status\":\"experimental\",\"backend\":\"SIGPROF_ITIMER_PROF\",\"scope\":\"instrumented_call_stack\"},\"attach\":{\"status\":\"unsupported\",\"reason\":\"launch_mode_only\"},\"allocation\":{\"status\":\"unsupported\",\"reason\":\"allocator_lifecycle_hooks_unavailable\"},\"tasks\":{\"status\":\"unsupported\",\"reason\":\"task_lifecycle_hooks_unavailable\"},\"unwinding\":{\"status\":\"unsupported\",\"reason\":\"raw_native_unwind_not_emitted\"}}}\n")
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, report)
                 return report_error("could not write doctor report")
