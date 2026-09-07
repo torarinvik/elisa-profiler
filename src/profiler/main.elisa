@@ -1111,7 +1111,7 @@ extend ProfilerNative:
             append_html_actionable_summary(buffer)
             append_html_function_explorer(buffer)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
-            append_html_flame_graph(buffer, summary.folded_records)
+            append_html_flame_graph(buffer, summary.folded_records, not protocol_field_is(mode, "sample"), protocol_field_is(mode, "sample"))
             append_html_section(buffer, "Folded stacks", summary.stack_records)
             append_html_section(buffer, "CPU samples", summary.sample_records) if protocol_field_is(mode, "sample")
             append_html_section(buffer, "Thread loss", summary.thread_loss_records)

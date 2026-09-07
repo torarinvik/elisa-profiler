@@ -181,6 +181,16 @@ is `complete`, `partial`, or not recorded by an older report. HTML also exposes
 the source SHA-256 and host provenance so a visual report does not hide the
 identity or limitations of its evidence.
 
+The HTML flame graph labels the metric used to build its folded records:
+`nanoseconds` for timing captures, `samples` for sampling captures, and
+`events` for event-oriented captures. Its default path direction is caller to
+callee and can be reversed to callee to caller without changing the raw
+records. Adjacent repeated frames are marked `recursive`; the marker is a
+presentation aid and does not collapse or alter the machine-readable stack
+records. Searching rebuilds the bounded navigation tree from the escaped raw
+folded stream, and zooming never changes the denominator of the selected
+metric without showing the selected frame as the new root.
+
 ## Units and clocks
 
 Every native report includes a `capture` contract describing the observation

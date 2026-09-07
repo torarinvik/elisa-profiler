@@ -285,7 +285,11 @@ def main():
         assert b"edge-filter" in offline_html
         assert b"location-filter" in offline_html
         assert b"Flame graph" in offline_html
+        assert "Flame graph — metric: events".encode() in offline_html
         assert b"flame-filter" in offline_html
+        assert b"flame-direction" in offline_html
+        assert b"Direction: caller" in offline_html
+        assert b"recursive" in offline_html
         assert b"function formatShare(value)" in offline_html
         assert b"function-root-weights" in offline_html
         assert b"observed folded root self time" in offline_html
