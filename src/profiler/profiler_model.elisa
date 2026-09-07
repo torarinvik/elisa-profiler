@@ -71,6 +71,7 @@ module ProfilerNative:
         const NATIVE_COMPARISON_THRESHOLD_DISABLED: i64 = -1
         const NATIVE_COMPARISON_MAX_PERCENT: i64 = 1000000
         const NATIVE_COMPARISON_HTML_DETAIL_LIMIT: i64 = 200
+        const NATIVE_FLAME_METRIC_DETAIL_LIMIT: i64 = 200
         # These labels are part of the comparison JSON contract. Centralizing
         # them prevents the four detail families from drifting apart.
         const NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID: i64 = 1

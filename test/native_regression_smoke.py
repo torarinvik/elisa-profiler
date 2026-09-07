@@ -288,6 +288,10 @@ def main():
         assert "Flame graph — metric: events".encode() in offline_html
         assert b"flame-filter" in offline_html
         assert b"flame-direction" in offline_html
+        assert b"flame-metric-title" in offline_html
+        assert b"flame-metric" in offline_html
+        assert b"completed_calls" in offline_html
+        assert b"call_events" in offline_html
         assert b"Direction: caller" in offline_html
         assert b"recursive" in offline_html
         assert b"function formatShare(value)" in offline_html
