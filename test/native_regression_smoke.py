@@ -240,6 +240,21 @@ def main():
         assert b"source-line" in embedded_html
         assert b"color is paired with border patterns" in embedded_html
         assert b"embedded &lt;source&gt;" in embedded_html
+        hostile_report = copy.deepcopy(report)
+        hostile_source = "<script>alert('source')</script>&\""
+        hostile_source_content = "<img src=x onerror=\"alert('source')\"> & '"
+        hostile_report["source"] = hostile_source
+        hostile_report["workload"]["working_directory"] = "<script>alert('directory')</script>&\"'"
+        hostile_report["workload"]["arguments"] = [hostile_source_content]
+        hostile_report["source_snapshot"]["content"] = hostile_source_content
+        hostile_report["source_snapshot"]["sha256"] = hashlib.sha256(hostile_source_content.encode()).hexdigest()
+        capture.write_text(json.dumps(hostile_report), encoding="utf-8")
+        hostile_html = run("report", capture, "--format", "html")
+        assert b"&lt;script&gt;alert(&#39;source&#39;)&lt;/script&gt;&amp;&quot;" in hostile_html
+        assert b"&lt;img src=x onerror=&quot;alert(&#39;source&#39;)&quot;&gt; &amp; &#39;" in hostile_html
+        assert b"<script>alert('source')</script>" not in hostile_html
+        assert b"<img src=x onerror=\"alert('source')\">" not in hostile_html
+        assert b"<script>alert('directory')</script>" not in hostile_html
         report["source_snapshot"]["sha256"] = "0" * 64
         capture.write_text(json.dumps(report), encoding="utf-8")
         run("report", capture, "--format", "text", ok=False)

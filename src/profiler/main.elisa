@@ -133,6 +133,8 @@ extend ProfilerNative:
                     append_text(buffer, "&gt;")
                 elif byte == NATIVE_BYTE_DOUBLE_QUOTE:
                     append_text(buffer, "&quot;")
+                elif byte == NATIVE_BYTE_SINGLE_QUOTE:
+                    append_text(buffer, "&#39;")
                 else:
                     buffer.push(byte)
         
