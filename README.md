@@ -322,6 +322,18 @@ metrics, quality state, threshold gate, and workload provenance. Execution is
 baseline-then-candidate; the benchmark is paired and reproducible by
 configuration, but does not claim to eliminate scheduler noise.
 
+Promote a validated capture into explicit local baseline history with an audit
+reason:
+
+    bin/elisa-profiler baseline promote build/reference.json \
+        --store .elisa-profiler/baselines \
+        --name release-1 --reason "validated reference workload"
+
+Promotion refuses incomplete or unsuccessful captures and never overwrites an
+existing baseline name. It stores the original `.elisaprof` plus adjacent
+schema-validated metadata; compare that stored capture explicitly when
+selecting a baseline.
+
 The summary also records the maximum call-stack depth tracked by the collector
 and the number of entries beyond its 1024-frame capacity; a nonzero
 `stack_overflow_entries` value means folded paths are necessarily incomplete.
