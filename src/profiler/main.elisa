@@ -288,6 +288,11 @@ extend ProfilerNative:
             append_text(buffer, "\":")
 
 
+        def append_json_optional_sha256(buffer: mutable darray[u8]&, digest: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "null") if digest.count != NATIVE_SHA256_HEX_LENGTH
+            append_json_string(buffer, digest) if digest.count == NATIVE_SHA256_HEX_LENGTH
+
+
         def append_active_stack(buffer: mutable darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
             return if not summary.active_stack_available
             append_text(buffer, ",\"active_stack\":{\"tracked_depth\":")
@@ -466,6 +471,19 @@ extend ProfilerNative:
             return if copy_environment(name, destination)
             return if path_from_executable(argv_zero, suffix, destination)
             append_text(destination, fallback)
+
+
+        def read_manifest_digest(manifest_path: darray[u8]&, object_name: sview) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            manifest: darray[u8] = read_file(manifest_path)
+            return [] if manifest.count == NATIVE_ZERO.usize()
+            object_start: i64 = json_key_value_start(manifest, object_name, NATIVE_ZERO.usize(), manifest.count)
+            return [] if object_start < NATIVE_ZERO
+            object_stop: i64 = json_object_end(manifest, object_start.usize(), manifest.count)
+            return [] if object_stop < NATIVE_ZERO
+            result: mutable darray[u8] = []
+            return [] if not json_read_string_field(manifest, "sha256", object_start.usize(), object_stop.usize(), &result)
+            return [] if result.count != NATIVE_SHA256_HEX_LENGTH
+            return result
 
 
         def trim_line_endings(value: mutable darray[u8]&) -> void:
@@ -1157,7 +1175,7 @@ extend ProfilerNative:
 
 
         def append_report(
-            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, runtime_object: darray[u8]&, build_cache: NativeBuildCache, host: NativeHostMetadata, summary: CaptureSummary,
+            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_manifest: darray[u8]&, compiler_stage1: darray[u8]&, stage1_digest: darray[u8]&, runtime_object: darray[u8]&, runtime_digest: darray[u8]&, build_cache: NativeBuildCache, host: NativeHostMetadata, summary: CaptureSummary,
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64, execution_ci95_low_ns: i64, execution_ci95_high_ns: i64, execution_ci95_available: bool,
@@ -1180,8 +1198,16 @@ extend ProfilerNative:
             append_json_string(buffer, compiler_commit)
             append_text(buffer, ",\"dirty\":")
             append_text(buffer, "true" if compiler_dirty else "false")
+            append_text(buffer, ",\"manifest\":")
+            append_json_string(buffer, compiler_manifest)
+            append_text(buffer, ",\"stage1_binary\":")
+            append_json_string(buffer, compiler_stage1)
+            append_text(buffer, ",\"stage1_sha256\":")
+            append_json_optional_sha256(buffer, stage1_digest)
             append_text(buffer, ",\"runtime_object\":")
             append_json_string(buffer, runtime_object)
+            append_text(buffer, ",\"runtime_object_sha256\":")
+            append_json_optional_sha256(buffer, runtime_digest)
             append_text(buffer, "}")
             append_build_cache(buffer, build_cache)
             append_json_host(buffer, host)
@@ -1580,11 +1606,17 @@ extend ProfilerNative:
             compiler_root: mutable darray[u8] = []
             compiler_branch: mutable darray[u8] = []
             compiler_commit: mutable darray[u8] = []
+            compiler_manifest: mutable darray[u8] = []
+            compiler_stage1: mutable darray[u8] = []
+            stage1_digest: mutable darray[u8] = []
             runtime_object: mutable darray[u8] = []
+            runtime_digest: mutable darray[u8] = []
             empty_build_cache: NativeBuildCache = empty_native_build_cache()
             append_text(compiler_root, "unavailable-recovery")
             append_text(compiler_branch, "unavailable-recovery")
             append_text(compiler_commit, "unavailable-recovery")
+            append_text(compiler_manifest, "unavailable-recovery")
+            append_text(compiler_stage1, "unavailable-recovery")
             append_text(runtime_object, "unavailable-recovery")
             repetition_records: mutable darray[u8] = []
             empty_program_stdout: mutable darray[u8] = []
@@ -1607,7 +1639,7 @@ extend ProfilerNative:
             append_repetition_record(&repetition_records, NATIVE_ONE, NATIVE_ONE, recovery_result, summary, false, false)
             append_report(
                 buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit,
-                true, runtime_object, empty_build_cache, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
+                true, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, empty_build_cache, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
                 NATIVE_ZERO, empty_program_stdout, false, empty_program_stderr, false, NATIVE_ZERO, NATIVE_ZERO, repetition_records,
                 NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO,
                 NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO,
@@ -2087,6 +2119,9 @@ extend ProfilerNative:
             environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_stage1)
             runtime_object: mutable darray[u8] = []
             environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
+            compiler_manifest: mutable darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
+            stage1_digest: mutable darray[u8] = read_manifest_digest(compiler_manifest, "stage1")
+            runtime_digest: mutable darray[u8] = read_manifest_digest(compiler_manifest, "runtime")
             compiler_tool: mutable darray[u8] = []
             environment_or("ELISA_CLANG", "clang", compiler_tool)
             objcopy_tool: mutable darray[u8] = []
@@ -2355,7 +2390,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, display_source, source_check, dependency_digest, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments)
             else:
-                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, runtime_object, build_cache, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, build_cache, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

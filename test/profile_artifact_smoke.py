@@ -30,6 +30,11 @@ def main() -> int:
     assert capture["quality"]["capture"] in {
         "complete", "target_exit", "target_signal", "timeout", "profiler_failure", "recovered"
     }
+    compiler = capture["compiler"]
+    assert compiler["manifest"]
+    assert compiler["stage1_binary"]
+    assert len(compiler["stage1_sha256"]) == 64
+    assert len(compiler["runtime_object_sha256"]) == 64
     encoded = json.dumps(capture, ensure_ascii=False, separators=(",", ":"))
     assert artifact["manifest"]["capture_bytes"] > 0
     assert encoded

@@ -90,6 +90,7 @@ module ProfilerNative:
         const NATIVE_LINUX_RSS_UNIT_BYTES: i64 = 1024
         const NATIVE_SHA256_BLOCK_BYTES: usize = 64
         const NATIVE_SHA256_LENGTH_BYTES: usize = 8
+        const NATIVE_SHA256_HEX_LENGTH: usize = 64
         const NATIVE_SHA256_WORD_BYTES: usize = 4
         const NATIVE_SHA256_ROUNDS: usize = 64
         const NATIVE_SHA256_DIGEST_WORDS: usize = 8
