@@ -1090,6 +1090,7 @@ extend ProfilerNative:
                 append_text(buffer, "</pre></section>")
             append_html_source_view(buffer, source, source_bytes, summary.location_records, false)
             append_html_function_browser(buffer, summary.function_records, summary.folded_records)
+            append_html_actionable_summary(buffer)
             append_html_function_explorer(buffer)
             append_html_detail_browsers(buffer, summary.call_edge_records, summary.location_records)
             append_html_flame_graph(buffer, summary.folded_records)

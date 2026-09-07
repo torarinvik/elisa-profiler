@@ -276,6 +276,9 @@ def main():
         assert b"@media(prefers-reduced-motion:reduce)" in offline_html
         assert b"@media print" in offline_html
         assert b"search:(field(record,'function')+' '+formatShare" in offline_html
+        assert b"Where to start" in offline_html
+        assert b"actionable-title" in offline_html
+        assert b"MAX_ACTIONABLE_ROWS=5" in offline_html
         assert b"Workload reproducibility" in offline_html
         assert b"ELISA_FIXTURE" in offline_html
         assert b"&lt;unsafe&gt;" in offline_html

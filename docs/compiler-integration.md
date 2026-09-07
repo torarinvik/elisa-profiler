@@ -45,8 +45,10 @@ stall in `_dyld_start` before the profiler enters its main code; the explicit
 condition and is not part of the profiler contract.
 
 The last uninterrupted full gate was recorded after the compiler integration
-and source-stability fix at profiler commit `e0c89eb`. Later profiler-only
-report, cache, UI-state, prebuilt-target, and offline-source changes have
+and source-stability fix at profiler commit `e0c89eb`. The current
+`6c5f718b` compiler audit/ledger/manifest evidence remains valid, while later
+profiler-only report, cache, UI-state, prebuilt-target, offline-source,
+accessibility, comparison, source-mapping, and event-evidence changes have
 focused smoke coverage and are queued for the next full-gate refresh.
 
 Historical checkpoints below retain earlier commit and test evidence for the
@@ -179,7 +181,9 @@ make profiler-native-smoke
 ```
 
 For the current `6c5f718b` integration, the audit, ledger, manifest, compiler,
-native profiler, and full profiler gates pass with the loader workaround above.
+and focused native profiler gates pass with the loader workaround above. The
+repository-wide full profiler gate must be refreshed after the later
+profiler-only slices described above.
 Keep the self-host gate in the
 verification contract: it is the required evidence that the local compiler
 remains a fixed point and deterministic after future compiler changes.
