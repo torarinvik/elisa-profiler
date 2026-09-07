@@ -248,6 +248,7 @@ extend ProfilerNative:
         # contain evidence, but no safe one-to-one pairing exists.
         def comparison_function_match_kind(baseline: darray[ComparisonFunctionRecord]&, baseline_index: i64, candidate: darray[ComparisonFunctionRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_function_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_function_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize()
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
@@ -433,6 +434,7 @@ extend ProfilerNative:
 
         def comparison_call_edge_match_kind(baseline: darray[ComparisonCallEdgeRecord]&, baseline_index: i64, candidate: darray[ComparisonCallEdgeRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_call_edge_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_call_edge_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and baseline[baseline_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize()
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
@@ -584,6 +586,7 @@ extend ProfilerNative:
 
         def comparison_stack_match_kind(baseline: darray[ComparisonStackRecord]&, baseline_index: i64, candidate: darray[ComparisonStackRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_stack_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_stack_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_path.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_path.count > NATIVE_ZERO.usize()
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
@@ -728,6 +731,7 @@ extend ProfilerNative:
 
         def comparison_location_match_kind(baseline: darray[ComparisonLocationRecord]&, baseline_index: i64, candidate: darray[ComparisonLocationRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
+                return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_location_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_location_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize()
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
