@@ -52,6 +52,15 @@ def capture(arguments: list[str], exit_code: int | None = 0) -> dict[str, object
             "location_timing": True,
             "opt_level": "-O0",
             "execution_ms_mean": 1.0,
+            "execution_ms_stdev": 0.1,
+            "execution_ms_ci95_low": 0.8,
+            "execution_ms_ci95_high": 1.2,
+            "execution_ci95_available": True,
+            "requested_repetitions": 3,
+            "completed_repetitions": 3,
+            "successful_repetitions": 3,
+            "failed_repetitions": 0,
+            "measurement_repetitions": 3,
             "compile_ms": 1.0,
             "cpu_ms": 0.5,
             "peak_rss_bytes": 4096,
@@ -113,6 +122,13 @@ def main() -> int:
         }]
         candidate_capture = capture(["--beta"], exit_code=None)
         candidate_capture["run"]["execution_ms_mean"] = 1.5  # type: ignore[index]
+        candidate_capture["run"]["execution_ms_stdev"] = 0.2  # type: ignore[index]
+        candidate_capture["run"]["execution_ms_ci95_low"] = 1.1  # type: ignore[index]
+        candidate_capture["run"]["execution_ms_ci95_high"] = 1.9  # type: ignore[index]
+        candidate_capture["run"]["completed_repetitions"] = 2  # type: ignore[index]
+        candidate_capture["run"]["successful_repetitions"] = 2  # type: ignore[index]
+        candidate_capture["run"]["failed_repetitions"] = 1  # type: ignore[index]
+        candidate_capture["run"]["measurement_repetitions"] = 2  # type: ignore[index]
         candidate_capture["run"]["cpu_ms"] = 0.75  # type: ignore[index]
         candidate_capture["run"]["peak_rss_bytes"] = 6144  # type: ignore[index]
         candidate_capture["functions"] = [{
@@ -188,6 +204,12 @@ def main() -> int:
             raise SystemExit("native comparison omitted exact event relative delta")
         if comparison["metrics"]["peak_rss_bytes"]["baseline"] != 4096:
             raise SystemExit("native comparison omitted peak RSS")
+        if comparison["uncertainty"]["interval_relation"] != "overlap":
+            raise SystemExit("native comparison omitted interval overlap")
+        if comparison["uncertainty"]["baseline"]["ci95_low_ms"] != 0.8:
+            raise SystemExit("native comparison omitted baseline confidence interval")
+        if comparison["uncertainty"]["candidate"]["failed_repetitions"] != 1:
+            raise SystemExit("native comparison omitted candidate repetition failure count")
         if any("resource-metric availability" in warning for warning in comparison.get("warnings", [])):
             raise SystemExit("native comparison reported a false resource-availability mismatch")
         if comparison["gate"]["status"] != "not_requested":
@@ -205,6 +227,9 @@ def main() -> int:
         for marker in (
             b"Elisa profile comparison",
             b"Mean execution",
+            b"Repetition uncertainty",
+            b"comparison-uncertainty-title",
+            b"Approx. 95% interval",
             b"Workload identity",
             b"Warnings",
             b"Function identity changes",

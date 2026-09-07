@@ -208,6 +208,87 @@ extend ProfilerNative:
             append_text(buffer, "}")
 
 
+        def comparison_uncertainty_intervals_overlap(baseline: ComparisonCapture, candidate: ComparisonCapture) -> bool:
+            return false if not baseline.execution_ci95_available or not candidate.execution_ci95_available
+            return baseline.execution_ci95_low_micros <= candidate.execution_ci95_high_micros and candidate.execution_ci95_low_micros <= baseline.execution_ci95_high_micros
+
+
+        def append_comparison_uncertainty_json_capture(buffer: mutable darray[u8]&, capture: ComparisonCapture) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "{\"stdev_ms\":")
+            append_micros_as_millis(buffer, capture.execution_stdev_micros) if capture.execution_stdev_available
+            append_text(buffer, "null") if not capture.execution_stdev_available
+            append_text(buffer, ",\"ci95_low_ms\":")
+            append_micros_as_millis(buffer, capture.execution_ci95_low_micros) if capture.execution_ci95_available
+            append_text(buffer, "null") if not capture.execution_ci95_available
+            append_text(buffer, ",\"ci95_high_ms\":")
+            append_micros_as_millis(buffer, capture.execution_ci95_high_micros) if capture.execution_ci95_available
+            append_text(buffer, "null") if not capture.execution_ci95_available
+            append_text(buffer, ",\"ci95_available\":")
+            append_text(buffer, "true" if capture.execution_ci95_available else "false")
+            append_text(buffer, ",\"requested_repetitions\":")
+            append_i64(buffer, capture.requested_repetitions)
+            append_text(buffer, ",\"completed_repetitions\":")
+            append_i64(buffer, capture.completed_repetitions)
+            append_text(buffer, ",\"successful_repetitions\":")
+            append_i64(buffer, capture.successful_repetitions)
+            append_text(buffer, ",\"failed_repetitions\":")
+            append_i64(buffer, capture.failed_repetitions)
+            append_text(buffer, ",\"measurement_repetitions\":")
+            append_i64(buffer, capture.measurement_repetitions)
+            append_text(buffer, "}")
+
+
+        def append_comparison_uncertainty_html(buffer: mutable darray[u8]&, baseline: ComparisonCapture, candidate: ComparisonCapture) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<section class='panel comparison-uncertainty' aria-labelledby='comparison-uncertainty-title'><h2 id='comparison-uncertainty-title'>Repetition uncertainty</h2><p>Execution intervals are approximate 95% confidence intervals computed from the capture's selected repetition set. They describe measurement dispersion; they do not replace identity or capture-quality diagnostics.</p><table><thead><tr><th scope='col'>Evidence</th><th scope='col'>Baseline</th><th scope='col'>Candidate</th></tr></thead><tbody><tr><th scope='row'>Measurement repetitions</th><td>")
+            append_i64(buffer, baseline.measurement_repetitions)
+            append_text(buffer, "</td><td>")
+            append_i64(buffer, candidate.measurement_repetitions)
+            append_text(buffer, "</td></tr><tr><th scope='row'>Successful / failed</th><td>")
+            append_i64(buffer, baseline.successful_repetitions)
+            append_text(buffer, " / ")
+            append_i64(buffer, baseline.failed_repetitions)
+            append_text(buffer, "</td><td>")
+            append_i64(buffer, candidate.successful_repetitions)
+            append_text(buffer, " / ")
+            append_i64(buffer, candidate.failed_repetitions)
+            append_text(buffer, "</td></tr><tr><th scope='row'>Standard deviation</th><td>")
+            if baseline.execution_stdev_available:
+                append_micros_as_millis(buffer, baseline.execution_stdev_micros)
+                append_text(buffer, " ms")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</td><td>")
+            if candidate.execution_stdev_available:
+                append_micros_as_millis(buffer, candidate.execution_stdev_micros)
+                append_text(buffer, " ms")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</td></tr><tr><th scope='row'>Approx. 95% interval</th><td>")
+            if baseline.execution_ci95_available:
+                append_micros_as_millis(buffer, baseline.execution_ci95_low_micros)
+                append_text(buffer, "–")
+                append_micros_as_millis(buffer, baseline.execution_ci95_high_micros)
+                append_text(buffer, " ms")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</td><td>")
+            if candidate.execution_ci95_available:
+                append_micros_as_millis(buffer, candidate.execution_ci95_low_micros)
+                append_text(buffer, "–")
+                append_micros_as_millis(buffer, candidate.execution_ci95_high_micros)
+                append_text(buffer, " ms")
+            else:
+                append_text(buffer, "unavailable")
+            append_text(buffer, "</td></tr><tr><th scope='row'>Interval relationship</th><td colspan='2'>")
+            if not baseline.execution_ci95_available or not candidate.execution_ci95_available:
+                append_text(buffer, "unavailable — both captures need valid repeated timing observations")
+            elif comparison_uncertainty_intervals_overlap(baseline, candidate):
+                append_text(buffer, "overlap — the observed means are not clearly separated by these intervals")
+            else:
+                append_text(buffer, "disjoint — the observed means are separated by these intervals")
+            append_text(buffer, "</td></tr></tbody></table><p class='panel-note'>Use the raw comparison JSON for exact bounds and repetition accounting; an overlapping interval is evidence of uncertainty, not proof that the implementation is equivalent.</p></section>")
+
+
         def comparison_function_index(records: darray[ComparisonFunctionRecord]&, subject: ComparisonFunctionRecord) -> i64 can[Abort.Panic]:
             matched: mutable i64 = NATIVE_NEGATIVE_ONE
             for index in 0..<records.count |index, records, subject|:
@@ -1049,6 +1130,7 @@ extend ProfilerNative:
                 append_comparison_relative_delta_html(buffer, baseline.locations, candidate.locations, true)
                 append_text(buffer, "</td></tr></tbody></table>")
                 append_text(buffer, "<p class='panel-note'>Metric deltas show absolute change first, followed by exact relative change in percent. Relative change is unavailable when the baseline is zero or the metric is missing.</p>")
+                append_comparison_uncertainty_html(buffer, baseline, candidate)
                 append_comparison_match_legend_html(buffer)
                 append_comparison_function_changes_html(buffer, baseline.functions, candidate.functions)
                 append_comparison_call_edge_changes_html(buffer, baseline.call_edges, candidate.call_edges)
@@ -1356,7 +1438,18 @@ extend ProfilerNative:
             append_i64(buffer, native_signed_delta(candidate.sampling_setup_failed, baseline.sampling_setup_failed))
             append_text(buffer, ",\"relative_delta_basis_points\":")
             append_comparison_relative_delta(buffer, baseline.sampling_setup_failed, candidate.sampling_setup_failed, true)
-            append_text(buffer, "}}")
+            append_text(buffer, "}},\"uncertainty\":{\"baseline\":")
+            append_comparison_uncertainty_json_capture(buffer, baseline)
+            append_text(buffer, ",\"candidate\":")
+            append_comparison_uncertainty_json_capture(buffer, candidate)
+            append_text(buffer, ",\"interval_relation\":\"")
+            if not baseline.execution_ci95_available or not candidate.execution_ci95_available:
+                append_text(buffer, "unavailable")
+            elif comparison_uncertainty_intervals_overlap(baseline, candidate):
+                append_text(buffer, "overlap")
+            else:
+                append_text(buffer, "disjoint")
+            append_text(buffer, "\"}")
             append_comparison_gate_json(buffer, policy, gate_inconclusive, gate_failed, wall_percent_failed, wall_absolute_failed, cpu_percent_failed, cpu_absolute_failed, rss_percent_failed, rss_absolute_failed, function_failed)
             append_text(buffer, ",\"warnings\":[")
             warning_first: mutable bool = true
@@ -1483,12 +1576,12 @@ extend ProfilerNative:
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO, sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO, sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
+                execution_mean_micros: NATIVE_ZERO, execution_stdev_micros: NATIVE_ZERO, execution_stdev_available: false, execution_ci95_low_micros: NATIVE_ZERO, execution_ci95_high_micros: NATIVE_ZERO, execution_ci95_available: false, requested_repetitions: NATIVE_ZERO, completed_repetitions: NATIVE_ZERO, successful_repetitions: NATIVE_ZERO, failed_repetitions: NATIVE_ZERO, measurement_repetitions: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             candidate: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO, sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO, sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
-                execution_mean_micros: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
+                execution_mean_micros: NATIVE_ZERO, execution_stdev_micros: NATIVE_ZERO, execution_stdev_available: false, execution_ci95_low_micros: NATIVE_ZERO, execution_ci95_high_micros: NATIVE_ZERO, execution_ci95_available: false, requested_repetitions: NATIVE_ZERO, completed_repetitions: NATIVE_ZERO, successful_repetitions: NATIVE_ZERO, failed_repetitions: NATIVE_ZERO, measurement_repetitions: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
             return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
             return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)

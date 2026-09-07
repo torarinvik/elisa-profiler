@@ -18,6 +18,7 @@
     "stacks",
     "locations",
     "metrics",
+    "uncertainty",
     "warnings",
     "status"
   ],
@@ -92,6 +93,16 @@
       },
       "additionalProperties": false
     },
+    "uncertainty": {
+      "type": "object",
+      "required": ["baseline", "candidate", "interval_relation"],
+      "properties": {
+        "baseline": { "$ref": "#/$defs/uncertainty_capture" },
+        "candidate": { "$ref": "#/$defs/uncertainty_capture" },
+        "interval_relation": { "type": "string", "enum": ["overlap", "disjoint", "unavailable"] }
+      },
+      "additionalProperties": false
+    },
     "warnings": { "type": "array", "items": { "type": "string" } },
     "status": { "type": "string", "enum": ["ok", "warning"] },
     "thresholds": {
@@ -152,6 +163,22 @@
         "candidate": { "type": "number", "minimum": 0 },
         "delta_micros": { "type": "integer" },
         "relative_delta_basis_points": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "uncertainty_capture": {
+      "type": "object",
+      "required": ["stdev_ms", "ci95_low_ms", "ci95_high_ms", "ci95_available", "requested_repetitions", "completed_repetitions", "successful_repetitions", "failed_repetitions", "measurement_repetitions"],
+      "properties": {
+        "stdev_ms": { "type": ["number", "null"], "minimum": 0 },
+        "ci95_low_ms": { "type": ["number", "null"], "minimum": 0 },
+        "ci95_high_ms": { "type": ["number", "null"], "minimum": 0 },
+        "ci95_available": { "type": "boolean" },
+        "requested_repetitions": { "type": "integer", "minimum": 0 },
+        "completed_repetitions": { "type": "integer", "minimum": 0 },
+        "successful_repetitions": { "type": "integer", "minimum": 0 },
+        "failed_repetitions": { "type": "integer", "minimum": 0 },
+        "measurement_repetitions": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },

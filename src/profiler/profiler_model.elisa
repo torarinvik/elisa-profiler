@@ -514,6 +514,16 @@ module ProfilerNative:
             sample_period_microseconds: mutable i64
             sampling_setup_failed: mutable i64
             execution_mean_micros: mutable i64
+            execution_stdev_micros: mutable i64
+            execution_stdev_available: mutable bool
+            execution_ci95_low_micros: mutable i64
+            execution_ci95_high_micros: mutable i64
+            execution_ci95_available: mutable bool
+            requested_repetitions: mutable i64
+            completed_repetitions: mutable i64
+            successful_repetitions: mutable i64
+            failed_repetitions: mutable i64
+            measurement_repetitions: mutable i64
             compile_micros: mutable i64
             cpu_micros: mutable i64
             peak_rss_bytes: mutable i64
