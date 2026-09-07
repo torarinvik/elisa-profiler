@@ -438,6 +438,7 @@ module ProfilerNative:
         struct ComparisonFunctionRecord:
             function: mutable darray[u8]
             identity_id: mutable darray[u8]
+            repetition: mutable i64
             events: mutable i64
             call_events: mutable i64
             completed_calls: mutable i64
@@ -451,6 +452,7 @@ module ProfilerNative:
             callee: mutable darray[u8]
             caller_identity_id: mutable darray[u8]
             callee_identity_id: mutable darray[u8]
+            repetition: mutable i64
             call_events: mutable i64
             completed_calls: mutable i64
             inclusive_ns: mutable i64
@@ -458,6 +460,7 @@ module ProfilerNative:
         struct ComparisonStackRecord:
             path: mutable darray[u8]
             identity_path: mutable darray[u8]
+            repetition: mutable i64
             call_events: mutable i64
             completed_calls: mutable i64
             self_ns: mutable i64
@@ -468,6 +471,7 @@ module ProfilerNative:
             function: mutable darray[u8]
             variable: mutable darray[u8]
             identity_id: mutable darray[u8]
+            repetition: mutable i64
             line: mutable i64
             signed: mutable bool
             source_available: mutable bool

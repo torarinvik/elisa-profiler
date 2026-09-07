@@ -213,10 +213,10 @@ extend ProfilerNative:
             for index in 0..<records.count |index, records, subject|:
                 candidate: ComparisonFunctionRecord = records[index]
                 if subject.identity_id.count > NATIVE_ZERO.usize():
-                    if candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id):
+                    if candidate.repetition == subject.repetition and candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id):
                         return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                         matched <- index.i64()
-                elif candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function):
+                elif candidate.repetition == subject.repetition and candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -228,9 +228,9 @@ extend ProfilerNative:
                 candidate: ComparisonFunctionRecord = records[index]
                 same: bool = false
                 if subject.identity_id.count > NATIVE_ZERO.usize():
-                    same <- candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id)
+                    same <- candidate.repetition == subject.repetition and candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id)
                 else:
-                    same <- candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function)
+                    same <- candidate.repetition == subject.repetition and candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function)
                 if same:
                     return true if matched
                     matched <- true
@@ -330,6 +330,9 @@ extend ProfilerNative:
             function_name: darray[u8] = baseline_name if baseline_available else candidate_name
             append_text(buffer, "{\"function\":")
             append_json_string(buffer, function_name)
+            append_text(buffer, ",\"repetition\":")
+            append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
+            append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
             append_text(buffer, ",\"events\":")
             append_comparison_nullable_count_metric(buffer, baseline_events, candidate_events, baseline_available, candidate_available)
             append_text(buffer, ",\"call_events\":")
@@ -369,10 +372,10 @@ extend ProfilerNative:
             for index in 0..<records.count |index, records, subject|:
                 candidate: ComparisonCallEdgeRecord = records[index]
                 if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
-                    if candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id):
+                    if candidate.repetition == subject.repetition and candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id):
                         return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                         matched <- index.i64()
-                elif candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee):
+                elif candidate.repetition == subject.repetition and candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -384,9 +387,9 @@ extend ProfilerNative:
                 candidate: ComparisonCallEdgeRecord = records[index]
                 same: bool = false
                 if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
-                    same <- candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id)
+                    same <- candidate.repetition == subject.repetition and candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id)
                 else:
-                    same <- candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee)
+                    same <- candidate.repetition == subject.repetition and candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee)
                 if same:
                     return true if matched
                     matched <- true
@@ -424,6 +427,9 @@ extend ProfilerNative:
             append_text(buffer, ",\"callee\":")
             append_json_string(buffer, baseline[baseline_index.usize()].callee) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].callee) if not baseline_available
+            append_text(buffer, ",\"repetition\":")
+            append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
+            append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
             append_text(buffer, ",\"call_events\":")
             append_comparison_nullable_count_metric(buffer, baseline_call_events, candidate_call_events, baseline_available, candidate_available)
             append_text(buffer, ",\"completed_calls\":")
@@ -504,10 +510,10 @@ extend ProfilerNative:
             for index in 0..<records.count |index, records, subject|:
                 candidate: ComparisonStackRecord = records[index]
                 if subject.identity_path.count > NATIVE_ZERO.usize():
-                    if candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path):
+                    if candidate.repetition == subject.repetition and candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path):
                         return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                         matched <- index.i64()
-                elif candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path):
+                elif candidate.repetition == subject.repetition and candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -519,9 +525,9 @@ extend ProfilerNative:
                 candidate: ComparisonStackRecord = records[index]
                 same: bool = false
                 if subject.identity_path.count > NATIVE_ZERO.usize():
-                    same <- candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path)
+                    same <- candidate.repetition == subject.repetition and candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path)
                 else:
-                    same <- candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path)
+                    same <- candidate.repetition == subject.repetition and candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path)
                 if same:
                     return true if matched
                     matched <- true
@@ -601,6 +607,9 @@ extend ProfilerNative:
             append_text(buffer, "{\"stack\":")
             append_json_string(buffer, baseline[baseline_index.usize()].path) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].path) if not baseline_available
+            append_text(buffer, ",\"repetition\":")
+            append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
+            append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
             append_text(buffer, ",\"call_events\":")
             append_comparison_nullable_count_metric(buffer, baseline_call_events, candidate_call_events, baseline_available, candidate_available)
             append_text(buffer, ",\"completed_calls\":")
@@ -632,10 +641,10 @@ extend ProfilerNative:
             for index in 0..<records.count |index, records, subject|:
                 record: ComparisonLocationRecord = records[index]
                 if subject.identity_id.count > NATIVE_ZERO.usize():
-                    if record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id):
+                    if record.repetition == subject.repetition and record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id):
                         return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                         matched <- index.i64()
-                elif record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable):
+                elif record.repetition == subject.repetition and record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -647,9 +656,9 @@ extend ProfilerNative:
                 record: ComparisonLocationRecord = records[index]
                 same: bool = false
                 if subject.identity_id.count > NATIVE_ZERO.usize():
-                    same <- record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
+                    same <- record.repetition == subject.repetition and record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
                 else:
-                    same <- record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
+                    same <- record.repetition == subject.repetition and record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
                 if same:
                     return true if matched
                     matched <- true
@@ -761,6 +770,9 @@ extend ProfilerNative:
             append_text(buffer, ",\"function\":")
             append_json_string(buffer, baseline[baseline_index.usize()].function) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].function) if not baseline_available
+            append_text(buffer, ",\"repetition\":")
+            append_i64(buffer, baseline[baseline_index.usize()].repetition) if baseline_available
+            append_i64(buffer, candidate[candidate_index.usize()].repetition) if not baseline_available
             append_text(buffer, ",\"kind\":")
             append_json_string(buffer, baseline[baseline_index.usize()].kind) if baseline_available
             append_json_string(buffer, candidate[candidate_index.usize()].kind) if not baseline_available

@@ -128,7 +128,7 @@ extend ProfilerNative:
             return result
 
 
-        def append_location_record(summary: mutable CaptureSummary&, location_records: mutable darray[u8]&, function_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_location_record(summary: mutable CaptureSummary&, location_records: mutable darray[u8]&, function_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.location_record_count, NATIVE_PROTOCOL_ERROR_LOCATION, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             kind_field: mutable darray[u8] = []
             function_field: mutable darray[u8] = []
@@ -207,6 +207,8 @@ extend ProfilerNative:
             append_text(location_records, kind_name)
             append_text(location_records, "\",\"function\":")
             append_json_string(location_records, function_field)
+            append_text(location_records, ",\"repetition\":")
+            append_i64(location_records, repetition)
             append_text(location_records, ",\"line\":")
             append_protocol_number(location_records, line_field)
             append_text(location_records, ",\"count\":")
@@ -264,6 +266,8 @@ extend ProfilerNative:
                 append_record_separator(function_records)
                 append_text(function_records, "{\"function\":")
                 append_json_string(function_records, function_field)
+                append_text(function_records, ",\"repetition\":")
+                append_i64(function_records, repetition)
                 append_text(function_records, ",\"events\":")
                 append_protocol_number(function_records, count_field)
                 append_text(function_records, ",\"statement_events\":")
@@ -298,7 +302,7 @@ extend ProfilerNative:
                 append_text(function_records, "}")
 
 
-        def append_call_record(summary: mutable CaptureSummary&, call_edge_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_call_record(summary: mutable CaptureSummary&, call_edge_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.call_edge_record_count, NATIVE_PROTOCOL_ERROR_CALL, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             caller_field: mutable darray[u8] = []
             callee_field: mutable darray[u8] = []
@@ -339,6 +343,8 @@ extend ProfilerNative:
             append_json_string(call_edge_records, caller_field)
             append_text(call_edge_records, ",\"callee\":")
             append_json_string(call_edge_records, callee_field)
+            append_text(call_edge_records, ",\"repetition\":")
+            append_i64(call_edge_records, repetition)
             append_text(call_edge_records, ",\"call_events\":")
             append_protocol_number(call_edge_records, calls_field)
             append_text(call_edge_records, ",\"completed_calls\":")
@@ -355,7 +361,7 @@ extend ProfilerNative:
             summary.call_edge_record_count <- native_saturating_add(summary.call_edge_record_count, NATIVE_ONE)
 
 
-        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_stack_record(summary: mutable CaptureSummary&, stack_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.stack_record_count, NATIVE_PROTOCOL_ERROR_STACK, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             stack_field: mutable darray[u8] = []
             calls_field: mutable darray[u8] = []
@@ -389,6 +395,8 @@ extend ProfilerNative:
             append_record_separator(stack_records)
             append_text(stack_records, "{\"stack\":")
             append_json_string(stack_records, stack_field)
+            append_text(stack_records, ",\"repetition\":")
+            append_i64(stack_records, repetition)
             append_text(stack_records, ",\"call_events\":")
             append_protocol_number(stack_records, calls_field)
             append_text(stack_records, ",\"completed_calls\":")
@@ -835,13 +843,13 @@ extend ProfilerNative:
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
-                        append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source)
+                        append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tcall\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tcall\t")
-                        append_call_record(&summary, &call_edge_records, data, &cursor, line_stop)
+                        append_call_record(&summary, &call_edge_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tstack\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tstack\t")
-                        append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop)
+                        append_stack_record(&summary, &stack_records, &folded_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, sample_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(sample_prefix)
                         append_sample_record(&summary, &sample_records, &folded_records, data, &cursor, line_stop, repetition)

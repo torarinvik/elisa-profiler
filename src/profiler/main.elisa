@@ -114,6 +114,7 @@ include "./profiler_cache.elisa"
 include "./profiler_prebuilt.elisa"
 include "./profiler_aggregation.elisa"
 include "./profiler_capabilities.elisa"
+include "./profiler_benchmark.elisa"
 
 extend ProfilerNative:
     private:
@@ -1936,7 +1937,8 @@ extend ProfilerNative:
             return recover_offline(argc, slots) if profiler_ffi_strcmp(first, "recover") == NATIVE_ZERO
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
-            return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
+            return benchmark(argc, slots) if profiler_ffi_strcmp(first, "benchmark") == NATIVE_ZERO
+            return report_error("unknown command; use profile, record, report, recover, compare, benchmark, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
             return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--random-seed SEED] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []

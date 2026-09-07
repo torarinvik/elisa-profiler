@@ -303,6 +303,25 @@ function summaries aggregate the same measurements and add inclusive/self
 timing plus completed-call counts.
 Text and HTML reports also list every measured repetition with its status, wall
 time, CPU time, and peak RSS when available.
+
+## Run a benchmark comparison
+
+For repeatable baseline/candidate measurements, use an Elisa-native benchmark
+manifest. It forwards the same source, mode, warmups, measured repetitions,
+seed, working directory, input, environment, and target-argument controls to
+both sides, then runs the native comparison engine:
+
+    bin/elisa-profiler benchmark examples/benchmark_pipeline.json \
+        --format json --output build/pipeline-comparison.json
+
+The manifest format is documented in [docs/benchmark.md](docs/benchmark.md)
+and validated by [docs/benchmark.schema.json](docs/benchmark.schema.json).
+Intermediate captures are refused when their paths already exist and are
+removed after comparison, while the final comparison retains the paired
+metrics, quality state, threshold gate, and workload provenance. Execution is
+baseline-then-candidate; the benchmark is paired and reproducible by
+configuration, but does not claim to eliminate scheduler noise.
+
 The summary also records the maximum call-stack depth tracked by the collector
 and the number of entries beyond its 1024-frame capacity; a nonzero
 `stack_overflow_entries` value means folded paths are necessarily incomplete.

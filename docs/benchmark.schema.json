@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elisa-lang.org/schemas/profile-benchmark-v1.json",
+  "title": "Elisa profiler benchmark manifest",
+  "description": "A native Elisa benchmark definition for paired baseline/candidate captures.",
+  "type": "object",
+  "required": ["schema_version", "baseline_source", "candidate_source"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "baseline_source": { "type": "string", "minLength": 1 },
+    "candidate_source": { "type": "string", "minLength": 1 },
+    "mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "sample", "diagnostic"] },
+    "repetitions": { "type": "integer", "minimum": 1 },
+    "warmups": { "type": "integer", "minimum": 0 },
+    "sample_period_microseconds": { "type": "integer", "minimum": 100, "maximum": 1000000 },
+    "max_capture_bytes": { "type": "integer", "minimum": 0 },
+    "random_seed": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "working_directory": { "type": "string" },
+    "stdin": { "type": "string" },
+    "environment": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$" } },
+    "target_arguments": { "type": "array", "items": { "type": "string" } },
+    "embed_source": { "type": "boolean" },
+    "max_wall_regression_percent": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "max_wall_ms": { "type": "integer", "minimum": 0 },
+    "max_cpu_regression_percent": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "max_cpu_ms": { "type": "integer", "minimum": 0 },
+    "max_rss_regression_percent": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "max_rss_bytes": { "type": "integer", "minimum": 0 },
+    "max_function_self_regression_percent": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+  },
+  "additionalProperties": false
+}

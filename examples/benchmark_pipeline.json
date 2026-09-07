@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "multi-module pipeline baseline versus candidate",
+  "baseline_source": "examples/multi_module_pipeline.elisa",
+  "candidate_source": "examples/multi_module_pipeline.elisa",
+  "mode": "functions",
+  "repetitions": 2,
+  "warmups": 1,
+  "max_capture_bytes": 67108864,
+  "random_seed": "42",
+  "target_arguments": ["--large"],
+  "embed_source": true,
+  "max_wall_regression_percent": 1000,
+  "max_function_self_regression_percent": 1000
+}

@@ -1,0 +1,241 @@
+# Reproducible benchmark-manifest execution for the native Elisa profiler.
+#
+# This module owns benchmark policy and argv construction. It deliberately calls the
+# public native `profile`/`compare` entry points rather than shelling out, so a benchmark
+# cannot silently use a different profiler implementation or reinterpret target arguments.
+extend ProfilerNative:
+    private:
+        const NATIVE_BENCHMARK_SCHEMA_VERSION: i64 = 1
+        const NATIVE_BENCHMARK_FIRST_OPTION_INDEX: i64 = 3
+        const NATIVE_BENCHMARK_BASELINE_SUFFIX: cstr = ".baseline.json"
+        const NATIVE_BENCHMARK_CANDIDATE_SUFFIX: cstr = ".candidate.json"
+        const NATIVE_BENCHMARK_MANIFEST_SUFFIX: cstr = ".manifest.json"
+
+        def benchmark_optional_string(data: darray[u8]&, key: sview, result: mutable darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            value_start: i64 = json_key_value_start(data, key, NATIVE_ZERO.usize(), data.count)
+            result <- []
+            return true if value_start < NATIVE_ZERO
+            return json_string_into(data, value_start.usize(), data.count, result) >= NATIVE_ZERO
+
+
+        def benchmark_string_array(data: darray[u8]&, key: sview, result: mutable darray[darray[u8]]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            result <- []
+            value_start: i64 = json_key_value_start(data, key, NATIVE_ZERO.usize(), data.count)
+            return true if value_start < NATIVE_ZERO
+            array_stop: i64 = json_array_end(data, value_start.usize(), data.count)
+            return false if array_stop < NATIVE_ZERO
+            cursor: mutable usize = json_skip_whitespace(data, value_start.usize() + NATIVE_ONE.usize(), array_stop.usize())
+            content_stop: usize = array_stop.usize() - NATIVE_ONE.usize()
+            while cursor < content_stop |cursor, content_stop, data, result|:
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                break if cursor >= content_stop
+                return false if data[cursor] != NATIVE_BYTE_DOUBLE_QUOTE
+                value: mutable darray[u8] = []
+                string_stop: i64 = json_string_end(data, cursor, content_stop)
+                return false if string_stop < NATIVE_ZERO or json_string_into(data, cursor, content_stop, &value) < NATIVE_ZERO
+                result.push(value)
+                cursor <- string_stop.usize()
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- cursor + NATIVE_ONE.usize()
+                    cursor <- json_skip_whitespace(data, cursor, content_stop)
+                    return false if cursor >= content_stop
+            return true
+
+
+        def benchmark_unlink(path: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path_copy: mutable darray[u8] = []
+            path_copy.extend(path)
+            path_copy.push(NATIVE_BYTE_NUL)
+            _ = profiler_ffi_unlink((&path_copy[0]).cast[cstr] can Unsafe.PointerCast)
+
+
+        def benchmark_path_with_suffix(path: darray[u8]&, suffix: cstr) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            result: mutable darray[u8] = []
+            result.extend(path)
+            append_cstr(result, suffix)
+            return result
+
+
+        def benchmark_cleanup_intermediates(baseline_output: darray[u8]&, candidate_output: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            baseline_manifest: darray[u8] = benchmark_path_with_suffix(baseline_output, NATIVE_BENCHMARK_MANIFEST_SUFFIX)
+            candidate_manifest: darray[u8] = benchmark_path_with_suffix(candidate_output, NATIVE_BENCHMARK_MANIFEST_SUFFIX)
+            benchmark_unlink(baseline_output)
+            benchmark_unlink(candidate_output)
+            benchmark_unlink(baseline_manifest)
+            benchmark_unlink(candidate_manifest)
+
+
+        def benchmark_append_decimal[@r](arguments: mutable darray[darray[u8]]& @r, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            append_command_i64_argument(arguments, "", value)
+
+
+        def benchmark_append_profile_arguments[@r](arguments: mutable darray[darray[u8]]& @r, source: darray[u8]&, output: darray[u8]&, mode: darray[u8]&, repetitions: i64, warmups: i64, sample_period: i64, capture_bytes: i64, random_seed: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[darray[u8]], target_arguments: darray[darray[u8]], embed_source: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            append_command_argument(arguments, "profile")
+            append_command_path_argument(arguments, source)
+            append_command_argument(arguments, "--format")
+            append_command_argument(arguments, "json")
+            append_command_argument(arguments, "--output")
+            append_command_path_argument(arguments, output)
+            append_command_argument(arguments, "--mode")
+            append_command_path_argument(arguments, mode)
+            append_command_argument(arguments, "--repeat")
+            benchmark_append_decimal(arguments, repetitions)
+            append_command_argument(arguments, "--warmup")
+            benchmark_append_decimal(arguments, warmups)
+            append_command_argument(arguments, "--sample-period-us")
+            benchmark_append_decimal(arguments, sample_period)
+            append_command_argument(arguments, "--max-capture-bytes")
+            benchmark_append_decimal(arguments, capture_bytes)
+            if random_seed.count > NATIVE_ZERO.usize():
+                append_command_argument(arguments, "--random-seed")
+                append_command_path_argument(arguments, random_seed)
+            if working_directory.count > NATIVE_ZERO.usize():
+                append_command_argument(arguments, "--cwd")
+                append_command_path_argument(arguments, working_directory)
+            if stdin_path.count > NATIVE_ZERO.usize():
+                append_command_argument(arguments, "--stdin")
+                append_command_path_argument(arguments, stdin_path)
+            if embed_source:
+                append_command_argument(arguments, "--embed-source")
+            for index in 0..<environment.count |index, arguments, environment|:
+                append_command_argument(arguments, "--env")
+                append_command_path_argument(arguments, environment[index])
+            if target_arguments.count > NATIVE_ZERO.usize():
+                append_command_argument(arguments, "--")
+                for index in 0..<target_arguments.count |index, arguments, target_arguments|:
+                    append_command_path_argument(arguments, target_arguments[index])
+
+
+        def benchmark_make_argv[@r](argv_zero: cstr, arguments: darray[darray[u8]], result: mutable darray[cstr]& @r) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            result <- []
+            result.push(argv_zero)
+            for index in 0..<arguments.count |index, arguments, result|:
+                result.push((&arguments[index][0]).cast[cstr] can Unsafe.PointerCast)
+            result.push(null)
+
+
+        def benchmark_profile(argv_zero: cstr, source: darray[u8]&, output: darray[u8]&, mode: darray[u8]&, repetitions: i64, warmups: i64, sample_period: i64, capture_bytes: i64, random_seed: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[darray[u8]], target_arguments: darray[darray[u8]], embed_source: bool) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            arguments: mutable darray[darray[u8]] = []
+            benchmark_append_profile_arguments(&arguments, source, output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+            command_argv: mutable darray[cstr] = []
+            benchmark_make_argv(argv_zero, arguments, &command_argv)
+            return run(command_argv.count.i64() - NATIVE_ONE, (&command_argv[0]).cast[mutable void&] can Unsafe.PointerCast)
+
+
+        def benchmark_append_compare_threshold(arguments: mutable darray[darray[u8]]&, option: sview, value: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            return if value < NATIVE_ZERO
+            append_command_argument(arguments, option)
+            benchmark_append_decimal(arguments, value)
+
+
+        def benchmark_compare(argv_zero: cstr, baseline: darray[u8]&, candidate: darray[u8]&, output: darray[u8]&, format: darray[u8]&, wall_percent: i64, wall_ms: i64, cpu_percent: i64, cpu_ms: i64, rss_percent: i64, rss_bytes: i64, function_percent: i64) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            arguments: mutable darray[darray[u8]] = []
+            append_command_argument(arguments, "compare")
+            append_command_path_argument(arguments, baseline)
+            append_command_path_argument(arguments, candidate)
+            append_command_argument(arguments, "--format")
+            append_command_path_argument(arguments, format)
+            append_command_argument(arguments, "--output")
+            append_command_path_argument(arguments, output)
+            benchmark_append_compare_threshold(arguments, "--max-wall-regression-percent", wall_percent)
+            benchmark_append_compare_threshold(arguments, "--max-wall-ms", wall_ms)
+            benchmark_append_compare_threshold(arguments, "--max-cpu-regression-percent", cpu_percent)
+            benchmark_append_compare_threshold(arguments, "--max-cpu-ms", cpu_ms)
+            benchmark_append_compare_threshold(arguments, "--max-rss-regression-percent", rss_percent)
+            benchmark_append_compare_threshold(arguments, "--max-rss-bytes", rss_bytes)
+            benchmark_append_compare_threshold(arguments, "--max-function-self-regression-percent", function_percent)
+            command_argv: mutable darray[cstr] = []
+            benchmark_make_argv(argv_zero, arguments, &command_argv)
+            return compare_offline(command_argv.count.i64() - NATIVE_ONE, (&command_argv[0]).cast[mutable cstr&&] can Unsafe.PointerCast)
+
+
+        def benchmark(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return report_error("usage: elisa-profiler benchmark MANIFEST --output PATH [--format json|text|html]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            manifest_path: mutable darray[u8] = []
+            copy_cstr(manifest_path, slots[NATIVE_COMPARE_BASELINE_INDEX].cast[cstr])
+            output_path: mutable darray[u8] = []
+            format: mutable darray[u8] = []
+            append_text(format, "json")
+            index: mutable i64 = NATIVE_BENCHMARK_FIRST_OPTION_INDEX
+            while index < argc |index, slots, output_path, format|:
+                argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("benchmark --output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--format") == NATIVE_ZERO:
+                    return report_error("benchmark --format requires json, text, or html") if index + NATIVE_ONE >= argc
+                    selected_format: cstr = slots[index + NATIVE_ONE].cast[cstr]
+                    return report_error("benchmark --format requires json, text, or html") if profiler_ffi_strcmp(selected_format, "json") != NATIVE_ZERO and profiler_ffi_strcmp(selected_format, "text") != NATIVE_ZERO and profiler_ffi_strcmp(selected_format, "html") != NATIVE_ZERO
+                    copy_cstr(format, selected_format)
+                    index <- index + NATIVE_TWO
+                    continue
+                return report_error("unknown benchmark option")
+            return report_error("benchmark requires --output PATH") if output_path.count == NATIVE_ZERO.usize()
+            manifest: darray[u8] = read_file(manifest_path)
+            return report_error("benchmark manifest could not be read") if manifest.count == NATIVE_ZERO.usize() or not json_document_is_object(manifest)
+            version: i64 = NATIVE_ZERO
+            return report_error("benchmark manifest has an unsupported schema version") if not json_read_number_field(manifest, "schema_version", NATIVE_ZERO.usize(), manifest.count, &version) or version != NATIVE_BENCHMARK_SCHEMA_VERSION
+            baseline_source: mutable darray[u8] = []
+            candidate_source: mutable darray[u8] = []
+            return report_error("benchmark manifest requires baseline_source and candidate_source") if not json_read_string_field(manifest, "baseline_source", NATIVE_ZERO.usize(), manifest.count, &baseline_source) or not json_read_string_field(manifest, "candidate_source", NATIVE_ZERO.usize(), manifest.count, &candidate_source)
+            mode: mutable darray[u8] = []
+            return report_error("benchmark manifest has an invalid mode") if not benchmark_optional_string(manifest, "mode", &mode)
+            append_text(mode, "full") if mode.count == NATIVE_ZERO.usize()
+            return report_error("benchmark manifest has an invalid mode") if not protocol_field_is(mode, "full") and not protocol_field_is(mode, "functions") and not protocol_field_is(mode, "statements") and not protocol_field_is(mode, "values") and not protocol_field_is(mode, "sample") and not protocol_field_is(mode, "diagnostic")
+            repetitions: mutable i64 = NATIVE_ONE
+            warmups: mutable i64 = NATIVE_ZERO
+            sample_period: mutable i64 = NATIVE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS
+            capture_bytes: mutable i64 = NATIVE_DEFAULT_CAPTURE_BYTES
+            return report_error("benchmark manifest has an invalid repetitions value") if not json_read_optional_number_field(manifest, "repetitions", NATIVE_ZERO.usize(), manifest.count, &repetitions) or repetitions < NATIVE_ONE
+            return report_error("benchmark manifest has an invalid warmups value") if not json_read_optional_number_field(manifest, "warmups", NATIVE_ZERO.usize(), manifest.count, &warmups) or warmups < NATIVE_ZERO
+            return report_error("benchmark manifest has an invalid sample_period_microseconds value") if not json_read_optional_number_field(manifest, "sample_period_microseconds", NATIVE_ZERO.usize(), manifest.count, &sample_period) or sample_period < NATIVE_MIN_SAMPLE_PERIOD_MICROSECONDS or sample_period > NATIVE_MAX_SAMPLE_PERIOD_MICROSECONDS
+            return report_error("benchmark manifest has an invalid max_capture_bytes value") if not json_read_optional_number_field(manifest, "max_capture_bytes", NATIVE_ZERO.usize(), manifest.count, &capture_bytes) or capture_bytes < NATIVE_ZERO
+            random_seed: mutable darray[u8] = []
+            working_directory: mutable darray[u8] = []
+            stdin_path: mutable darray[u8] = []
+            return report_error("benchmark manifest has an invalid random_seed") if not benchmark_optional_string(manifest, "random_seed", &random_seed)
+            return report_error("benchmark manifest has an invalid working_directory") if not benchmark_optional_string(manifest, "working_directory", &working_directory)
+            return report_error("benchmark manifest has an invalid stdin") if not benchmark_optional_string(manifest, "stdin", &stdin_path)
+            environment: mutable darray[darray[u8]] = []
+            target_arguments: mutable darray[darray[u8]] = []
+            return report_error("benchmark manifest has an invalid environment array") if not benchmark_string_array(manifest, "environment", &environment)
+            return report_error("benchmark manifest has an invalid target_arguments array") if not benchmark_string_array(manifest, "target_arguments", &target_arguments)
+            for environment_index in 0..<environment.count |environment_index, environment|:
+                return report_error("benchmark environment entries must be KEY=VALUE") if not environment_assignment_valid(environment[environment_index]) or profiler_internal_environment_assignment(environment[environment_index])
+            embed_source: mutable bool = false
+            return report_error("benchmark manifest has an invalid embed_source value") if not json_read_optional_bool_field(manifest, "embed_source", NATIVE_ZERO.usize(), manifest.count, &embed_source)
+            wall_percent: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            wall_ms: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            cpu_percent: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            cpu_ms: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            rss_percent: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            rss_bytes: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            function_percent: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_wall_regression_percent", NATIVE_ZERO.usize(), manifest.count, &wall_percent) or wall_percent < NATIVE_COMPARISON_THRESHOLD_DISABLED or wall_percent > NATIVE_COMPARISON_MAX_PERCENT
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_wall_ms", NATIVE_ZERO.usize(), manifest.count, &wall_ms) or wall_ms < NATIVE_COMPARISON_THRESHOLD_DISABLED
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_cpu_regression_percent", NATIVE_ZERO.usize(), manifest.count, &cpu_percent) or cpu_percent < NATIVE_COMPARISON_THRESHOLD_DISABLED or cpu_percent > NATIVE_COMPARISON_MAX_PERCENT
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_cpu_ms", NATIVE_ZERO.usize(), manifest.count, &cpu_ms) or cpu_ms < NATIVE_COMPARISON_THRESHOLD_DISABLED
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_rss_regression_percent", NATIVE_ZERO.usize(), manifest.count, &rss_percent) or rss_percent < NATIVE_COMPARISON_THRESHOLD_DISABLED or rss_percent > NATIVE_COMPARISON_MAX_PERCENT
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_rss_bytes", NATIVE_ZERO.usize(), manifest.count, &rss_bytes) or rss_bytes < NATIVE_COMPARISON_THRESHOLD_DISABLED
+            return report_error("benchmark manifest has an invalid threshold") if not json_read_optional_number_field(manifest, "max_function_self_regression_percent", NATIVE_ZERO.usize(), manifest.count, &function_percent) or function_percent < NATIVE_COMPARISON_THRESHOLD_DISABLED or function_percent > NATIVE_COMPARISON_MAX_PERCENT
+            baseline_output: darray[u8] = benchmark_path_with_suffix(output_path, NATIVE_BENCHMARK_BASELINE_SUFFIX)
+            candidate_output: darray[u8] = benchmark_path_with_suffix(output_path, NATIVE_BENCHMARK_CANDIDATE_SUFFIX)
+            baseline_manifest: darray[u8] = benchmark_path_with_suffix(baseline_output, NATIVE_BENCHMARK_MANIFEST_SUFFIX)
+            candidate_manifest: darray[u8] = benchmark_path_with_suffix(candidate_output, NATIVE_BENCHMARK_MANIFEST_SUFFIX)
+            return report_error("benchmark intermediate output already exists; choose a fresh --output path") if readable_file(baseline_output) or readable_file(candidate_output) or readable_file(baseline_manifest) or readable_file(candidate_manifest)
+            argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
+            baseline_status: i64 = benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+            if baseline_status != NATIVE_ZERO:
+                benchmark_cleanup_intermediates(baseline_output, candidate_output)
+                return report_error("benchmark baseline capture failed")
+            candidate_status: i64 = benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+            if candidate_status != NATIVE_ZERO:
+                benchmark_cleanup_intermediates(baseline_output, candidate_output)
+                return report_error("benchmark candidate capture failed")
+            comparison_status: i64 = benchmark_compare(argv_zero, baseline_output, candidate_output, output_path, format, wall_percent, wall_ms, cpu_percent, cpu_ms, rss_percent, rss_bytes, function_percent)
+            benchmark_cleanup_intermediates(baseline_output, candidate_output)
+            return comparison_status
