@@ -1,0 +1,109 @@
+# Compiler-emitted source-map decoding and location attribution.
+#
+# The compiler expands Elisa includes into one native compilation unit. Trace callbacks keep
+# the flattened line because that is the stable compiler identity; this module translates that
+# line back to the original file and line using the compiler's FLAT:ORIG:PATH artifact.
+extend ProfilerNative:
+    private:
+        def empty_native_source_map() -> NativeSourceMap:
+            return NativeSourceMap{available: false, flat_lines: [], source_lines: []}
+
+
+        def source_map_number(data: darray[u8]&, start: usize, stop: usize) -> i64:
+            return NATIVE_NEGATIVE_ONE if start >= stop
+            value: mutable i64 = NATIVE_ZERO
+            for index in start..<stop |value, data|:
+                byte: u8 = data[index]
+                return NATIVE_NEGATIVE_ONE if byte < NATIVE_BYTE_ASCII_ZERO or byte > NATIVE_BYTE_ASCII_NINE
+                digit: i64 = (byte - NATIVE_BYTE_ASCII_ZERO).i64()
+                return NATIVE_NEGATIVE_ONE if value > (NATIVE_I64_MAX - digit) / NATIVE_DECIMAL_BASE
+                value <- value * NATIVE_DECIMAL_BASE + digit
+            return value
+
+
+        def parse_native_source_map(data: darray[u8]&) -> NativeSourceMap:
+            result: mutable NativeSourceMap = empty_native_source_map()
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < data.count |line_start, data, result|:
+                line_stop: mutable usize = line_start
+                while line_stop < data.count and data[line_stop] != NATIVE_BYTE_NEWLINE |line_stop, data|:
+                    line_stop <- line_stop + NATIVE_ONE.usize()
+                first_separator: mutable usize = line_start
+                while first_separator < line_stop and data[first_separator] != NATIVE_BYTE_COLON |first_separator, data|:
+                    first_separator <- first_separator + NATIVE_ONE.usize()
+                second_separator: mutable usize = first_separator + NATIVE_ONE.usize()
+                while second_separator < line_stop and data[second_separator] != NATIVE_BYTE_COLON |second_separator, data|:
+                    second_separator <- second_separator + NATIVE_ONE.usize()
+                flat_line: i64 = source_map_number(data, line_start, first_separator)
+                source_line: i64 = source_map_number(data, first_separator + NATIVE_ONE.usize(), second_separator)
+                path: mutable darray[u8] = []
+                if second_separator < line_stop:
+                    for index in second_separator + NATIVE_ONE.usize()..<line_stop |path, data|:
+                        path.push(data[index])
+                valid: bool = flat_line > NATIVE_ZERO and source_line > NATIVE_ZERO and path.count > NATIVE_ZERO.usize()
+                valid <- valid and (result.flat_lines.count == NATIVE_ZERO.usize() or flat_line > result.flat_lines[result.flat_lines.count - NATIVE_ONE.usize()])
+                if valid:
+                    result.flat_lines.push(flat_line)
+                    result.source_lines.push(source_line)
+                line_start <- line_stop + NATIVE_ONE.usize()
+            result.available <- result.flat_lines.count > NATIVE_ZERO.usize()
+            return result
+
+
+        def resolve_native_source_location(source_map: NativeSourceMap&, compiler_line: i64, mapped_line: mutable i64) -> bool:
+            mapped_line <- compiler_line
+            return false if not source_map.available or compiler_line <= NATIVE_ZERO
+            selected: mutable i64 = NATIVE_NEGATIVE_ONE
+            for index in 0..<source_map.flat_lines.count |selected, source_map, compiler_line|:
+                break if source_map.flat_lines[index] > compiler_line
+                selected <- index.i64()
+            return false if selected < NATIVE_ZERO
+            mapped_line <- source_map.source_lines[selected.usize()] + (compiler_line - source_map.flat_lines[selected.usize()])
+            return true
+
+
+        def source_map_line_for(flat_lines: darray[i64]&, source_lines: darray[i64]&, compiler_line: i64) -> i64:
+            return compiler_line if compiler_line <= NATIVE_ZERO or flat_lines.count == NATIVE_ZERO.usize()
+            selected: mutable i64 = NATIVE_NEGATIVE_ONE
+            for index in 0..<flat_lines.count |selected, flat_lines, compiler_line|:
+                break if flat_lines[index] > compiler_line
+                selected <- index.i64()
+            return compiler_line if selected < NATIVE_ZERO
+            return source_lines[selected.usize()] + (compiler_line - flat_lines[selected.usize()])
+
+
+        def source_map_path_for(data: darray[u8]&, compiler_line: i64) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
+            result: mutable darray[u8] = []
+            return result if compiler_line <= NATIVE_ZERO
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < data.count |line_start, data, result|:
+                line_stop: mutable usize = line_start
+                while line_stop < data.count and data[line_stop] != NATIVE_BYTE_NEWLINE |line_stop, data|:
+                    line_stop <- line_stop + NATIVE_ONE.usize()
+                first_separator: mutable usize = line_start
+                while first_separator < line_stop and data[first_separator] != NATIVE_BYTE_COLON |first_separator, data|:
+                    first_separator <- first_separator + NATIVE_ONE.usize()
+                flat_line: i64 = source_map_number(data, line_start, first_separator)
+                if flat_line > compiler_line:
+                    break
+                if flat_line > NATIVE_ZERO and first_separator < line_stop:
+                    second_separator: mutable usize = first_separator + NATIVE_ONE.usize()
+                    while second_separator < line_stop and data[second_separator] != NATIVE_BYTE_COLON |second_separator, data|:
+                        second_separator <- second_separator + NATIVE_ONE.usize()
+                    if second_separator < line_stop:
+                        result <- []
+                        for index in second_separator + NATIVE_ONE.usize()..<line_stop |result, data|:
+                            result.push(data[index])
+                line_start <- line_stop + NATIVE_ONE.usize()
+            return result
+
+
+        def append_mapped_source_location(summary: mutable CaptureSummary&, source_map: NativeSourceMap&, compiler_line: i64, mapped_line: mutable i64) -> void can[Abort.Panic, Memory.Allocate]:
+            mapped: bool = resolve_native_source_location(source_map, compiler_line, &mapped_line)
+            if source_map.available:
+                if mapped:
+                    summary.source_mapping_mapped <- native_saturating_add(summary.source_mapping_mapped, NATIVE_ONE)
+                else:
+                    summary.source_mapping_unmapped <- native_saturating_add(summary.source_mapping_unmapped, NATIVE_ONE)
+            else:
+                summary.source_mapping_mapped <- native_saturating_add(summary.source_mapping_mapped, NATIVE_ONE)

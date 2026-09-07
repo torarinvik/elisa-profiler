@@ -104,6 +104,7 @@ extern profiler_ffi_sview_len(view: sview) -> usize
 extern profiler_ffi_sview_at(view: sview, index: usize) -> u8
 
 include "./profiler_model.elisa"
+include "./profiler_source_map.elisa"
 include "./profiler_protocol.elisa"
 include "./profiler_hash.elisa"
 include "./profiler_json.elisa"
@@ -593,6 +594,7 @@ extend ProfilerNative:
 
         def cleanup_temp(directory: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             remove_temp_file(directory, "/target.o")
+            remove_temp_file(directory, "/source-map.txt")
             remove_temp_file(directory, "/target-renamed.o")
             remove_temp_file(directory, "/runtime-collector.o")
             remove_temp_file(directory, "/profiler-runtime.o")
@@ -1353,10 +1355,12 @@ extend ProfilerNative:
             append_active_stack(buffer, summary)
             append_text(buffer, ",")
             append_quality(buffer, summary, status, event_trace, timed_out, recovered)
-            append_text(buffer, ",\"source_mapping\":{\"mode\":\"native-summary\",\"mapped_locations\":")
-            append_i64(buffer, summary.location_record_count)
+            append_text(buffer, ",\"source_mapping\":{\"mode\":\"")
+            append_text(buffer, "compiler-line-map" if summary.source_mapping_available else "native-summary")
+            append_text(buffer, "\",\"mapped_locations\":")
+            append_i64(buffer, summary.source_mapping_mapped)
             append_text(buffer, ",\"unmapped_locations\":")
-            append_i64(buffer, NATIVE_ZERO)
+            append_i64(buffer, summary.source_mapping_unmapped)
             append_text(buffer, "},\"run\":{\"collection_mode\":")
             append_json_string(buffer, mode)
             append_text(buffer, ",\"outcome\":")
@@ -1816,7 +1820,10 @@ extend ProfilerNative:
             source_bytes: darray[u8] = read_file(source)
             return report_error("source file could not be read for recovery") if source_bytes.count == NATIVE_ZERO.usize()
             return report_error("source changed since capture; recovery would misattribute locations") if not byte_arrays_equal(source_digest, sha256_hex(source_bytes))
-            summary: CaptureSummary = parse_capture(capture, source, true, NATIVE_ONE, not protocol_field_is(mode, "sample"))
+            recovery_source_map_flat_lines: mutable darray[i64] = []
+            recovery_source_map_source_lines: mutable darray[i64] = []
+            recovery_source_map_data: mutable darray[u8] = []
+            summary: CaptureSummary = parse_capture(capture, source, recovery_source_map_data, recovery_source_map_flat_lines, recovery_source_map_source_lines, true, NATIVE_ONE, not protocol_field_is(mode, "sample"))
             return report_protocol_error(summary) if summary.malformed
             return report_error("capture contains no complete framed records") if summary.valid_frames == NATIVE_ZERO
             recovered: mutable darray[u8] = []
@@ -2287,6 +2294,7 @@ extend ProfilerNative:
             append_text(temporary, "-")
             append_i64(temporary, nonce.nanoseconds)
             target_object: darray[u8] = path_with_suffix(temporary, "/target.o")
+            source_map_path: darray[u8] = path_with_suffix(temporary, "/source-map.txt")
             renamed_object: darray[u8] = path_with_suffix(temporary, "/target-renamed.o")
             runtime_collector_object: darray[u8] = path_with_suffix(temporary, "/runtime-collector.o")
             collector_object: darray[u8] = path_with_suffix(temporary, "/profiler-runtime.o")
@@ -2344,7 +2352,7 @@ extend ProfilerNative:
                 if build_ok:
                     executable <- prebuilt_executable
             else:
-                build_ok <- build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host)
+                build_ok <- build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, source_map_path, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host)
             if not build_ok:
                 build_diagnostics: mutable darray[u8] = read_file(compile_error_path)
                 write_stderr(build_diagnostics)
@@ -2363,9 +2371,13 @@ extend ProfilerNative:
             if dependency_after_compile.count == NATIVE_ZERO.usize() or not byte_arrays_equal(dependency_digest, dependency_after_compile):
                 cleanup_temp(temporary)
                 return report_error("source dependency tree changed while the target was being built; retry with stable sources")
+            source_map_data: darray[u8] = read_file(source_map_path)
+            source_map_available: bool = source_map_data.count > NATIVE_ZERO.usize()
+            source_map: mutable NativeSourceMap = parse_native_source_map(source_map_data)
             publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host) if not prebuilt_requested
             compile_elapsed_ns: i64 = NATIVE_ZERO if prebuilt_requested else elapsed_nanoseconds(build_start, read_monotonic())
             summary: mutable CaptureSummary = empty_capture_summary()
+            summary.source_mapping_available <- source_map_available
             return report_error("could not write profiler progress") if not write_progress(progress_path, "compile_complete", NATIVE_ZERO, requested_repetitions, compile_elapsed_ns, summary)
             repetition_records: mutable darray[u8] = []
             all_execution_times: mutable darray[i64] = []
@@ -2429,7 +2441,7 @@ extend ProfilerNative:
                         cleanup_temp(temporary)
                         return report_error("native target produced no collector capture")
                 else:
-                    current_summary <- parse_capture(capture, display_source, run_result.timed_out, repetition, not protocol_field_is(mode, "sample"))
+                    current_summary <- parse_capture(capture, display_source, source_map_data, source_map.flat_lines, source_map.source_lines, run_result.timed_out, repetition, not protocol_field_is(mode, "sample"))
                     if current_summary.malformed:
                         cleanup_temp(temporary)
                         return report_protocol_error(current_summary)

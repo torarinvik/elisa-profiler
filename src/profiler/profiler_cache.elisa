@@ -387,8 +387,16 @@ extend ProfilerNative:
             arguments.push(argument)
 
 
+        def set_source_map_output(path: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            path_copy: mutable darray[u8] = []
+            path_copy.extend(path)
+            path_copy.push(NATIVE_BYTE_NUL)
+            path_cstr: cstr = (&path_copy[0]).cast[cstr] can Unsafe.PointerCast
+            return profiler_ffi_setenv(NATIVE_STAGE1_LINE_MAP_OUTPUT_ENVIRONMENT, path_cstr, NATIVE_ENV_OVERWRITE) == NATIVE_ZERO
+
+
         def build_instrumented_executable(
-            cache: mutable NativeBuildCache&, cache_requested: bool, cache_directory: darray[u8]&, source: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, compiler_stage1: darray[u8]&, compiler_binary: darray[u8]&, compiler_tool: darray[u8]&, objcopy_tool: darray[u8]&, collector_source: darray[u8]&, runtime_object: darray[u8]&, target_object: darray[u8]&, renamed_object: darray[u8]&, runtime_collector_object: darray[u8]&, collector_object: darray[u8]&, executable: darray[u8]&, compile_output_path: darray[u8]&, compile_error_path: darray[u8]&, link_error_path: darray[u8]&, opt_level: i64, host: NativeHostMetadata
+            cache: mutable NativeBuildCache&, cache_requested: bool, cache_directory: darray[u8]&, source: darray[u8]&, source_map_path: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, compiler_stage1: darray[u8]&, compiler_binary: darray[u8]&, compiler_tool: darray[u8]&, objcopy_tool: darray[u8]&, collector_source: darray[u8]&, runtime_object: darray[u8]&, target_object: darray[u8]&, renamed_object: darray[u8]&, runtime_collector_object: darray[u8]&, collector_object: darray[u8]&, executable: darray[u8]&, compile_output_path: darray[u8]&, compile_error_path: darray[u8]&, link_error_path: darray[u8]&, opt_level: i64, host: NativeHostMetadata
         ) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             prepare_native_build_cache(cache, cache_requested, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host)
             return true if try_native_build_cache(cache, cache_directory, executable)
@@ -403,7 +411,10 @@ extend ProfilerNative:
             cache_append_argument(command_arguments, "-o")
             cache_append_path_argument(command_arguments, target_object)
             cache_append_path_argument(command_arguments, source)
-            return false if run_tool_direct(compiler_binary, command_arguments, compile_output_path, compile_error_path) != NATIVE_ZERO
+            return false if not set_source_map_output(source_map_path)
+            compile_status: i64 = run_tool_direct(compiler_binary, command_arguments, compile_output_path, compile_error_path)
+            _ = profiler_ffi_unsetenv(NATIVE_STAGE1_LINE_MAP_OUTPUT_ENVIRONMENT)
+            return false if compile_status != NATIVE_ZERO
 
             command_arguments <- []
             cache_append_argument(command_arguments, "--redefine-sym")

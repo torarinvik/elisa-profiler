@@ -768,6 +768,15 @@ def main():
         assert {"transform", "checksum", "normalize", "mix"}.issubset(pipeline_functions), pipeline_functions
         assert pipeline["summary"]["events"] > 0
 
+        included_output = work / "included-source-map.json"
+        run("profile", ROOT / "examples/included_program.elisa", "--format", "json", "--output", included_output)
+        included = json.loads(included_output.read_text(encoding="utf-8"))
+        assert included["source_mapping"]["mode"] == "compiler-line-map"
+        helper_locations = [location for location in included["locations"] if location["function"] == "included_work"]
+        assert helper_locations
+        assert all(location["source"].endswith("included_helper.elisa") for location in helper_locations)
+        assert any(location["line"] != location["compiler_line"] for location in helper_locations)
+
         functions_capture = work / "functions.json"
         values_capture = work / "values.json"
         run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "functions",

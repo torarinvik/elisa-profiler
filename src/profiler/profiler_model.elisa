@@ -39,6 +39,7 @@ module ProfilerNative:
         const NATIVE_PROFILE_SAMPLE_PERIOD_ENVIRONMENT: cstr = "ELISA_PROFILE_SAMPLE_PERIOD_US"
         const NATIVE_PROFILE_MAX_CAPTURE_BYTES_ENVIRONMENT: cstr = "ELISA_PROFILE_MAX_CAPTURE_BYTES"
         const NATIVE_PROFILE_RECENT_PATH_ENVIRONMENT: cstr = "ELISA_PROFILE_RECENT_PATH"
+        const NATIVE_STAGE1_LINE_MAP_OUTPUT_ENVIRONMENT: cstr = "ELISA_STAGE1_LINE_MAP_OUTPUT"
         const NATIVE_RANDOM_SEED_ENVIRONMENT: cstr = "ELISA_RANDOM_SEED"
         const NATIVE_COLLECTOR_STATUS_UNKNOWN: i64 = 0
         const NATIVE_COLLECTOR_STATUS_OK: i64 = 1
@@ -401,6 +402,11 @@ module ProfilerNative:
             from: mutable darray[u8]
             replacement: mutable darray[u8]
 
+        struct NativeSourceMap:
+            available: mutable bool
+            flat_lines: mutable darray[i64]
+            source_lines: mutable darray[i64]
+
         struct CaptureSummary:
             events: mutable i64
             locations: mutable i64
@@ -427,6 +433,9 @@ module ProfilerNative:
             sample_period_microseconds: mutable i64
             sampling_setup_failed: mutable i64
             collector_status: mutable i64
+            source_mapping_available: mutable bool
+            source_mapping_mapped: mutable i64
+            source_mapping_unmapped: mutable i64
             location_limit: mutable i64
             call_edge_limit: mutable i64
             stack_limit: mutable i64

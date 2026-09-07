@@ -128,7 +128,7 @@ extend ProfilerNative:
             return result
 
 
-        def append_location_record(summary: mutable CaptureSummary&, location_records: mutable darray[u8]&, function_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
+        def append_location_record(summary: mutable CaptureSummary&, location_records: mutable darray[u8]&, function_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, source: darray[u8]&, source_map_data: darray[u8]&, source_map_flat_lines: darray[i64]&, source_map_source_lines: darray[i64]&, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.location_record_count, NATIVE_PROTOCOL_ERROR_LOCATION, NATIVE_MAX_PROTOCOL_DETAIL_RECORDS)
             kind_field: mutable darray[u8] = []
             function_field: mutable darray[u8] = []
@@ -210,7 +210,7 @@ extend ProfilerNative:
             append_text(location_records, ",\"repetition\":")
             append_i64(location_records, repetition)
             append_text(location_records, ",\"line\":")
-            append_protocol_number(location_records, line_field)
+            append_i64(location_records, source_map_line_for(source_map_flat_lines, source_map_source_lines, protocol_number_field(line_field)))
             append_text(location_records, ",\"count\":")
             append_protocol_number(location_records, count_field)
             count_number: i64 = protocol_number_field(count_field)
@@ -221,6 +221,7 @@ extend ProfilerNative:
             else:
                 summary.function_events <- native_saturating_add(summary.function_events, count_number)
             summary.location_record_count <- native_saturating_add(summary.location_record_count, NATIVE_ONE)
+            summary.source_mapping_mapped <- native_saturating_add(summary.source_mapping_mapped, NATIVE_ONE)
             if kind_name == "value":
                 append_text(location_records, ",\"variable\":")
                 if protocol_field_is(variable_field, "-"):
@@ -258,7 +259,8 @@ extend ProfilerNative:
             append_text(location_records, ",\"compiler_line\":")
             append_protocol_number(location_records, line_field)
             append_text(location_records, ",\"source\":")
-            append_json_string(location_records, source)
+            mapped_source: darray[u8] = source_map_path_for(source_map_data, protocol_number_field(line_field))
+            append_json_string(location_records, source if mapped_source.count == NATIVE_ZERO.usize() else mapped_source)
             append_text(location_records, ",\"source_text\":null")
             append_text(location_records, "}")
             if kind_name == "function":
@@ -627,7 +629,7 @@ extend ProfilerNative:
             return value
         
         
-        def parse_capture(data: darray[u8]&, source: darray[u8]&, allow_partial_tail: bool, repetition: i64, location_timing: bool) -> CaptureSummary:
+        def parse_capture(data: darray[u8]&, source: darray[u8]&, source_map_data: darray[u8]&, source_map_flat_lines: darray[i64]&, source_map_source_lines: darray[i64]&, allow_partial_tail: bool, repetition: i64, location_timing: bool) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
@@ -654,6 +656,9 @@ extend ProfilerNative:
                 sample_period_microseconds: NATIVE_ZERO,
                 sampling_setup_failed: NATIVE_ZERO,
                 collector_status: NATIVE_COLLECTOR_STATUS_UNKNOWN,
+                source_mapping_available: source_map_flat_lines.count > NATIVE_ZERO.usize(),
+                source_mapping_mapped: NATIVE_ZERO,
+                source_mapping_unmapped: NATIVE_ZERO,
                 location_limit: NATIVE_ZERO,
                 call_edge_limit: NATIVE_ZERO,
                 stack_limit: NATIVE_ZERO,
@@ -843,7 +848,7 @@ extend ProfilerNative:
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tlocation\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tlocation\t")
-                        append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source, repetition)
+                        append_location_record(&summary, &location_records, &function_records, data, &cursor, line_stop, source, source_map_data, source_map_flat_lines, source_map_source_lines, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tcall\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tcall\t")
                         append_call_record(&summary, &call_edge_records, data, &cursor, line_stop, repetition)

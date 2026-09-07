@@ -59,6 +59,9 @@ extend ProfilerNative:
                 sample_period_microseconds: NATIVE_ZERO,
                 sampling_setup_failed: NATIVE_ZERO,
                 collector_status: NATIVE_COLLECTOR_STATUS_UNKNOWN,
+                source_mapping_available: false,
+                source_mapping_mapped: NATIVE_ZERO,
+                source_mapping_unmapped: NATIVE_ZERO,
                 sample_records: [],
                 malformed: false,
                 malformed_code: NATIVE_ZERO,
@@ -91,6 +94,9 @@ extend ProfilerNative:
             destination.sample_period_microseconds <- incoming.sample_period_microseconds if incoming.sample_period_microseconds > NATIVE_ZERO
             destination.sampling_setup_failed <- incoming.sampling_setup_failed if incoming.sampling_setup_failed != NATIVE_ZERO
             destination.collector_status <- incoming.collector_status if incoming.collector_status > destination.collector_status
+            destination.source_mapping_available <- true if incoming.source_mapping_available
+            destination.source_mapping_mapped <- native_saturating_add(destination.source_mapping_mapped, incoming.source_mapping_mapped)
+            destination.source_mapping_unmapped <- native_saturating_add(destination.source_mapping_unmapped, incoming.source_mapping_unmapped)
             destination.location_limit <- incoming.location_limit
             destination.call_edge_limit <- incoming.call_edge_limit
             destination.stack_limit <- incoming.stack_limit
