@@ -39,7 +39,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="elisa-profiler-build-cache-") as directory:
         root = Path(directory)
         source = root / "input.elisa"
-        cache = root / "cache"
+        cache = root / "absent-parent" / "cache"
         source.write_text("def main() -> i64:\n    return 0\n", encoding="utf-8")
 
         first = root / "first.json"

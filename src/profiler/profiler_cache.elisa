@@ -149,6 +149,14 @@ extend ProfilerNative:
 
 
         def cache_directory_ready(directory: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
+            last_separator: mutable i64 = NATIVE_NEGATIVE_ONE
+            for index in 0..<directory.count |index, directory, last_separator|:
+                last_separator <- index.i64() if directory[index] == NATIVE_BYTE_SLASH
+            if last_separator > NATIVE_ZERO:
+                parent: mutable darray[u8] = []
+                for index in 0..<last_separator.usize() |index, parent, directory|:
+                    parent.push(directory[index])
+                return false if not cache_directory_ready(parent)
             copy: mutable darray[u8] = []
             copy.extend(directory)
             copy.push(NATIVE_BYTE_NUL)
