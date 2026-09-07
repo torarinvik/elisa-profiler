@@ -1,0 +1,4 @@
+module FixtureLeft:
+    public:
+        def worker(value: i64) -> i64:
+            return value
