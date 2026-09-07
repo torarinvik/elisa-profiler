@@ -121,6 +121,8 @@ the program, and reports function-entry, statement, and scalar-value events:
         --format json -o profiles/hot-loop.json
     bin/elisa-profiler profile examples/hot_loop.elisa --cache-dir .cache/elisa-profiler \
         --format json -o profiles/hot-loop-cached.json
+    bin/elisa-profiler profile examples/hot_loop.elisa --prebuilt /absolute/path/to/instrumented-program \
+        --format json -o profiles/hot-loop-prebuilt.json
     bin/elisa-profiler report profiles/hot-loop.json --format html \
         -o profiles/hot-loop.html
     bin/elisa-profiler recover profiles/hot-loop.json.manifest.json \
@@ -253,6 +255,7 @@ Useful controls:
     --max-capture-bytes N  shared collector byte budget (0 means unlimited; default: 67108864)
     --cache-dir PATH        reuse validated instrumented executables in PATH (opt-in)
     --no-cache              explicitly disable build-cache lookup for this capture
+    --prebuilt PATH         run an existing absolute instrumented executable after ABI validation
     ELISA_PROFILE_MAX_LOCATIONS=N  cap distinct source-location records (0 means unlimited)
     ELISA_PROFILE_MAX_CALL_EDGES=N  cap distinct caller-to-callee records (0 means unlimited)
     ELISA_PROFILE_MAX_STACKS=N  cap distinct folded call-path records (0 means unlimited)
@@ -260,6 +263,14 @@ Useful controls:
     --stdin PATH           provide PATH as target standard input
     --env KEY=VALUE        set a target environment variable (repeatable)
     -- TARGET_ARG...       forward target arguments without shell re-parsing
+
+`--prebuilt PATH` keeps the source argument for dependency/source identity but
+skips target compilation. `PATH` must be absolute, executable, and already
+contain the profiled Elisa entry ABI plus the trace callback family required by
+the selected mode; the native validator checks defined symbols with `llvm-nm`
+before launching it. Reports mark this choice as `target.build_kind = prebuilt`
+and retain the executable path. An ordinary or partially instrumented binary is
+rejected instead of being presented as a valid profile.
 
 `--env` rejects the profiler's private transport variables (`ELISA_PROFILE_FD`,
 framing, mode, trace, sample-period, capture-budget, and recent-path keys). This prevents a

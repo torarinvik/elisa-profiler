@@ -111,6 +111,7 @@ include "./profiler_comparison.elisa"
 include "./profiler_rendering.elisa"
 include "./profiler_execution.elisa"
 include "./profiler_cache.elisa"
+include "./profiler_prebuilt.elisa"
 include "./profiler_aggregation.elisa"
 include "./profiler_capabilities.elisa"
 
@@ -1175,8 +1176,19 @@ extend ProfilerNative:
             append_text(buffer, "}")
 
 
+        def append_target_build(buffer: mutable darray[u8]&, build_kind: darray[u8]&, executable: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, ",\"target\":{\"build_kind\":")
+            append_json_string(buffer, build_kind)
+            append_text(buffer, ",\"executable\":")
+            if executable.count == NATIVE_ZERO.usize():
+                append_text(buffer, "null")
+            else:
+                append_json_string(buffer, executable)
+            append_text(buffer, "}")
+
+
         def append_report(
-            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_manifest: darray[u8]&, compiler_stage1: darray[u8]&, stage1_digest: darray[u8]&, runtime_object: darray[u8]&, runtime_digest: darray[u8]&, build_cache: NativeBuildCache, host: NativeHostMetadata, summary: CaptureSummary,
+            buffer: mutable darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, embed_source: bool, mode: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_manifest: darray[u8]&, compiler_stage1: darray[u8]&, stage1_digest: darray[u8]&, runtime_object: darray[u8]&, runtime_digest: darray[u8]&, build_cache: NativeBuildCache, build_kind: darray[u8]&, prebuilt_executable: darray[u8]&, host: NativeHostMetadata, summary: CaptureSummary,
             status: i64, opt_level: i64, event_trace: bool, recent_path: bool, timed_out: bool, recovered: bool, timeout_ns: i64, program_stdout: darray[u8]&, program_stdout_truncated: bool, program_stderr: darray[u8]&, program_stderr_truncated: bool, execution_ns: i64, compile_ns: i64,
             repetition_records: darray[u8]&, requested_repetitions: i64, completed_repetitions: i64, successful_repetitions: i64, failed_repetitions: i64,
             warmup_repetitions: i64, warmup_ns: i64, execution_min_ns: i64, execution_mean_ns: i64, execution_max_ns: i64, execution_median_ns: i64, execution_stdev_ns: i64, execution_ci95_low_ns: i64, execution_ci95_high_ns: i64, execution_ci95_available: bool,
@@ -1211,6 +1223,7 @@ extend ProfilerNative:
             append_json_optional_sha256(buffer, runtime_digest)
             append_text(buffer, "}")
             append_build_cache(buffer, build_cache)
+            append_target_build(buffer, build_kind, prebuilt_executable)
             append_json_host(buffer, host)
             append_json_workload(buffer, source_bytes, dependency_digest, working_directory, stdin_path, environment, target_arguments)
             if embed_source:
@@ -1613,6 +1626,9 @@ extend ProfilerNative:
             runtime_object: mutable darray[u8] = []
             runtime_digest: mutable darray[u8] = []
             empty_build_cache: NativeBuildCache = empty_native_build_cache()
+            recovered_build_kind: mutable darray[u8] = []
+            append_text(recovered_build_kind, "recovered")
+            empty_prebuilt_executable: mutable darray[u8] = []
             append_text(compiler_root, "unavailable-recovery")
             append_text(compiler_branch, "unavailable-recovery")
             append_text(compiler_commit, "unavailable-recovery")
@@ -1640,7 +1656,7 @@ extend ProfilerNative:
             append_repetition_record(&repetition_records, NATIVE_ONE, NATIVE_ONE, recovery_result, summary, false, false)
             append_report(
                 buffer, source, source_bytes, false, mode, compiler_root, compiler_branch, compiler_commit,
-                true, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, empty_build_cache, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
+                true, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, empty_build_cache, recovered_build_kind, empty_prebuilt_executable, empty_host, summary, NATIVE_NEGATIVE_ONE, NATIVE_ZERO, false, false, false, true,
                 NATIVE_ZERO, empty_program_stdout, false, empty_program_stderr, false, NATIVE_ZERO, NATIVE_ZERO, repetition_records,
                 NATIVE_ONE, NATIVE_ONE, NATIVE_ZERO, NATIVE_ONE, NATIVE_ZERO, NATIVE_ZERO,
                 NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO, NATIVE_ZERO,
@@ -1858,7 +1874,7 @@ extend ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO, --cache-dir PATH, or --no-cache] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO, --cache-dir PATH, --no-cache, or --prebuilt EXECUTABLE] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
@@ -1866,7 +1882,7 @@ extend ProfilerNative:
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -1898,9 +1914,11 @@ extend ProfilerNative:
             cache_directory: mutable darray[u8] = []
             cache_requested: mutable bool = false
             cache_disabled: mutable bool = false
+            prebuilt_executable: mutable darray[u8] = []
+            prebuilt_requested: mutable bool = false
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, cache_directory, cache_requested, cache_disabled, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -1994,6 +2012,14 @@ extend ProfilerNative:
                     return report_error("--no-cache may be specified only once") if cache_disabled
                     cache_disabled <- true
                     index <- index + NATIVE_ONE
+                    continue
+                if profiler_ffi_strcmp(argument, "--prebuilt") == NATIVE_ZERO:
+                    return report_error("--prebuilt requires an absolute executable path") if index + NATIVE_ONE >= argc
+                    return report_error("--prebuilt may be specified only once") if prebuilt_requested
+                    copy_cstr(prebuilt_executable, slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--prebuilt requires an absolute executable path") if prebuilt_executable.count == NATIVE_ZERO.usize() or prebuilt_executable[NATIVE_ZERO.usize()] != NATIVE_BYTE_SLASH
+                    prebuilt_requested <- true
+                    index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--mode") == NATIVE_ZERO:
                     return report_error("--mode requires full, functions, statements, values, sample, or diagnostic") if index + NATIVE_ONE >= argc or mode_seen
@@ -2127,6 +2153,8 @@ extend ProfilerNative:
             environment_or("ELISA_CLANG", "clang", compiler_tool)
             objcopy_tool: mutable darray[u8] = []
             environment_or("ELISA_LLVM_OBJCOPY", "llvm-objcopy", objcopy_tool)
+            nm_tool: mutable darray[u8] = []
+            environment_or("ELISA_NM", "llvm-nm", nm_tool)
             git_tool: mutable darray[u8] = []
             environment_or("ELISA_GIT", "git", git_tool)
             collector_source: mutable darray[u8] = []
@@ -2149,7 +2177,7 @@ extend ProfilerNative:
             renamed_object: darray[u8] = path_with_suffix(temporary, "/target-renamed.o")
             runtime_collector_object: darray[u8] = path_with_suffix(temporary, "/runtime-collector.o")
             collector_object: darray[u8] = path_with_suffix(temporary, "/profiler-runtime.o")
-            executable: darray[u8] = path_with_suffix(temporary, "/profiled-program")
+            executable: mutable darray[u8] = path_with_suffix(temporary, "/profiled-program")
             capture_path: darray[u8] = path_with_suffix(temporary, "/capture.txt")
             dependency_path: darray[u8] = path_with_suffix(temporary, "/dependencies.txt")
             capture_manifest_path: mutable darray[u8] = []
@@ -2166,6 +2194,7 @@ extend ProfilerNative:
             compiler_commit_path: darray[u8] = path_with_suffix(temporary, "/compiler-commit")
             compiler_dirty_path: darray[u8] = path_with_suffix(temporary, "/compiler-dirty")
             compiler_metadata_error_path: darray[u8] = path_with_suffix(temporary, "/compiler-metadata.err")
+            prebuilt_symbols_error_path: darray[u8] = path_with_suffix(temporary, "/prebuilt-symbols.err")
             temporary_cstr: mutable darray[u8] = []
             temporary_cstr.extend(temporary)
             temporary_cstr.push(NATIVE_BYTE_NUL)
@@ -2190,13 +2219,27 @@ extend ProfilerNative:
             dirty_metadata: darray[u8] = read_git_metadata(compiler_root, "dirty", compiler_dirty_path, compiler_metadata_error_path, git_tool)
             compiler_dirty: bool = dirty_metadata.count > NATIVE_ZERO.usize()
             build_cache: mutable NativeBuildCache = empty_native_build_cache()
-            build_ok: bool = build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host)
+            build_kind: mutable darray[u8] = []
+            if prebuilt_requested:
+                append_text(build_kind, "prebuilt")
+            else:
+                append_text(build_kind, "instrumented_source")
+            build_ok: mutable bool = true
+            if prebuilt_requested:
+                build_ok <- validate_prebuilt_executable(prebuilt_executable, mode, nm_tool, compile_output_path, prebuilt_symbols_error_path)
+                if build_ok:
+                    executable <- prebuilt_executable
+            else:
+                build_ok <- build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host)
             if not build_ok:
                 build_diagnostics: mutable darray[u8] = read_file(compile_error_path)
                 write_stderr(build_diagnostics)
+                prebuilt_diagnostics: mutable darray[u8] = read_file(prebuilt_symbols_error_path)
+                write_stderr(prebuilt_diagnostics) if prebuilt_requested
                 build_diagnostics <- read_file(link_error_path)
                 write_stderr(build_diagnostics)
                 cleanup_temp(temporary)
+                return report_error("prebuilt executable is not a compatible Elisa instrumented target") if prebuilt_requested
                 return report_error("could not build instrumented target")
             source_after_compile: darray[u8] = read_file(source)
             if not byte_arrays_equal(source_check, source_after_compile):
@@ -2206,8 +2249,8 @@ extend ProfilerNative:
             if dependency_after_compile.count == NATIVE_ZERO.usize() or not byte_arrays_equal(dependency_digest, dependency_after_compile):
                 cleanup_temp(temporary)
                 return report_error("source dependency tree changed while the target was being built; retry with stable sources")
-            publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host)
-            compile_elapsed_ns: i64 = elapsed_nanoseconds(build_start, read_monotonic())
+            publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host) if not prebuilt_requested
+            compile_elapsed_ns: i64 = NATIVE_ZERO if prebuilt_requested else elapsed_nanoseconds(build_start, read_monotonic())
             summary: mutable CaptureSummary = empty_capture_summary()
             return report_error("could not write profiler progress") if not write_progress(progress_path, "compile_complete", NATIVE_ZERO, requested_repetitions, compile_elapsed_ns, summary)
             repetition_records: mutable darray[u8] = []
@@ -2391,7 +2434,7 @@ extend ProfilerNative:
             elif format_html:
                 append_html_report(report, display_source, source_check, dependency_digest, mode, host, summary, final_exit_code, overall_status, overall_timed_out, timeout_ns, total_execution_ns, execution_mean_ns, compile_elapsed_ns, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, completed_repetitions, successful_repetitions, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, working_directory, stdin_path, environment, target_arguments)
             else:
-                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, build_cache, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
+                append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, build_cache, build_kind, prebuilt_executable, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
                 append_profile_artifact(&artifact, report)

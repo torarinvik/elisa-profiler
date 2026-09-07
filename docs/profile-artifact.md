@@ -70,6 +70,15 @@ Cache lookup is conservative: missing, malformed, permission-invalid, or
 unavailable entries are rebuilt, and a dependency change produces a new key.
 The cache is opt-in; `--no-cache` makes that policy explicit.
 
+An existing instrumented executable can be reused with
+`profile SOURCE --prebuilt /absolute/path/to/program`. The source argument is
+still required so dependency and source identities remain explicit. The native
+validator requires an executable absolute path and checks its defined Elisa
+entry and trace callback symbols with `llvm-nm`, including the callback family
+needed by the selected collection mode. Reports record
+`target.build_kind = prebuilt` and the supplied executable path; ordinary or
+partially instrumented binaries are rejected before launch.
+
 If a `running`, `finalizing`, or `partial` manifest remains beside a capture,
 `elisa-profiler recover MANIFEST --format json` reconstructs a v2 report from
 the checksum-validated framed records. Recovery verifies the source digest and

@@ -73,6 +73,15 @@
       },
       "additionalProperties": false
     },
+    "target": {
+      "type": "object",
+      "required": ["build_kind", "executable"],
+      "properties": {
+        "build_kind": { "type": "string", "enum": ["instrumented_source", "prebuilt", "recovered"] },
+        "executable": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
     "host": {
       "type": ["object", "null"],
       "properties": {

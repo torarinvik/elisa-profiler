@@ -167,6 +167,7 @@ module ProfilerNative:
         const NATIVE_BYTE_MINUS: u8 = 45
         const NATIVE_BYTE_ASCII_ZERO: u8 = 48
         const NATIVE_BYTE_ASCII_NINE: u8 = 57
+        const NATIVE_BYTE_UNDERSCORE: u8 = 95
         const NATIVE_BYTE_ASCII_UPPER_A: u8 = 65
         const NATIVE_BYTE_ASCII_UPPER_F: u8 = 70
         const NATIVE_BYTE_ASCII_UPPER_L: u8 = 76

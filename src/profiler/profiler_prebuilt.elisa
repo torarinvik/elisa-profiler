@@ -1,0 +1,80 @@
+# Validation for explicitly supplied, already-instrumented Elisa executables.
+#
+# A prebuilt target is never guessed from a filename or launched optimistically.
+# The source path remains part of the command so dependency and source identity
+# stay available, while this module checks the executable's defined trace ABI
+# before the target process is started.
+extend ProfilerNative:
+    private:
+        def prebuilt_append_sview[@r](arguments: mutable darray[darray[u8]]& @r, value: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            for index in 0..<profiler_ffi_sview_len(value) |argument, value|:
+                argument.push(profiler_ffi_sview_at(value, index))
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
+
+
+        def prebuilt_append_path[@r](arguments: mutable darray[darray[u8]]& @r, value: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            argument: mutable darray[u8] @r = []
+            argument.extend(value)
+            argument.push(NATIVE_BYTE_NUL)
+            arguments.push(argument)
+
+
+        def prebuilt_symbol_token_matches(token: darray[u8]&, symbol: sview) -> bool can[Abort.Panic]:
+            return true if protocol_field_is(token, symbol)
+            return false if token.count != profiler_ffi_sview_len(symbol) + NATIVE_ONE.usize()
+            return false if token[NATIVE_ZERO.usize()] != NATIVE_BYTE_UNDERSCORE
+            for index in 0..<profiler_ffi_sview_len(symbol) |token, symbol|:
+                return false if token[index + NATIVE_ONE.usize()] != profiler_ffi_sview_at(symbol, index)
+            return true
+
+
+        def prebuilt_symbol_defined(symbol_dump: darray[u8]&, symbol: sview) -> bool can[Abort.Panic, Memory.Allocate]:
+            line_start: mutable usize = NATIVE_ZERO.usize()
+            while line_start < symbol_dump.count |line_start, symbol_dump|:
+                line_stop: mutable usize = line_start
+                while line_stop < symbol_dump.count and symbol_dump[line_stop] != NATIVE_BYTE_NEWLINE |line_stop, symbol_dump|:
+                    line_stop <- line_stop + NATIVE_ONE.usize()
+                token_start: mutable usize = line_start
+                while token_start < line_stop |token_start, line_stop, symbol_dump|:
+                    while token_start < line_stop and (symbol_dump[token_start] == NATIVE_BYTE_SPACE or symbol_dump[token_start] == NATIVE_BYTE_TAB) |token_start, line_stop, symbol_dump|:
+                        token_start <- token_start + NATIVE_ONE.usize()
+                    token_stop: mutable usize = token_start
+                    while token_stop < line_stop and symbol_dump[token_stop] != NATIVE_BYTE_SPACE and symbol_dump[token_stop] != NATIVE_BYTE_TAB |token_stop, line_stop, symbol_dump|:
+                        token_stop <- token_stop + NATIVE_ONE.usize()
+                    token: mutable darray[u8] = []
+                    for token_index in token_start..<token_stop |token, symbol_dump|:
+                        token.push(symbol_dump[token_index])
+                    return true if prebuilt_symbol_token_matches(token, symbol)
+                    token_start <- token_stop
+                line_start <- line_stop + NATIVE_ONE.usize() if line_stop < symbol_dump.count else symbol_dump.count
+            return false
+
+
+        def prebuilt_symbol_family_defined(symbol_dump: darray[u8]&, legacy_symbol: sview, stable_symbol: sview) -> bool can[Abort.Panic, Memory.Allocate]:
+            return true if prebuilt_symbol_defined(symbol_dump, legacy_symbol)
+            return prebuilt_symbol_defined(symbol_dump, stable_symbol)
+
+
+        def prebuilt_required_symbols_present(symbol_dump: darray[u8]&, mode: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if not prebuilt_symbol_defined(symbol_dump, "elisa_profile_target_main")
+            return false if not prebuilt_symbol_family_defined(symbol_dump, "elisa_trace_function_entry", "elisa_trace_function_entry_id")
+            return false if not prebuilt_symbol_family_defined(symbol_dump, "elisa_trace_function_exit", "elisa_trace_function_exit_id")
+            return false if not prebuilt_symbol_defined(symbol_dump, "elisa_trace_install_fault_handler")
+            return true if protocol_field_is(mode, "functions") or protocol_field_is(mode, "sample")
+            return prebuilt_symbol_family_defined(symbol_dump, "elisa_trace_record", "elisa_trace_record_id") if protocol_field_is(mode, "statements")
+            return prebuilt_symbol_family_defined(symbol_dump, "elisa_trace_record_value", "elisa_trace_record_value_id") if protocol_field_is(mode, "values")
+            return prebuilt_symbol_family_defined(symbol_dump, "elisa_trace_record", "elisa_trace_record_id") and prebuilt_symbol_family_defined(symbol_dump, "elisa_trace_record_value", "elisa_trace_record_value_id")
+
+
+        def validate_prebuilt_executable(executable: darray[u8]&, mode: darray[u8]&, nm_tool: darray[u8]&, stdout_path: darray[u8]&, stderr_path: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return false if executable.count == NATIVE_ZERO.usize() or executable[NATIVE_ZERO.usize()] != NATIVE_BYTE_SLASH
+            return false if not executable_available(executable)
+            arguments: mutable darray[darray[u8]] = []
+            prebuilt_append_sview(arguments, "--defined-only")
+            prebuilt_append_path(arguments, executable)
+            return false if run_tool_direct(nm_tool, arguments, stdout_path, stderr_path) != NATIVE_ZERO
+            symbols: darray[u8] = read_file(stdout_path)
+            return false if symbols.count == NATIVE_ZERO.usize()
+            return prebuilt_required_symbols_present(symbols, mode)
