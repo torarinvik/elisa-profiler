@@ -115,6 +115,21 @@ completion marker. Successful target runs require both markers; timeout and
 signal captures may intentionally be partial and expose
 `summary.capture_complete: false`.
 
+### Event-stream evidence boundary
+
+The optional `event_trace` records are ordered by a process-local monotonic
+`sequence` counter. They preserve event kind, function, source line, optional
+variable/value, and compiler identity, but they do not currently carry an event
+timestamp or a physical thread identity. The separate thread-loss records say
+which capture-local thread lost detail, not which thread emitted each retained
+event. Consequently the trace can answer “what was observed in collector order”
+and support bounded path diagnostics, but it cannot reconstruct a wall-clock
+timeline, cross-thread ordering, spans, or per-thread event chronology. Function
+timing summaries remain interval aggregates and must not be back-projected onto
+individual trace records. A future versioned event protocol may add those
+fields; until then timeline views must remain explicitly unsupported rather than
+inventing timestamps or assigning events to threads.
+
 Native JSON captures also expose `run.capabilities`. Its event-class list is
 the authoritative retained detail set; `trace`, `recent_path`, `timing`, and
 `sampling` describe the active policies; `sampling_detail` states the scope and
