@@ -210,7 +210,8 @@ extend ProfilerNative:
             append_text(location_records, ",\"repetition\":")
             append_i64(location_records, repetition)
             append_text(location_records, ",\"line\":")
-            append_i64(location_records, source_map_line_for(source_map_flat_lines, source_map_source_lines, protocol_number_field(line_field)))
+            compiler_line_number: i64 = protocol_number_field(line_field)
+            append_i64(location_records, source_map_line_for(source_map_flat_lines, source_map_source_lines, compiler_line_number))
             append_text(location_records, ",\"count\":")
             append_protocol_number(location_records, count_field)
             count_number: i64 = protocol_number_field(count_field)
@@ -221,7 +222,10 @@ extend ProfilerNative:
             else:
                 summary.function_events <- native_saturating_add(summary.function_events, count_number)
             summary.location_record_count <- native_saturating_add(summary.location_record_count, NATIVE_ONE)
-            summary.source_mapping_mapped <- native_saturating_add(summary.source_mapping_mapped, NATIVE_ONE)
+            if source_map_flat_lines.count > NATIVE_ZERO.usize() and compiler_line_number < source_map_flat_lines[NATIVE_ZERO.usize()]:
+                summary.source_mapping_unmapped <- native_saturating_add(summary.source_mapping_unmapped, NATIVE_ONE)
+            else:
+                summary.source_mapping_mapped <- native_saturating_add(summary.source_mapping_mapped, NATIVE_ONE)
             if kind_name == "value":
                 append_text(location_records, ",\"variable\":")
                 if protocol_field_is(variable_field, "-"):
@@ -259,7 +263,7 @@ extend ProfilerNative:
             append_text(location_records, ",\"compiler_line\":")
             append_protocol_number(location_records, line_field)
             append_text(location_records, ",\"source\":")
-            mapped_source: darray[u8] = source_map_path_for(source_map_data, protocol_number_field(line_field))
+            mapped_source: darray[u8] = source_map_path_for(source_map_data, compiler_line_number)
             location_source: mutable darray[u8] = []
             if mapped_source.count == NATIVE_ZERO.usize():
                 location_source.extend(source)
