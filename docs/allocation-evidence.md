@@ -179,6 +179,12 @@ Real native fixtures verify that emitted layouts precede and contain their
 allocations, and that adoption preserves backing geometry. Unused regions and
 other lifecycle paths are not yet comprehensively mapped. Map reconciliation
 remains unfinished; these records do not establish complete lifetime metrics.
+In particular, `collection_stack_acquire` claims fresh or pooled backing for
+dictionary/set tables without passing through the ordinary allocation hook.
+Its pooling and ping-pong ownership transitions also need explicit evidence.
+A layout observed later during adoption cannot reconstruct those earlier
+logical allocation lifetimes. Collection-heavy captures must not be treated
+as complete allocation accounting until those paths are instrumented.
 
 ### Lifetime-state engine
 
