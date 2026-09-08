@@ -513,6 +513,23 @@ full compiler emission (19,108,520 bytes), byte-identical gen3/gen4 objects, and
 The rebuilt profiler also passed native and sampling regressions; evidence:
 `build/frame-filter-native-regression.log` and `build/frame-filter-sampling-regression.log`.
 
+## Share semantic variadic markers (2026-09-08)
+
+Semantic declaration collection now builds a variadic-marker subset once and
+shares it across module and scoped recursion. All other collection checks keep
+the full annotation table. Backend variadic lookup is unchanged.
+All 586 diagnostic/module/variadic comparisons matched statuses, messages, and
+successful LLVM output. A strengthened nested-module rejection fixture additionally
+matched both missing-required and excess-fixed argument diagnostics; the accepted
+variadic fixture returned 42 at runtime.
+
+Full O0 baseline/candidate wall times were 74.18/72.94 seconds and, reversing
+order, 74.60/72.88 seconds. User CPU times were 73.67/72.48 and 74.12/72.36.
+All four emitted objects were byte-identical: 1.7–2.3% less wall time against
+`a5a1442b` on identical current source, with self-hosted binaries. Logs:
+`build/variadic-filter-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh committed bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
