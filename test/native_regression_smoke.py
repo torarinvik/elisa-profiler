@@ -386,6 +386,9 @@ def main():
         assert b"event-timeline-repetition" in offline_html
         assert b"event-timeline-thread" in offline_html
         assert b"event-timeline-selection" in offline_html
+        assert b"event-timeline-kind" in offline_html
+        assert b"event-timeline-start" in offline_html
+        assert b"event-timeline-end" in offline_html
         assert b"MAX_EVENT_TIMELINE_ROWS=200" in offline_html
         assert b"MAX_EVENT_TIMELINE_INDEX=10000" in offline_html
         assert b"MAX_EVENT_TIMELINE_FILTER_OPTIONS=128" in offline_html
