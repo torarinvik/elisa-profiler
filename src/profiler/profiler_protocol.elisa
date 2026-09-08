@@ -206,11 +206,13 @@ extend ProfilerNative:
                 valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
             elif kind_name == "value":
                 signed_value: bool = protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE
-                valid <- valid and protocol_signed(field_min, false) and protocol_signed(field_max, false)
-                valid <- valid and protocol_signed(field_sum, true) and protocol_signed(field_last, false)
                 valid <- valid and (protocol_field_is(variable_field, "-") or variable_field.count > NATIVE_ZERO.usize())
-                if not signed_value:
-                    valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_last)
+                if signed_value:
+                    valid <- valid and protocol_signed(field_min, false) and protocol_signed(field_max, false)
+                    valid <- valid and protocol_signed(field_sum, true) and protocol_signed(field_last, false)
+                else:
+                    valid <- valid and protocol_unsigned_u64(field_min) and protocol_unsigned_u64(field_max) and protocol_unsigned_u64(field_last)
+                    valid <- valid and (protocol_field_is(field_sum, "overflow") or protocol_unsigned_u64(field_sum))
             else:
                 valid <- valid and protocol_unsigned(field_min) and protocol_unsigned(field_max) and protocol_unsigned(field_sum) and protocol_unsigned(field_last)
             if valid:
@@ -553,9 +555,10 @@ extend ProfilerNative:
             valid <- valid and (thread_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(thread_field))
             valid <- valid and (timestamp_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(timestamp_field))
             valid <- valid and (protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_FALSE or signed_value)
-            valid <- valid and protocol_signed(value_field, false)
-            if not signed_value:
-                valid <- valid and protocol_unsigned(value_field)
+            if signed_value:
+                valid <- valid and protocol_signed(value_field, false)
+            else:
+                valid <- valid and protocol_unsigned_u64(value_field)
             if not valid:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_EVENT

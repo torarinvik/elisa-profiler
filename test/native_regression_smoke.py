@@ -185,6 +185,28 @@ def main():
         hookless_capture.write_text(json.dumps(hookless), encoding="utf-8")
         for output_format in ("text", "html"):
             assert b"allocation active" in run("report", hookless_capture, "--format", output_format)
+        wide_target = work / "unsigned-value-target"
+        subprocess.run([
+            os.environ.get("ELISA_CLANG", "clang"), "-std=c11", "-O2", "-fno-builtin", "-pthread",
+            str(ROOT / "test" / "collector_content_smoke.c"),
+            str(ROOT / "scripts" / "profiler_runtime.c"), "-o", str(wide_target),
+        ], check=True, capture_output=True, timeout=TIMEOUT_SECONDS)
+        wide_capture = work / "unsigned-value-capture.json"
+        run("profile", ROOT / "examples" / "hot_loop.elisa", "--prebuilt", wide_target,
+            "--event-trace", "--format", "json", "--output", wide_capture)
+        wide_report = json.loads(wide_capture.read_text(encoding="utf-8"))
+        validate(wide_report, allocation_schema_root, allocation_schema_root, "unsigned-values")
+        wide_values = [record for record in wide_report["locations"] if record["kind"] == "value"]
+        assert len(wide_values) == 1
+        wide_value = wide_values[0]
+        assert wide_value["signed"] is False
+        assert wide_value["minimum"] == 1
+        assert wide_value["maximum"] == wide_value["last"] == IDENTITY_ID_CANDIDATE
+        assert wide_value["sum"] is None and wide_value["sum_overflow"] is True
+        assert any(event["kind"] == "value" and event["value"] == IDENTITY_ID_CANDIDATE
+                   for event in wide_report["run"]["repetitions"][0]["event_trace"])
+        assert json.loads(run("report", wide_capture, "--format", "json")) == wide_report
+        assert str(IDENTITY_ID_CANDIDATE).encode() in run("report", wide_capture, "--format", "html")
         capture = work / "capture.json"
         capture.write_text(json.dumps(report), encoding="utf-8")
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))
