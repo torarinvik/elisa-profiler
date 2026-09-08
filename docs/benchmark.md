@@ -742,6 +742,21 @@ it does not establish profiler overhead or performance on other workloads.
 Evidence: `build/cumulative-index-full-{baseline,current}.log` and their
 `-reverse.log` variants.
 
+## Compact rebind-claim validation rows (2026-09-09)
+
+The false-claim checker now collects only claim annotations once per pass,
+preserving source order and duplicates. All 389 selected diagnostic/rebind/lmut/
+claim/threading comparisons matched status, diagnostics, and successful LLVM
+output. A focused semantic test verifies ordered false-claim diagnostics and
+acceptance of genuine threading and ordinary calls.
+
+Full O0 baseline/candidate wall times were 58.90/57.57 seconds and, reversing
+order, 59.12/57.22 seconds. User CPU times were 58.28/56.72 and 58.24/56.54.
+All four objects were byte-identical: 2.3–3.2% less wall time than `d4178fe7`
+with self-hosted binaries on identical source. Evidence:
+`build/claim-filter-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh committed bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
