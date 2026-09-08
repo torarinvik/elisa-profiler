@@ -166,6 +166,14 @@ CPU times were 2.15/2.10 seconds, with noisy wall times. Full-scale impact must
 be measured separately. Native, sampling, mismatch/overflow, strict-build, and
 sanitizer checks cover the new layout.
 
+The first full self-build with unified TLS completed with a byte-identical
+object, 69,489 retained samples, zero reported misses, and complete quality.
+Target wall/user CPU were 516.983/435.735 seconds; total CLI wall was 524.49
+seconds. This is worse than the earlier 391.175/355.258-second capture, despite
+the callback-loop gain. Host CPU availability varied during this run. A fresh
+old-layout control is required before attributing the difference to TLS; the
+optimization is not yet a demonstrated full-build improvement.
+
 ## Large Speedscope export validation
 
 The 58,399-sample self-build capture exposed stack exhaustion in the previous
