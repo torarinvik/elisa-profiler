@@ -174,6 +174,14 @@ the callback-loop gain. Host CPU availability varied during this run. A fresh
 old-layout control is required before attributing the difference to TLS; the
 optimization is not yet a demonstrated full-build improvement.
 
+The subsequent old-layout control completed at 542.671 seconds target wall /
+401.819 seconds user CPU, with a byte-identical object, 67,849 retained samples,
+zero reported misses, and complete quality. The user stopped other agents partway
+through that control; observed load average fell substantially. Because host
+conditions changed during the sequence, these runs do not isolate the layout's
+effect. A fresh sequential unified/old-layout pair under the quieter conditions
+is needed before deciding whether to retain the optimization.
+
 ## Large Speedscope export validation
 
 The 58,399-sample self-build capture exposed stack exhaustion in the previous
