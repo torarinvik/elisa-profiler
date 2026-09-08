@@ -27,6 +27,9 @@ answers, and macOS ARM64 frame setup are tested at O0–O3. This prerequisite
 does not enable native sampling in the profiler: raw-address capture,
 validated unwinding, and exact-artifact symbolization remain unimplemented.
 Default target compilation and the capability matrix above are unchanged.
+Compiler revision `2f8b2180` also passed the self-host gate: gen3 and gen4
+objects were byte-identical, and gen3 emitted identical objects on all 40
+repeat runs. These correctness checks do not measure sampling overhead.
 
 A private Elisa Mach-O metadata indexer is also tested independently with
 `make macho-smoke`. It reads thin little-endian 64-bit headers, UUID location,
