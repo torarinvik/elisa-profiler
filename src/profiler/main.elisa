@@ -689,14 +689,27 @@ extend ProfilerNative:
             return true
 
 
-        def append_profile_artifact(buffer: mutable darray[u8]&, capture: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+        def artifact_bytes_fit(buffer: darray[u8]&, limit: i64, additional: i64) -> bool:
+            return false if limit < NATIVE_ZERO
+            used: i64 = buffer.count.i64()
+            return false if used > limit
+            return additional <= limit - used
+
+
+        def append_profile_artifact(buffer: mutable darray[u8]&, capture: darray[u8]&, max_bytes: i64) -> bool can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"artifact_version\":")
             append_i64(buffer, NATIVE_ARTIFACT_VERSION)
+            return false if not artifact_bytes_fit(buffer, max_bytes, NATIVE_ZERO)
             append_text(buffer, ",\"kind\":\"elisa-profile\",\"manifest\":{\"capture_format\":\"profile-json-v2\",\"compression\":\"none\",\"capture_bytes\":")
             append_i64(buffer, capture.count.i64())
+            append_text(buffer, ",\"max_artifact_bytes\":")
+            append_i64(buffer, max_bytes)
             append_text(buffer, "},\"capture\":")
+            return false if not artifact_bytes_fit(buffer, max_bytes, capture.count.i64())
             buffer.extend(capture)
             append_text(buffer, "}\n")
+            return false if not artifact_bytes_fit(buffer, max_bytes, NATIVE_ZERO)
+            return true
 
 
         def write_capture_manifest(path: darray[u8]&, source: darray[u8]&, source_bytes: darray[u8]&, mode: darray[u8]&, capture_path: darray[u8]&, state: sview, requested: i64, completed: i64, successful: i64, failed: i64, summary: CaptureSummary, capture_bytes: i64, valid_frames: i64, valid_capture_bytes: i64) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -1989,7 +2002,7 @@ extend ProfilerNative:
             return benchmark(argc, slots) if profiler_ffi_strcmp(first, "benchmark") == NATIVE_ZERO
             return baseline(argc, slots) if profiler_ffi_strcmp(first, "baseline") == NATIVE_ZERO
             return report_error("unknown command; use profile, record, report, recover, compare, benchmark, baseline, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
-            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--random-seed SEED] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--max-capture-bytes BYTES] [--max-artifact-bytes BYTES] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--random-seed SEED] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []
             output: mutable darray[u8] = []
@@ -2013,6 +2026,7 @@ extend ProfilerNative:
             trace_limit: mutable i64 = NATIVE_DEFAULT_TRACE_LIMIT
             sample_period_microseconds: mutable i64 = NATIVE_DEFAULT_SAMPLE_PERIOD_MICROSECONDS
             capture_byte_limit: mutable i64 = NATIVE_DEFAULT_CAPTURE_BYTES
+            artifact_byte_limit: mutable i64 = NATIVE_DEFAULT_ARTIFACT_BYTES
             timeout_ns: mutable i64 = NATIVE_ZERO
             working_directory: mutable darray[u8] = []
             stdin_path: mutable darray[u8] = []
@@ -2031,7 +2045,7 @@ extend ProfilerNative:
             prebuilt_requested: mutable bool = false
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, artifact_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -2224,6 +2238,14 @@ extend ProfilerNative:
                     byte_limit: i64 = parse_nonnegative_cstr(byte_limit_text)
                     return report_error("--max-capture-bytes requires a non-negative integer") if byte_limit < NATIVE_ZERO
                     capture_byte_limit <- byte_limit
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--max-artifact-bytes") == NATIVE_ZERO:
+                    return report_error("--max-artifact-bytes requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    artifact_limit_text: cstr = slots[index + NATIVE_ONE].cast[cstr]
+                    artifact_limit: i64 = parse_nonnegative_cstr(artifact_limit_text)
+                    return report_error("--max-artifact-bytes requires a non-negative integer") if artifact_limit < NATIVE_ZERO
+                    artifact_byte_limit <- artifact_limit
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--random-seed") == NATIVE_ZERO:
@@ -2593,7 +2615,7 @@ extend ProfilerNative:
                 append_report(report, display_source, source_check, embed_source, mode, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_manifest, compiler_stage1, stage1_digest, runtime_object, runtime_digest, build_cache, build_kind, prebuilt_executable, host, summary, overall_status, opt_level, event_trace, recent_path, overall_timed_out, false, timeout_ns, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated, total_execution_ns, compile_elapsed_ns, repetition_records, requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, warmup_repetitions, warmup_ns, execution_min_ns, execution_mean_ns, execution_max_ns, execution_median_ns, execution_stdev_ns, execution_ci95_low_ns, execution_ci95_high_ns, execution_ci95_available, cpu_user_ns, cpu_system_ns, peak_rss_bytes, resource_metrics_available, dependency_digest, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source)
             artifact: mutable darray[u8] = []
             if artifact_output.count > NATIVE_ZERO.usize():
-                append_profile_artifact(&artifact, report)
+                return report_error("profile artifact exceeds --max-artifact-bytes") if not append_profile_artifact(&artifact, report, artifact_byte_limit)
             manifest_state: mutable sview = "complete"
             manifest_state <- "partial" if overall_timed_out or failed_repetitions > NATIVE_ZERO or not summary.capture_complete
             return report_error("could not finalize capture manifest") if not write_capture_manifest(capture_manifest_path, source, source_check, mode, capture_path, "finalizing", requested_repetitions, completed_repetitions, successful_repetitions, failed_repetitions, summary, last_capture_bytes, last_valid_frames, last_valid_capture_bytes)

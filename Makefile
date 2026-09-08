@@ -83,6 +83,8 @@ profiler-native-smoke: profiler-native
 		test -s "$$native_work/report.json"; \
 		native_run "$(NATIVE_PROFILER_BIN)" record "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format json --output "$$native_work/record.json" --artifact-output "$$native_work/profile.elisaprof"; \
 		python3 "$(PROFILER_ROOT)/test/profile_artifact_smoke.py" "$$native_work/profile.elisaprof"; \
+		if native_run "$(NATIVE_PROFILER_BIN)" record "$(PROFILER_ROOT)/examples/hot_loop.elisa" --format json --artifact-output "$$native_work/rejected.elisaprof" --max-artifact-bytes 1; then echo "artifact budget unexpectedly accepted oversized output" >&2; exit 1; fi; \
+		test ! -e "$$native_work/rejected.elisaprof"; \
 		test -s "$$native_work/profile.elisaprof.manifest.json"; \
 		grep -Fq '"state":"complete"' "$$native_work/profile.elisaprof.manifest.json"; \
 		python3 "$(PROFILER_ROOT)/test/profile_schema_smoke.py" "$(PROFILER_ROOT)/docs/capture-manifest.schema.json" "$$native_work/profile.elisaprof.manifest.json"; \

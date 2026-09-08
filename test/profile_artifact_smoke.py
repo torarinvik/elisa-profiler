@@ -19,6 +19,7 @@ def main() -> int:
     assert artifact["kind"] == "elisa-profile"
     assert artifact["manifest"]["capture_format"] == "profile-json-v2"
     assert artifact["manifest"]["compression"] == "none"
+    assert artifact["manifest"]["max_artifact_bytes"] >= len(artifact_path.read_bytes())
     capture = artifact["capture"]
     assert capture["schema_version"] == 2
     assert capture["envelope"] == {

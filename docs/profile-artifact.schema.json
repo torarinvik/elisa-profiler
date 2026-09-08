@@ -14,7 +14,8 @@
       "properties": {
         "capture_format": { "const": "profile-json-v2" },
         "compression": { "const": "none" },
-        "capture_bytes": { "type": "integer", "minimum": 1 }
+        "capture_bytes": { "type": "integer", "minimum": 1 },
+        "max_artifact_bytes": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": true
     },

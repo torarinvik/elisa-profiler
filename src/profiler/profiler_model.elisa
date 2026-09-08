@@ -137,6 +137,9 @@ module ProfilerNative:
         const NATIVE_MIN_SAMPLE_PERIOD_MICROSECONDS: i64 = 100
         const NATIVE_MAX_SAMPLE_PERIOD_MICROSECONDS: i64 = 1000000
         const NATIVE_DEFAULT_CAPTURE_BYTES: i64 = 67108864
+        # Keep artifacts bounded by default; callers can select a smaller
+        # limit when running in a constrained environment.
+        const NATIVE_DEFAULT_ARTIFACT_BYTES: i64 = 134217728
         const NATIVE_DEFAULT_TEMPORARY_DIRECTORY: cstr = "/tmp"
         const NATIVE_DIRECTORY_MODE: i64 = 448
         const NATIVE_COMMAND_ARGUMENT_INDEX: i64 = 1

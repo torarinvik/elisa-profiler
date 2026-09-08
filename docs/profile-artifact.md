@@ -14,7 +14,8 @@ The top-level contract is:
   "manifest": {
     "capture_format": "profile-json-v2",
     "compression": "none",
-    "capture_bytes": 1234
+    "capture_bytes": 1234,
+    "max_artifact_bytes": 134217728
   },
   "capture": {
     "schema_version": 2,
@@ -29,7 +30,10 @@ The top-level contract is:
 ```
 
 `capture_bytes` is the byte count of the embedded profile JSON as written by
-the native renderer. The embedded capture is a complete v2 profile and
+the native renderer. `max_artifact_bytes` records the output budget selected
+for the invocation; the artifact is rejected before publication when its
+serialized bytes would exceed that budget. The embedded capture is a complete
+v2 profile and
 is validated with `docs/profile.schema.json`. `report` unwraps the envelope
 before rendering JSON, text, folded stacks, Speedscope, or HTML. `compare`
 accepts raw v1 reports for migration and comparison, as well as these v2
@@ -45,6 +49,10 @@ last validated framed-record boundary (`bytes`, `valid_bytes`, and
 `valid_frames`). If the profiler is interrupted, the last manifest and any
 still-present capture file identify the recoverable evidence without
 pretending that an unfinished stream is complete.
+
+Use `--max-artifact-bytes BYTES` to lower the artifact budget for a constrained
+run. The default is 128 MiB. A rejected artifact is never atomically published;
+the capture manifest remains available for recovery and diagnosis.
 
 This is a compatibility container, not yet the final durable artifact format.
 The native collector transport is already record-framed: each streamed record
