@@ -1673,7 +1673,8 @@ static int profile_mode_allows_kind(uint8_t kind) {
 static void profile_record(const char *function_name, uint32_t line,
                            const char *variable_name, uint64_t value, uint8_t kind,
                            uint8_t is_signed, size_t call_depth,
-                           int stack_overflowed, uint64_t identity_id) {
+                           int stack_overflowed, uint64_t identity_id,
+                           const uint64_t *entry_timestamp) {
     if (profile_fork_child_disabled) {
         return;
     }
@@ -1685,6 +1686,7 @@ static void profile_record(const char *function_name, uint32_t line,
     profile_thread_state *thread = profile_get_thread_locked();
 #if !ELISA_PROFILE_TIMING
     (void)thread;
+    (void)entry_timestamp;
 #endif
     if (thread != NULL) {
         if (thread->event_count == 0) {
@@ -1702,7 +1704,8 @@ static void profile_record(const char *function_name, uint32_t line,
             profile_saturating_increment_u64(profile_stack_overflow_entries);
     }
 #if ELISA_PROFILE_TIMING
-    profile_account_previous_locked(thread, profile_now_ns());
+    profile_account_previous_locked(thread, entry_timestamp != NULL
+                                              ? *entry_timestamp : profile_now_ns());
 #endif
     profile_event_count = profile_saturating_increment_u64(profile_event_count);
     profile_recent[profile_recent_position % PROFILE_RECENT_CAPACITY] =
@@ -1892,6 +1895,8 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
     }
 
 #if ELISA_PROFILE_TIMING
+    /* Reuse this boundary for location accounting, including zero on failure. */
+    uint64_t entry_timestamp = profile_now_ns();
     if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
         profile_call_stack[profile_call_depth] = (profile_call_frame){
             .function_name = function_name,
@@ -1899,7 +1904,7 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
             .path = path,
             .function_id = function_id,
             .caller_id = caller_id,
-            .start_ns = profile_now_ns(),
+            .start_ns = entry_timestamp,
             .child_ns = 0,
         };
         profile_call_depth = profile_saturating_increment_size(profile_call_depth);
@@ -1927,7 +1932,13 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
     }
 #endif
     profile_record(function_name, line, NULL, 0, PROFILE_KIND_FUNCTION, 0,
-                   profile_call_depth, stack_overflowed, function_id);
+                   profile_call_depth, stack_overflowed, function_id,
+#if ELISA_PROFILE_TIMING
+                   &entry_timestamp
+#else
+                   NULL
+#endif
+    );
 }
 
 static void profile_record_completed_function(const char *function_name, uint32_t line,
@@ -2113,17 +2124,17 @@ static void profile_record_value(const char *function_name, uint32_t line,
                                  const char *variable_name, uint64_t value,
                                  uint32_t is_signed, uint64_t identity_id) {
     profile_record(function_name, line, variable_name, value, PROFILE_KIND_VALUE,
-                   is_signed != 0 ? 1 : 0, 0, 0, identity_id);
+                   is_signed != 0 ? 1 : 0, 0, 0, identity_id, NULL);
 }
 
 void elisa_trace_record(const char *function_name, uint32_t line) {
     profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0, 0, 0,
-                   PROFILE_ID_UNSET);
+                   PROFILE_ID_UNSET, NULL);
 }
 
 void elisa_trace_record_id(const char *function_name, uint32_t line, uint64_t identity_id) {
     profile_record(function_name, line, NULL, 0, PROFILE_KIND_STATEMENT, 0, 0, 0,
-                   identity_id);
+                   identity_id, NULL);
 }
 
 void elisa_trace_function_entry(const char *function_name, uint32_t line) {
