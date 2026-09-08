@@ -98,6 +98,15 @@ reduction is against the previous sampling configuration, not against an
 uninstrumented compiler. Capture output went to `/dev/null` in this comparison;
 the end-to-end sampling suite separately validates retained samples and exports.
 
+A subsequent raw compiler sampling capture retained 1,608 samples. Every frame's
+payload length, FNV-1a checksum, and sample sequence validated; the collector
+reported zero missed samples and no sampled stack overflow. Common leaf frames
+included `note_local_type`, `arena_realloc`, `check_full_into`, and effect checks.
+This validates practical capture quality, not an unbiased attribution of all
+compiler CPU time: only instrumented Elisa stacks are represented, and callback
+overhead remains. A same-revision uninstrumented comparison is required before
+claiming an absolute sampling-overhead factor.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
