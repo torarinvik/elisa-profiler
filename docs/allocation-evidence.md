@@ -142,6 +142,29 @@ ignored, so late shutdown operations are outside that capture boundary.
 
 ## Prerequisites for lifetime accounting
 
+### Region-layout transport under development
+
+The collector exposes a separate exact-v1 negotiation function,
+`elisa_profile_region_layout_negotiate(uint32_t)`, and
+`elisa_profile_region_layout_v1(uintptr_t arena, size_t region,
+uintptr_t header, uintptr_t data_base, size_t capacity_bytes)`.
+Unsupported versions return zero. Layout is not a logical allocation.
+Its wire payload is `extension\tregion_layout\t1`, followed by arena, region
+index, header address, data-base address, capacity bytes, sequence, thread ID,
+and monotonic timestamp, all decimal integers separated by tabs.
+
+Layout records share bounded storage, the capture budget, and chronological
+sequence with allocation evidence. Buffer refusals contribute to the existing
+allocation-evidence drop counter. The record type is stored separately from
+the allocation kind, so an allocation kind cannot masquerade as a layout.
+Framed/unframed collector tests verify exact fields and distinguish the record
+from allocation events. This is currently transport plumbing only: compiler
+emission, Elisa decoding and validation, schema/report preservation, and map
+reconciliation are still to be implemented. Current readers ignore this
+forward-compatible extension; no region map or lifetime claim follows from it.
+
+### Lifetime-state engine
+
 `src/profiler/allocation_lifetimes.elisa` provides the initial bounded Elisa
 state engine, tested by `make allocation-lifetimes-smoke`. It assigns monotonic
 generations independently of address reuse and implements logical allocation,

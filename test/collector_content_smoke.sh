@@ -69,6 +69,13 @@ def read_lines(path: str, framed: bool = False):
 def check_report(path: str, framed: bool = False) -> None:
     lines = [line.split("\t") for line in read_lines(path, framed) if line.startswith("ELISA_PROFILE\t")]
     assert [line[2] for line in lines if line[2] in ("begin", "end")] == ["begin", "end"]
+    layouts = [line for line in lines if line[2:4] == ["extension", "region_layout"]]
+    assert len(layouts) == 1, layouts
+    assert layouts[0][4:11] == ["1", str(0x1000), "3", str(0x2000), str(0x2040), "4096", "0"]
+    assert len(layouts[0]) == 13
+    assert int(layouts[0][11]) >= 0
+    assert int(layouts[0][12]) > 0
+    assert not [line for line in lines if line[2] == "allocation"], "layout is not an allocation"
     locations = [line for line in lines if line[2] == "location"]
     function_locations = [line for line in locations if line[3] == "3"]
     statement_locations = [line for line in locations if line[3] == "1"]

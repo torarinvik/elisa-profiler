@@ -58,6 +58,7 @@ typedef struct {
 
 typedef struct {
     uint32_t kind;
+    uint32_t is_region_layout;
     uint64_t address;
     uint64_t size;
     uint64_t old_address;
@@ -1331,6 +1332,17 @@ enum {
     PROFILE_ALLOCATION_ABI_VERSIONED_CALL = 8
 };
 static _Atomic uint32_t profile_allocation_abi_evidence;
+enum {
+    PROFILE_REGION_LAYOUT_ABI_UNSUPPORTED = 0,
+    PROFILE_REGION_LAYOUT_ABI_V1 = 1,
+    PROFILE_ALLOCATION_RECORD = 0,
+    PROFILE_REGION_LAYOUT_RECORD = 1
+};
+
+uint32_t elisa_profile_region_layout_negotiate(uint32_t requested_version) {
+    return requested_version == PROFILE_REGION_LAYOUT_ABI_V1
+        ? PROFILE_REGION_LAYOUT_ABI_V1 : PROFILE_REGION_LAYOUT_ABI_UNSUPPORTED;
+}
 
 /* Exact-version negotiation is allocation-free and independent of capture
  * mode: support for the calling convention is not evidence of collection. */
@@ -1346,7 +1358,7 @@ uint32_t elisa_profile_allocation_negotiate(uint32_t requested_version) {
 /* Strong override of the compiler runtime's weak no-op hook. The callback
  * records only fixed-width data; formatting, sorting, and protocol I/O wait
  * until profile_dump_body holds the collector lock. */
-static void profile_collect_allocation_event(uint32_t kind, uintptr_t address,
+static void profile_collect_allocation_event(uint32_t is_region_layout, uint32_t kind, uintptr_t address,
                                      size_t size, uintptr_t old_address,
                                      size_t old_size, uintptr_t arena,
                                      size_t region) {
@@ -1382,6 +1394,7 @@ static void profile_collect_allocation_event(uint32_t kind, uintptr_t address,
         &thread->allocation_events[thread->allocation_size++];
     *event = (profile_allocation_event){
         .kind = kind,
+        .is_region_layout = is_region_layout,
         .address = (uint64_t)address,
         .size = (uint64_t)size,
         .old_address = (uint64_t)old_address,
@@ -1404,7 +1417,7 @@ void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
                                      size_t region) {
     atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
                             PROFILE_ALLOCATION_ABI_VERSIONED_CALL, memory_order_relaxed);
-    profile_collect_allocation_event(kind, address, size, old_address, old_size, arena, region);
+    profile_collect_allocation_event(PROFILE_ALLOCATION_RECORD, kind, address, size, old_address, old_size, arena, region);
 }
 
 /* Compatibility entry point for previously built runtime objects. It does
@@ -1415,7 +1428,16 @@ void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
                                    size_t region) {
     atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
                             PROFILE_ALLOCATION_ABI_LEGACY, memory_order_relaxed);
-    profile_collect_allocation_event(kind, address, size, old_address, old_size, arena, region);
+    profile_collect_allocation_event(PROFILE_ALLOCATION_RECORD, kind, address, size, old_address, old_size, arena, region);
+}
+
+/* Separate ABI and wire extension: layout is evidence about backing regions,
+ * not a logical allocation. Share bounded storage and chronological sequence
+ * with allocation records so offline consumers can order both kinds together. */
+void elisa_profile_region_layout_v1(uintptr_t arena, size_t region,
+                                    uintptr_t header, uintptr_t data_base,
+                                    size_t capacity_bytes) {
+    profile_collect_allocation_event(PROFILE_REGION_LAYOUT_RECORD, 0, data_base, capacity_bytes, header, 0, arena, region);
 }
 
 #if ELISA_PROFILE_TIMING
@@ -2422,6 +2444,26 @@ static void profile_dump_allocation_records(void) {
             const profile_allocation_event *event =
                 &thread->allocation_events[index];
             profile_record_begin();
+            if (event->is_region_layout) {
+                profile_record_append_text("extension\tregion_layout\t1\t");
+                profile_record_append_uint64(event->arena);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->region);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->old_address);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->address);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->size);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->sequence);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->thread_id);
+                profile_record_append_char('\t');
+                profile_record_append_uint64(event->timestamp_ns);
+                profile_record_emit();
+                continue;
+            }
             profile_record_append_text("allocation\t");
             profile_record_append_uint64(event->kind);
             profile_record_append_char('\t');
