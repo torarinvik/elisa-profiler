@@ -214,6 +214,15 @@ def main():
         structural_rows = [row for row in structural_comparison["locations"] if row["function"] == "main"]
         assert len(structural_rows) == 1, structural_rows
         assert structural_rows[0]["match"] == "structural", structural_rows
+        ambiguous_structural_candidate = copy.deepcopy(structural_candidate)
+        ambiguous_structural_candidate["locations"].append(dict(ambiguous_structural_candidate["locations"][0], identity_id=IDENTITY_ID_CANDIDATE - 1))
+        ambiguous_structural_candidate_path = work / "location-structural-ambiguous-candidate.json"
+        ambiguous_structural_candidate_path.write_text(json.dumps(ambiguous_structural_candidate), encoding="utf-8")
+        ambiguous_structural_comparison = json.loads(run("compare", structural_baseline_path, ambiguous_structural_candidate_path, "--format", "json"))
+        ambiguous_structural_rows = [row for row in ambiguous_structural_comparison["locations"] if row["function"] == "main"]
+        assert len(ambiguous_structural_rows) == 1, ambiguous_structural_rows
+        assert ambiguous_structural_rows[0]["match"] == "ambiguous", ambiguous_structural_rows
+        assert any("ambiguous additions/removals" in warning for warning in ambiguous_structural_comparison["warnings"])
         report["locations"][0]["sum"] = None
         report["locations"][0]["sum_overflow"] = True
         capture.write_text(json.dumps(report), encoding="utf-8")
