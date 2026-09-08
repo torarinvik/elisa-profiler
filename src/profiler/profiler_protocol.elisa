@@ -1022,6 +1022,11 @@ extend ProfilerNative:
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
                         append_event_record(&summary, &event_records, data, &cursor, line_stop, source, repetition)
+                    elif frame_valid and line_stop == record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tallocation_hook_abi") and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tallocation_hook_abi"):
+                        # A known extension name without its version is malformed,
+                        # not an unknown future extension to ignore.
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tallocation_hook_abi\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tallocation_hook_abi\t")
                         version: i64 = parse_protocol_number(data, &cursor, line_stop)
