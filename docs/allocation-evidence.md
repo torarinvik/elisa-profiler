@@ -143,6 +143,15 @@ Frozen totals are not exact final totals and must not be presented as such.
 The capacity bounds retained entries, including reusable retired slots; it is
 not a limit on the total number of observed lifetimes.
 
+The engine's in-place resize operation requires the recorded old size to
+match, preserves generation and allocation count, and updates live/peak bytes.
+Its cumulative allocated-byte counter counts initial requests plus positive
+in-place growth; shrink does not subtract past traffic. A zero-size resize
+retains the entry until an explicit release/reset. Overflow or inconsistent
+old-size evidence freezes the state before changing size or byte totals.
+These are analysis rules, not evidence that the runtime emits every resize:
+the runtime's early-return shrink/zero path still needs hook coverage.
+
 This engine is not connected to capture reports yet. Raw-event ordering,
 realloc/adoption/rewind reconciliation, region identity, loss propagation,
 lifetime distributions, and performance validation remain necessary before

@@ -11,6 +11,8 @@ module AllocationLifetimesSmoke:
         const SINGLE_SLOT: usize = 1
         const CHURN_COUNT: usize = 64
         const ZERO: u64 = 0
+        const ONE: u64 = 1
+        const FIRST_ENTRY: usize = 0
         const U64_MAX: u64 = 18446744073709551615
 
     public:
@@ -27,6 +29,32 @@ module AllocationLifetimesSmoke:
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             assert state.live_bytes == BYTES
+            resized: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            resized_generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&resized, ARENA, ADDRESS, BYTES)
+            assert ElisaProfilerAllocationLifetimes::observe_resize(&resized, ARENA, ADDRESS, BYTES, BYTES + BYTES)
+            assert resized.live_bytes == BYTES + BYTES
+            assert resized.allocated_bytes == BYTES + BYTES
+            assert resized.entries[FIRST_ENTRY].generation == resized_generation
+            assert resized.allocation_count == ONE
+            assert ElisaProfilerAllocationLifetimes::observe_resize(&resized, ARENA, ADDRESS, BYTES + BYTES, BYTES + BYTES)
+            assert resized.allocated_bytes == BYTES + BYTES
+            assert ElisaProfilerAllocationLifetimes::observe_resize(&resized, ARENA, ADDRESS, BYTES + BYTES, ZERO)
+            assert resized.live_bytes == ZERO
+            assert resized.allocated_bytes == BYTES + BYTES
+            assert resized.entries[FIRST_ENTRY].live
+            assert ElisaProfilerAllocationLifetimes::observe_resize(&resized, ARENA, ADDRESS, ZERO, BYTES)
+            assert resized.allocated_bytes == BYTES + BYTES + BYTES
+            assert not ElisaProfilerAllocationLifetimes::observe_resize(&resized, ARENA, ADDRESS, ZERO, BYTES)
+            assert resized.quality == ElisaProfilerAllocationLifetimes::QUALITY_SIZE_MISMATCH
+            assert resized.live_bytes == BYTES
+            resize_overflow: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&resize_overflow, ARENA, ADDRESS, U64_MAX) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_resize(&resize_overflow, ARENA, ADDRESS, U64_MAX, ZERO)
+            assert not ElisaProfilerAllocationLifetimes::observe_resize(&resize_overflow, ARENA, ADDRESS, ZERO, BYTES)
+            assert resize_overflow.quality == ElisaProfilerAllocationLifetimes::QUALITY_OVERFLOW
+            assert resize_overflow.live_bytes == ZERO
+            assert resize_overflow.entries[FIRST_ENTRY].size_bytes == ZERO
+            assert resize_overflow.allocated_bytes == U64_MAX
             churn: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
             previous_generation: mutable u64 = ZERO
             for index in 0..<CHURN_COUNT |churn, previous_generation|:
