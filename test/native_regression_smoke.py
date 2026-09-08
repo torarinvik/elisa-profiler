@@ -708,6 +708,40 @@ def main():
                 json.dumps(allocation_events), json.dumps(allocation_events)[:-1] + ',]'), encoding="utf-8")
         run("report", malformed_allocation_output, "--format", "html", ok=False)
         allocation_html = work / "allocation.html"
+        # Allocation evidence is a closed schema: every field must be present,
+        # unsigned values retain uint64 precision, and identities agree with
+        # the containing repetition and event kind.
+        for field in allocation_events[0]:
+            malformed_allocation = copy.deepcopy(allocation_report)
+            del malformed_allocation["run"]["repetitions"][0]["allocation_events"][0][field]
+            malformed_allocation_output.write_text(json.dumps(malformed_allocation), encoding="utf-8")
+            run("report", malformed_allocation_output, "--format", "html", ok=False)
+        for field, value in (
+            ("address", -1), ("address", 2**64), ("size_bytes", "1"),
+            ("timestamp_ns", None), ("thread_id", True), ("region", 1.5),
+            ("kind", "alloc"), ("kind_code", 0), ("repetition", 2),
+            ("unexpected", 0),
+        ):
+            malformed_allocation = copy.deepcopy(allocation_report)
+            malformed_allocation["run"]["repetitions"][0]["allocation_events"][0][field] = value
+            malformed_allocation_output.write_text(json.dumps(malformed_allocation), encoding="utf-8")
+            run("report", malformed_allocation_output, "--format", "html", ok=False)
+        wide_allocation = copy.deepcopy(allocation_report)
+        wide_allocation["run"]["repetitions"][0]["allocation_events"][0]["address"] = 2**64 - 1
+        malformed_allocation_output.write_text(json.dumps(wide_allocation), encoding="utf-8")
+        assert str(2**64 - 1).encode() in run("report", malformed_allocation_output, "--format", "html")
+        first_allocation_json = json.dumps(allocation_events[0])
+        for malformed_record in (
+            first_allocation_json[:-1] + ",}",
+            first_allocation_json.replace(', "kind_code":', ' "kind_code":'),
+            first_allocation_json.replace('"size_bytes":', '"address":'),
+            first_allocation_json.replace('"old_address": 0', '"old_address": 00'),
+        ):
+            assert malformed_record != first_allocation_json
+            malformed_allocation_output.write_text(
+                json.dumps(allocation_report).replace(first_allocation_json, malformed_record, 1),
+                encoding="utf-8")
+            run("report", malformed_allocation_output, "--format", "html", ok=False)
         run("profile", ROOT / "examples" / "allocation_workload.elisa", "--mode", "diagnostic",
             "--format", "html", "--output", allocation_html)
         assert b"Memory and regions" in allocation_html.read_bytes()

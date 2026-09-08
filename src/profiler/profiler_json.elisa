@@ -113,16 +113,74 @@ extend ProfilerNative:
             return json_compound_end(data, start, stop, NATIVE_BYTE_LEFT_BRACKET, NATIVE_BYTE_RIGHT_BRACKET)
 
 
-        def json_allocation_array_count(data: darray[u8]&, start: usize, stop: usize) -> i64 can[Abort.Panic, Memory.Allocate]:
+        # Allocation evidence has a closed, flat schema. Check grammar as well as
+        # field presence before retaining raw records for offline analysis.
+        def json_allocation_object_valid(data: darray[u8]&, start: usize, stop: usize, repetition: i64) -> bool can[Abort.Panic, Memory.Allocate]:
+            cursor: mutable usize = json_skip_whitespace(data, start + NATIVE_ONE.usize(), stop)
+            content_stop: usize = stop - NATIVE_ONE.usize()
+            fields: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, fields, data, content_stop|:
+                return false if fields >= NATIVE_ALLOCATION_JSON_FIELD_COUNT
+                key_stop: i64 = json_string_end(data, cursor, content_stop)
+                return false if key_stop < NATIVE_ZERO
+                cursor <- json_skip_whitespace(data, key_stop.usize(), content_stop)
+                return false if cursor >= content_stop or data[cursor] != NATIVE_BYTE_COLON
+                cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
+                return false if cursor >= content_stop
+                if data[cursor] == NATIVE_BYTE_DOUBLE_QUOTE:
+                    value_stop: i64 = json_string_end(data, cursor, content_stop)
+                    return false if value_stop < NATIVE_ZERO
+                    cursor <- value_stop.usize()
+                else:
+                    token_start: usize = cursor
+                    while cursor < content_stop |cursor, content_stop, data|:
+                        break if data[cursor] < NATIVE_BYTE_ASCII_ZERO or data[cursor] > NATIVE_BYTE_ASCII_NINE
+                        cursor <- cursor + NATIVE_ONE.usize()
+                    return false if cursor == token_start
+                fields <- fields + NATIVE_ONE
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
+                    return false if cursor >= content_stop
+            return false if fields != NATIVE_ALLOCATION_JSON_FIELD_COUNT
+            kind: mutable darray[u8] = []
+            code: mutable i64 = NATIVE_ZERO
+            observed_repetition: mutable i64 = NATIVE_ZERO
+            return false if not json_read_string_field(data, "kind", start, stop, &kind)
+            return false if not json_read_number_field(data, "kind_code", start, stop, &code)
+            return false if code < NATIVE_PROTOCOL_ALLOCATION_ALLOC or code > NATIVE_PROTOCOL_ALLOCATION_ARENA_ADOPT
+            return false if not protocol_field_is(kind, allocation_kind_name(code))
+            return false if not json_read_number_field(data, "repetition", start, stop, &observed_repetition)
+            return false if observed_repetition != repetition or observed_repetition < NATIVE_ONE
+            return false if not json_required_unsigned_field_valid(data, "address", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "size_bytes", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "old_address", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "old_size_bytes", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "arena", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "region", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "sequence", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "thread_id", start, stop)
+            return json_required_unsigned_field_valid(data, "timestamp_ns", start, stop)
+
+
+        def json_required_unsigned_field_valid(data: darray[u8]&, key: sview, start: usize, stop: usize) -> bool can[Abort.Panic, Memory.Allocate]:
+            return false if json_key_value_start(data, key, start, stop) < NATIVE_ZERO
+            value: mutable darray[u8] = []
+            return json_read_optional_unsigned_text_field(data, key, start, stop, &value)
+
+
+        def json_allocation_array_count(data: darray[u8]&, start: usize, stop: usize, repetition: i64) -> i64 can[Abort.Panic, Memory.Allocate]:
             return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != NATIVE_BYTE_LEFT_BRACKET
             cursor: mutable usize = json_skip_whitespace(data, start + NATIVE_ONE.usize(), stop - NATIVE_ONE.usize())
             content_stop: usize = stop - NATIVE_ONE.usize()
             record_count: mutable i64 = NATIVE_ZERO
-            while cursor < content_stop |cursor, content_stop, data, record_count|:
+            while cursor < content_stop |cursor, content_stop, data, record_count, repetition|:
                 break if data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
                 return NATIVE_NEGATIVE_ONE if record_count >= NATIVE_MAX_PROTOCOL_ALLOCATION_RECORDS or data[cursor] != NATIVE_BYTE_LEFT_BRACE
                 object_stop: i64 = json_object_end(data, cursor, content_stop)
                 return NATIVE_NEGATIVE_ONE if object_stop < NATIVE_ZERO
+                return NATIVE_NEGATIVE_ONE if not json_allocation_object_valid(data, cursor, object_stop.usize(), repetition)
                 record_count <- record_count + NATIVE_ONE
                 cursor <- json_skip_whitespace(data, object_stop.usize(), content_stop)
                 if cursor < content_stop:
@@ -1099,7 +1157,9 @@ extend ProfilerNative:
                         return false if data[allocation_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
                         allocation_stop: i64 = json_array_end(data, allocation_start.usize(), repetition_record_stop.usize())
                         return false if allocation_stop < NATIVE_ZERO
-                        allocation_count: i64 = json_allocation_array_count(data, allocation_start.usize(), allocation_stop.usize())
+                        allocation_repetition: mutable i64 = NATIVE_ZERO
+                        return false if not json_read_number_field(data, "repetition", repetition_cursor, repetition_record_stop.usize(), &allocation_repetition)
+                        allocation_count: i64 = json_allocation_array_count(data, allocation_start.usize(), allocation_stop.usize(), allocation_repetition)
                         return false if allocation_count < NATIVE_ZERO
                         profile.allocation_record_count <- native_saturating_add(profile.allocation_record_count, allocation_count)
                         allocation_content_start: usize = allocation_start.usize() + NATIVE_ONE.usize()
