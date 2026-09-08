@@ -246,6 +246,34 @@ runs, have median wall times of 3.76/3.79 seconds and identical 3.63-second
 median user CPU time. Thus the demonstrated gains are export size and memory,
 not rendering speed; no speedup is claimed from this change.
 
+## Compiler optimization guided by the profiler
+
+Compiler commit `ffbb5865` narrows the abstract-effect expression walk's
+annotation table to its exact dependencies, retaining order and duplicates.
+Declaration and handler validation still use the complete table. The prior
+46,499-sample compiler capture identified repeated effect declaration/template
+scans as a hotspot; this change reduces those scans without disabling checks.
+
+Two sequential full-compiler build pairs used identical current source, `-O0`,
+and output paths, with the second pair reversing run order:
+
+| Pair | Baseline wall/user seconds | Candidate wall/user seconds |
+| --- | --- | --- |
+| Baseline then candidate | 163.13 / 161.80 | 137.00 / 135.92 |
+| Candidate then baseline | 165.00 / 163.27 | 136.52 / 135.45 |
+
+This is about 16–17% less full-build time on this workload, not a claim for all
+Elisa programs. Every output object was byte-identical. All 93 top-level effect
+fixtures also matched baseline exit codes, diagnostics, and successful objects;
+the existing effect-handler suite passed. Baseline was the validated `2f8b2180`
+gen3 compiler; the candidate was built locally with the compact-table change.
+Both timing variants were uninstrumented. Native sampling remains unfinished.
+
+Local evidence: `build/effects-full-{baseline,candidate}.log`, the corresponding
+`-reverse.log` files, `effects-parity-{baseline,candidate}` directories and
+results logs, and `effects-candidate-smoke.log`. These build artifacts are
+ignored; this section preserves the measured result and its scope.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
