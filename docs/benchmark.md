@@ -444,7 +444,10 @@ comparison, not an additive claim with previous gains. Logs:
 All 397 diagnostic/try/unhandled/error-union fixture results matched baseline
 exit statuses, diagnostics, and successful LLVM output, including existing
 refusals. The module-scoped handled-call fixture also returned 42 at runtime.
-Fresh bootstrap validation of the committed revision is pending.
+Fresh bootstrap validation of the committed revision passed: five initial
+probes, full compiler emission, byte-identical gen3/gen4, and all 40 repeat
+emissions (`build/unhandled-committed-self-host.log`). Profiler regressions
+are tracked separately.
 
 ## Promote a local baseline
 
