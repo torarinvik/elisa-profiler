@@ -548,7 +548,10 @@ order, 72.94/71.36 seconds. User CPU times were 72.45/71.01 and 72.49/70.88.
 All four emitted objects were byte-identical: 2.0–2.2% less wall time against
 `43aeeb98` on identical current source with self-hosted binaries. Logs:
 `build/backend-variadic-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap on `bcb3d87b` passed five probes, full compiler emission
+(19,110,200 bytes), byte-identical gen3/gen4 objects, and all 40 repeat emissions
+(`build/backend-variadic-committed-self-host.log`). Profiler rebuild and
+native/sampling regression checks remain pending.
 
 ## Promote a local baseline
 
