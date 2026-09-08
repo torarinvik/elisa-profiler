@@ -507,7 +507,10 @@ order, 77.20/74.44 seconds; user CPU times were 76.49/73.90 and 76.65/73.89.
 All four objects were byte-identical. This is 3.4–3.6% less wall time against
 `d4451281` on the same current compiler source and host, using self-hosted
 binaries. Logs: `build/frame-filter-full-{baseline,candidate}.log` and their
-`-reverse.log` variants. Fresh bootstrap and profiler regressions remain pending.
+`-reverse.log` variants. Fresh bootstrap on `a5a1442b` passed five initial probes,
+full compiler emission (19,108,520 bytes), byte-identical gen3/gen4 objects, and
+40 identical repeat emissions (`build/frame-filter-committed-self-host.log`).
+The profiler rebuild and native/sampling regressions remain pending.
 
 ## Promote a local baseline
 
