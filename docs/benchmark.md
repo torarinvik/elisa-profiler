@@ -531,7 +531,8 @@ All four emitted objects were byte-identical: 1.7–2.3% less wall time against
 variants. Fresh bootstrap on `43aeeb98` passed five initial probes, full compiler
 emission (19,109,464 bytes), byte-identical gen3/gen4 objects, and all 40 repeat
 emissions (`build/variadic-filter-committed-self-host.log`). Profiler rebuild and
-native/sampling regression checks remain pending.
+native/sampling regression checks also passed (`build/variadic-filter-native-regression.log`
+and `build/variadic-filter-sampling-regression.log`).
 
 ## Promote a local baseline
 
