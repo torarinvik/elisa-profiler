@@ -30,6 +30,36 @@ True within-repetition alternation remains a future optimization of the
 runner, while exact native comparison and machine-readable gate outcomes are
 already available.
 
+## Compiler instrumentation performance checkpoint
+
+On 2026-09-08, compiler change `844e2abc` added `-ftrace-functions`, and
+profiler change `eb3ab40` selected it for source-built function profiles.
+An alternating three-pair local measurement compiled
+`examples/collection_growth_workload.elisa` with two instrumented copies of
+the same self-host compiler source. Both used the same timed collector,
+runtime object, optimization level (`-O0`), and linker flags. Capture output
+went to `/dev/null` for this callback-overhead comparison.
+
+| Instrumentation | Wall seconds, three runs | Median |
+| --- | --- | --- |
+| Full trace, function collection mode | 4.52, 3.95, 3.83 | 3.95s |
+| Function-only trace, function collection mode | 3.85, 3.15, 3.32 | 3.32s |
+
+The median reduction was approximately 16%. Instrumented compiler object
+size fell from 31,387,792 to 22,533,648 bytes (approximately 28%). Compiled
+workload objects were byte-identical across all pairs. Separate captures
+using identical arguments, including the output pathname, matched call and
+completion counts for all 3,101 function records. Pathnames must match for
+count comparisons: compiler string processing and allocation counts depend
+on them.
+
+A normal CLI capture with the function-only prebuilt compiler completed its
+target in 3.44s; that is target execution time, not total CLI latency.
+Function and call-edge detail was complete, but stack paths reached the
+32,768-path limit and were explicitly marked partial. These local timings
+are a performance checkpoint, not a portable speed guarantee or evidence
+that profiling overhead has been eliminated.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
