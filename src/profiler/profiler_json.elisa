@@ -552,7 +552,7 @@ extend ProfilerNative:
             if value_start < NATIVE_ZERO:
                 result <- false
                 return true
-            return json_bool_into(data, value_start.usize(), stop, &result)
+            return json_bool_into(data, value_start.usize(), stop, result)
 
 
         def json_validate_value_statistics(data: darray[u8]&, start: usize, stop: usize) -> bool can[Abort.Panic]:

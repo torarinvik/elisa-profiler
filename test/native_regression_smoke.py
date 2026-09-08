@@ -688,6 +688,20 @@ def main():
         }]
         capture.write_text(json.dumps(invalid_thread), encoding="utf-8")
         run("report", capture, "--format", "text", ok=False)
+        # Optional booleans must update the caller's value, not its reference slot.
+        lifecycle = invalid_thread["thread_loss"][0]
+        lifecycle["bytes_dropped"] = 0
+        lifecycle["ended"] = True
+        lifecycle["end_event"] = None
+        capture.write_text(json.dumps(invalid_thread), encoding="utf-8")
+        run("report", capture, "--format", "text", ok=False)
+        lifecycle["ended"] = False
+        capture.write_text(json.dumps(invalid_thread), encoding="utf-8")
+        run("report", capture, "--format", "text")
+        lifecycle["ended"] = True
+        lifecycle["end_event"] = 1
+        capture.write_text(json.dumps(invalid_thread), encoding="utf-8")
+        run("report", capture, "--format", "text")
         for option in ("--repeat", "--warmup", "--max-event-trace-events"):
             for invalid in ("", "9223372036854775808"):
                 run("profile", ROOT / "examples/hot_loop.elisa", option, invalid, ok=False)
