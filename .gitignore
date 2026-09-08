@@ -7,4 +7,18 @@ profiles/
 *.wasm
 .DS_Store
 __pycache__/
-/IMPLEMENTATION_PLAN.md
+# Markdown is local by default: plans, audit notes, and scratch reports must
+# not enter commits. Add permanent documentation to this explicit allowlist.
+*.[mM][dD]
+*.markdown
+*.MARKDOWN
+!/README.md
+!/docs/allocation-evidence.md
+!/docs/benchmark.md
+!/docs/compiler-integration.md
+!/docs/host-capabilities.md
+!/docs/measurement-semantics.md
+!/docs/path-remapping.md
+!/docs/profile-artifact.md
+!/docs/progress.md
+!/docs/reference-workloads.md
