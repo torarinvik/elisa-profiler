@@ -797,6 +797,21 @@ passed. Evidence: `build/template-lines-committed-self-host.log`,
 `build/template-lines-profiler-build.log`, `build/template-lines-native-regression.log`,
 and `build/template-lines-sampling-regression.log`.
 
+## Cache template lines during body emission (2026-09-09)
+
+Body emission now collects template lines once and reuses them in its top-level,
+module, and handler paths, retaining generated-typestate exceptions. All 650
+selected diagnostic/generic/errorset/typestate/overload/module/handler comparisons
+matched status, diagnostics, and successful LLVM output. The direct template
+metadata smoke also passed.
+
+Full O0 baseline/candidate wall times were 55.54/54.31 seconds and, reversing
+order, 55.70/54.23 seconds. User CPU times were 55.12/53.85 and 55.25/53.79.
+All four objects were byte-identical: 2.2–2.6% less wall time than `e7674ecb`
+with self-hosted binaries on identical source. Evidence:
+`build/template-bodies-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh committed bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
