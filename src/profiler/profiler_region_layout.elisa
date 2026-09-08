@@ -1,0 +1,125 @@
+# Private decoding and geometry checks for versioned region-layout evidence.
+extend ProfilerNative:
+    private:
+        def region_layout_geometry_valid(arena: u64, header: u64, data_base: u64, capacity: u64) -> bool:
+            return arena != NATIVE_ZERO.u64() and header != NATIVE_ZERO.u64() and data_base > header and capacity <= NATIVE_U64_MAX - data_base
+
+        def append_region_layout_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.region_layout_count, NATIVE_PROTOCOL_ERROR_ALLOCATION, NATIVE_MAX_PROTOCOL_REGION_LAYOUT_RECORDS)
+            arena_field: mutable darray[u8] = []
+            region_field: mutable darray[u8] = []
+            header_field: mutable darray[u8] = []
+            data_field: mutable darray[u8] = []
+            capacity_field: mutable darray[u8] = []
+            sequence_field: mutable darray[u8] = []
+            thread_field: mutable darray[u8] = []
+            timestamp_field: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &arena_field)
+            cursor <- protocol_field_into(data, cursor, stop, &region_field)
+            cursor <- protocol_field_into(data, cursor, stop, &header_field)
+            cursor <- protocol_field_into(data, cursor, stop, &data_field)
+            cursor <- protocol_field_into(data, cursor, stop, &capacity_field)
+            cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
+            cursor <- protocol_field_into(data, cursor, stop, &thread_field)
+            cursor <- protocol_field_into(data, cursor, stop, &timestamp_field)
+            valid: mutable bool = cursor == stop and stop > NATIVE_ZERO.usize() and data[stop - NATIVE_ONE.usize()] != NATIVE_BYTE_TAB
+            valid <- valid and protocol_unsigned_u64(arena_field)
+            valid <- valid and protocol_unsigned_u64(region_field)
+            valid <- valid and protocol_unsigned_u64(header_field)
+            valid <- valid and protocol_unsigned_u64(data_field)
+            valid <- valid and protocol_unsigned_u64(capacity_field)
+            valid <- valid and protocol_unsigned_u64(sequence_field)
+            valid <- valid and protocol_unsigned_u64(thread_field)
+            valid <- valid and protocol_unsigned_u64(timestamp_field)
+            if valid:
+                valid <- region_layout_geometry_valid(protocol_u64_number_field(arena_field), protocol_u64_number_field(header_field), protocol_u64_number_field(data_field), protocol_u64_number_field(capacity_field))
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                return
+            append_record_separator(records)
+            append_text(records, "{")
+            append_text(records, "\"arena\":")
+            append_protocol_number(records, arena_field)
+            append_text(records, ",\"region\":")
+            append_protocol_number(records, region_field)
+            append_text(records, ",\"header_address\":")
+            append_protocol_number(records, header_field)
+            append_text(records, ",\"data_address\":")
+            append_protocol_number(records, data_field)
+            append_text(records, ",\"capacity_bytes\":")
+            append_protocol_number(records, capacity_field)
+            append_text(records, ",\"sequence\":")
+            append_protocol_number(records, sequence_field)
+            append_text(records, ",\"thread_id\":")
+            append_protocol_number(records, thread_field)
+            append_text(records, ",\"timestamp_ns\":")
+            append_protocol_number(records, timestamp_field)
+            append_text(records, ",\"repetition\":")
+            append_i64(records, repetition)
+            append_text(records, "}")
+            summary.region_layout_count <- native_saturating_add(summary.region_layout_count, NATIVE_ONE)
+
+        def json_region_layout_object_valid(data: darray[u8]&, start: usize, stop: usize, repetition: i64) -> bool can[Abort.Panic, Memory.Allocate]:
+            cursor: mutable usize = json_skip_whitespace(data, start + NATIVE_ONE.usize(), stop)
+            content_stop: usize = stop - NATIVE_ONE.usize()
+            fields: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, fields, data, content_stop|:
+                return false if fields >= NATIVE_REGION_LAYOUT_JSON_FIELDS
+                key_stop: i64 = json_string_end(data, cursor, content_stop)
+                return false if key_stop < NATIVE_ZERO
+                cursor <- json_skip_whitespace(data, key_stop.usize(), content_stop)
+                return false if cursor >= content_stop or data[cursor] != NATIVE_BYTE_COLON
+                cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
+                token_start: usize = cursor
+                while cursor < content_stop |cursor, content_stop, data|:
+                    break if data[cursor] < NATIVE_BYTE_ASCII_ZERO or data[cursor] > NATIVE_BYTE_ASCII_NINE
+                    cursor <- cursor + NATIVE_ONE.usize()
+                return false if cursor == token_start
+                fields <- fields + NATIVE_ONE
+                cursor <- json_skip_whitespace(data, cursor, content_stop)
+                if cursor < content_stop:
+                    return false if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
+                    return false if cursor >= content_stop
+            return false if fields != NATIVE_REGION_LAYOUT_JSON_FIELDS
+            observed_repetition: mutable i64 = NATIVE_ZERO
+            return false if not json_read_number_field(data, "repetition", start, stop, &observed_repetition)
+            return false if observed_repetition != repetition or observed_repetition < NATIVE_ONE
+            return false if not json_required_unsigned_field_valid(data, "arena", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "region", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "header_address", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "data_address", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "capacity_bytes", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "sequence", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "thread_id", start, stop)
+            return false if not json_required_unsigned_field_valid(data, "timestamp_ns", start, stop)
+            arena_field: mutable darray[u8] = []
+            return false if not json_read_optional_unsigned_text_field(data, "arena", start, stop, &arena_field)
+            header_field: mutable darray[u8] = []
+            return false if not json_read_optional_unsigned_text_field(data, "header_address", start, stop, &header_field)
+            data_field: mutable darray[u8] = []
+            return false if not json_read_optional_unsigned_text_field(data, "data_address", start, stop, &data_field)
+            capacity_field: mutable darray[u8] = []
+            return false if not json_read_optional_unsigned_text_field(data, "capacity_bytes", start, stop, &capacity_field)
+            return region_layout_geometry_valid(protocol_u64_number_field(arena_field), protocol_u64_number_field(header_field), protocol_u64_number_field(data_field), protocol_u64_number_field(capacity_field))
+
+        def json_region_layout_array_count(data: darray[u8]&, start: usize, stop: usize, repetition: i64) -> i64 can[Abort.Panic, Memory.Allocate]:
+            return NATIVE_NEGATIVE_ONE if start >= stop or data[start] != NATIVE_BYTE_LEFT_BRACKET
+            cursor: mutable usize = json_skip_whitespace(data, start + NATIVE_ONE.usize(), stop - NATIVE_ONE.usize())
+            content_stop: usize = stop - NATIVE_ONE.usize()
+            record_count: mutable i64 = NATIVE_ZERO
+            while cursor < content_stop |cursor, content_stop, data, record_count, repetition|:
+                break if data[cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                return NATIVE_NEGATIVE_ONE if record_count >= NATIVE_MAX_PROTOCOL_REGION_LAYOUT_RECORDS or data[cursor] != NATIVE_BYTE_LEFT_BRACE
+                object_stop: i64 = json_object_end(data, cursor, content_stop)
+                return NATIVE_NEGATIVE_ONE if object_stop < NATIVE_ZERO
+                return NATIVE_NEGATIVE_ONE if not json_region_layout_object_valid(data, cursor, object_stop.usize(), repetition)
+                record_count <- record_count + NATIVE_ONE
+                cursor <- json_skip_whitespace(data, object_stop.usize(), content_stop)
+                if cursor < content_stop:
+                    return NATIVE_NEGATIVE_ONE if data[cursor] != NATIVE_BYTE_COMMA
+                    cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
+                    return NATIVE_NEGATIVE_ONE if cursor >= content_stop
+            return record_count
+

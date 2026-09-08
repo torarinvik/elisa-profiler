@@ -7,6 +7,7 @@ extend ProfilerNative:
     private:
         def empty_capture_summary() -> CaptureSummary:
             return CaptureSummary{
+                region_layout_records: [], region_layout_count: NATIVE_ZERO,
                 allocation_abi_evidence: [],
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
@@ -316,6 +317,9 @@ extend ProfilerNative:
                 append_text(buffer, ",\"v1_calls\":")
                 append_text(buffer, "true" if flags / NATIVE_ALLOCATION_ABI_VERSIONED_CALL % NATIVE_TWO == NATIVE_ONE else "false")
                 append_text(buffer, "}")
+            append_text(buffer, ",\"region_layouts\":[")
+            buffer.extend(summary.region_layout_records)
+            append_text(buffer, "]")
             append_text(buffer, ",\"allocation_events\":[")
             buffer.extend(summary.allocation_records)
             append_text(buffer, "]")

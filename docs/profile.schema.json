@@ -547,6 +547,11 @@
           "type": "array",
           "items": { "$ref": "#/$defs/allocation_event" }
         },
+        "region_layouts": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": { "$ref": "#/$defs/region_layout" }
+        },
         "allocation_events_dropped": { "type": "integer", "minimum": 0 },
         "allocation_hook_abi": {
           "type": "object",
@@ -561,6 +566,22 @@
         }
       },
       "additionalProperties": true
+    },
+    "region_layout": {
+      "type": "object",
+      "required": ["arena", "region", "header_address", "data_address", "capacity_bytes", "sequence", "thread_id", "timestamp_ns", "repetition"],
+      "properties": {
+        "arena": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+        "region": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "header_address": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+        "data_address": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+        "capacity_bytes": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "sequence": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "thread_id": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "timestamp_ns": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "repetition": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
     },
     "allocation_event": {
       "type": "object",

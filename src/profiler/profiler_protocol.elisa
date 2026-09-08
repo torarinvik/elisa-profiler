@@ -779,6 +779,7 @@ extend ProfilerNative:
         
         def parse_capture(data: darray[u8]&, source: darray[u8]&, path_maps: darray[NativePathMap]&, source_map_data: darray[u8]&, source_map_flat_lines: darray[i64]&, source_map_source_lines: darray[i64]&, allow_partial_tail: bool, repetition: i64, location_timing: bool) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
+                region_layout_records: [], region_layout_count: NATIVE_ZERO,
                 allocation_abi_evidence: [],
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
@@ -852,6 +853,7 @@ extend ProfilerNative:
             folded_records: mutable darray[u8] = []
             sample_records: mutable darray[u8] = []
             allocation_records: mutable darray[u8] = []
+            region_layout_records: mutable darray[u8] = []
             begin_prefix: sview = "ELISA_PROFILE\t1\tbegin\t"
             end_prefix: sview = "ELISA_PROFILE\t1\tend\t"
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
@@ -1040,6 +1042,17 @@ extend ProfilerNative:
                                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                             else:
                                 summary.allocation_abi_flags <- flags
+                    elif frame_valid and line_stop == record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tregion_layout") and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tregion_layout"):
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tregion_layout\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tregion_layout\t")
+                        version: i64 = parse_protocol_number(data, &cursor, line_stop)
+                        if version < NATIVE_ONE:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                        elif version == NATIVE_ONE:
+                            append_region_layout_record(&summary, &region_layout_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, extension_prefix):
                         # Extensions are transport-level records. Their framing,
                         # sequence, length, and checksum have already been
@@ -1058,6 +1071,7 @@ extend ProfilerNative:
             summary.folded_records <- folded_records
             summary.event_records <- event_records
             summary.allocation_records <- allocation_records
+            summary.region_layout_records <- region_layout_records
             summary.thread_loss_records <- thread_loss_records
             summary.sample_records <- sample_records
             return summary

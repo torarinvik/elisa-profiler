@@ -217,6 +217,23 @@ def main():
         run("profile", ROOT / "examples" / "hot_loop.elisa", "--prebuilt", wide_target,
             "--event-trace", "--format", "json", "--output", wide_capture)
         wide_report = json.loads(wide_capture.read_text(encoding="utf-8"))
+        wide_layouts = wide_report["run"]["repetitions"][0]["region_layouts"]
+        assert len(wide_layouts) == 1
+        layout = wide_layouts[0]
+        assert (layout["arena"], layout["region"], layout["header_address"], layout["data_address"], layout["capacity_bytes"]) == (0x1000, 3, 0x2000, 0x2040, 4096)
+        malformed_layout_path = work / "malformed-layout.json"
+        for field in layout:
+            malformed_layout = copy.deepcopy(wide_report)
+            del malformed_layout["run"]["repetitions"][0]["region_layouts"][0][field]
+            malformed_layout_path.write_text(json.dumps(malformed_layout), encoding="utf-8")
+            run("report", malformed_layout_path, "--format", "json", ok=False)
+        for changes in ({"arena": 0}, {"data_address": layout["header_address"]},
+                        {"capacity_bytes": IDENTITY_ID_CANDIDATE}, {"region": -1},
+                        {"thread_id": True}, {"extra": 0}, {"repetition": 2}):
+            malformed_layout = copy.deepcopy(wide_report)
+            malformed_layout["run"]["repetitions"][0]["region_layouts"][0].update(changes)
+            malformed_layout_path.write_text(json.dumps(malformed_layout), encoding="utf-8")
+            run("report", malformed_layout_path, "--format", "html", ok=False)
         validate(wide_report, allocation_schema_root, allocation_schema_root, "unsigned-values")
         wide_values = [record for record in wide_report["locations"] if record["kind"] == "value"]
         assert len(wide_values) == 1

@@ -158,10 +158,18 @@ sequence with allocation evidence. Buffer refusals contribute to the existing
 allocation-evidence drop counter. The record type is stored separately from
 the allocation kind, so an allocation kind cannot masquerade as a layout.
 Framed/unframed collector tests verify exact fields and distinguish the record
-from allocation events. This is currently transport plumbing only: compiler
-emission, Elisa decoding and validation, schema/report preservation, and map
-reconciliation are still to be implemented. Current readers ignore this
-forward-compatible extension; no region map or lifetime claim follows from it.
+from allocation events. The Elisa decoder preserves v1 records in each
+repetition's `region_layouts` array, separately from `allocation_events`.
+Raw capture and offline artifact readers validate unsigned 64-bit fields,
+nonzero arena/header identities, data addresses strictly beyond the header,
+and capacity ranges that do not overflow. Offline records must belong to the
+containing repetition and contain exactly the nine schema fields. Unknown
+future layout versions remain forward-compatible and are ignored.
+
+Native regression verifies schema validation and lossless offline JSON
+preservation; protocol tests cover malformed fields and uint64 boundaries.
+Compiler emission and map reconciliation are still to be implemented. These
+records alone do not establish a complete region map or lifetime metrics.
 
 ### Lifetime-state engine
 

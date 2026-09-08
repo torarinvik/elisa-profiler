@@ -1170,6 +1170,14 @@ extend ProfilerNative:
                         abi_flags <- abi_flags + NATIVE_ALLOCATION_ABI_VERSIONED_CALL if abi_flag
                     profile.allocation_abi_evidence.push(abi_flags)
                     allocation_start: i64 = json_key_value_start(data, "allocation_events", repetition_cursor, repetition_record_stop.usize())
+                    layout_start: i64 = json_key_value_start(data, "region_layouts", repetition_cursor, repetition_record_stop.usize())
+                    if layout_start >= NATIVE_ZERO:
+                        return false if data[layout_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
+                        layout_stop: i64 = json_array_end(data, layout_start.usize(), repetition_record_stop.usize())
+                        return false if layout_stop < NATIVE_ZERO
+                        layout_repetition: mutable i64 = NATIVE_ZERO
+                        return false if not json_read_number_field(data, "repetition", repetition_cursor, repetition_record_stop.usize(), &layout_repetition)
+                        return false if json_region_layout_array_count(data, layout_start.usize(), layout_stop.usize(), layout_repetition) < NATIVE_ZERO
                     if allocation_start >= NATIVE_ZERO:
                         return false if data[allocation_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
                         allocation_stop: i64 = json_array_end(data, allocation_start.usize(), repetition_record_stop.usize())

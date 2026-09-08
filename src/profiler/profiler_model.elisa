@@ -115,6 +115,8 @@ module ProfilerNative:
         const NATIVE_MAX_PROTOCOL_DETAIL_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_EVENT_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_ALLOCATION_RECORDS: i64 = 1000000
+        const NATIVE_MAX_PROTOCOL_REGION_LAYOUT_RECORDS: i64 = 1000000
+        const NATIVE_REGION_LAYOUT_JSON_FIELDS: i64 = 9
         const NATIVE_MAX_PROTOCOL_SAMPLE_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_THREAD_RECORDS: i64 = 1000000
         const NATIVE_MAX_DEPENDENCY_FILES: i64 = 100000
@@ -470,6 +472,8 @@ module ProfilerNative:
             source_lines: mutable darray[i64]
 
         struct CaptureSummary:
+            region_layout_records: mutable darray[u8]
+            region_layout_count: mutable i64
             allocation_abi_evidence: mutable darray[i64]
             events: mutable i64
             locations: mutable i64

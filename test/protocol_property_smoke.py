@@ -26,6 +26,8 @@ VALUE_FRAME_SEQUENCE = 2
 ALLOCATION_ABI_FLAGS = {"negotiated_v1": 1, "legacy_calls": 2,
                         "rejected_version": 4, "v1_calls": 8}
 ALLOCATION_ABI_MAX_FLAGS = sum(ALLOCATION_ABI_FLAGS.values())
+REGION_LAYOUT_KEYS = ("arena", "region", "header_address", "data_address", "capacity_bytes", "sequence", "thread_id", "timestamp_ns")
+REGION_LAYOUT_VALUES = (1, 0, 2, 3, 4, 5, 6, 7)
 MAX_PROTOCOL_FRAME_BYTES = 1024 * 1024
 READ_CHUNK_BYTES = 8192
 META_FIELD_COUNT = 16
@@ -192,6 +194,22 @@ def main() -> int:
         assert baseline_process.returncode == 0, baseline_process.stderr
         assert baseline_report is not None
         assert "allocation_hook_abi" not in baseline_report["run"]["repetitions"][0]
+        for index, values in enumerate((REGION_LAYOUT_VALUES, (1, MAX_U64, MAX_U64 - 1, MAX_U64, 0, MAX_U64, MAX_U64, MAX_U64))):
+            payload = protocol_record("extension", "region_layout", 1, *values)
+            process, report = recover(native, work / f"layout-{index}", baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload))
+            assert process.returncode == 0, process.stderr
+            assert report["run"]["repetitions"][0]["region_layouts"] == [dict(zip(REGION_LAYOUT_KEYS, values), repetition=1)]
+            assert not report["run"]["repetitions"][0]["allocation_events"]
+        invalid_layouts = [(), (1,), (0,), (1, *REGION_LAYOUT_VALUES, ""), (1, *REGION_LAYOUT_VALUES, 0)]
+        for field_index in range(len(REGION_LAYOUT_KEYS)):
+            values = list(REGION_LAYOUT_VALUES)
+            values[field_index] = MAX_U64 + 1
+            invalid_layouts.append((1, *values))
+        invalid_layouts.extend(((1, 0, 0, 2, 3, 4, 5, 6, 7), (1, 1, 0, 3, 3, 4, 5, 6, 7),
+                                (1, 1, 0, 2, MAX_U64, 1, 5, 6, 7)))
+        for index, fields in enumerate(invalid_layouts):
+            payload = protocol_record("extension", "region_layout", *fields)
+            expect_rejected(native, work / f"layout-invalid-{index}", baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload), "invalid region layout")
 
         for flags in range(ALLOCATION_ABI_MAX_FLAGS + 1):
             payload = protocol_record("extension", "allocation_hook_abi", 1, flags)
