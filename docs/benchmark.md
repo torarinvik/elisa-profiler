@@ -422,7 +422,9 @@ refusals. An additional focused fixture retained the changed `Alive` to `Dead`
 argument-mismatch and restoration diagnostics exactly. Fresh bootstrap
 validation of the committed revision passed: five initial probes, full compiler
 emission, byte-identical gen3/gen4, and all 40 repeat emissions. Evidence:
-`build/derived-committed-self-host.log`. Profiler regressions are tracked separately.
+`build/derived-committed-self-host.log`. The rebuilt profiler also passed native
+and sampling regressions (`build/derived-native-regression.log` and
+`build/derived-sampling-regression.log`).
 
 ## Promote a local baseline
 
