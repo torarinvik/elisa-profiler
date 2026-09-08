@@ -791,12 +791,25 @@ struct profile_overflow_frame {
     profile_overflow_frame *previous;
 };
 
-static _Thread_local profile_call_frame profile_call_stack[PROFILE_CALL_STACK_CAPACITY];
-static _Thread_local size_t profile_call_depth;
-static _Thread_local size_t profile_call_overflow_depth;
-static _Thread_local profile_overflow_frame *profile_call_overflow_stack;
-static _Thread_local size_t profile_call_overflow_untracked_depth;
-static _Thread_local profile_thread_state *profile_current_thread;
+/* One TLS allocation lets a callback resolve its thread-local base once on
+ * hosts with dynamic TLS accessors (notably Darwin). Ownership and lifetime
+ * remain per-thread; this does not introduce shared stack state. */
+typedef struct {
+    profile_call_frame call_stack[PROFILE_CALL_STACK_CAPACITY];
+    size_t call_depth;
+    size_t call_overflow_depth;
+    profile_overflow_frame *call_overflow_stack;
+    size_t call_overflow_untracked_depth;
+    profile_thread_state *current_thread;
+} profile_local_state;
+
+static _Thread_local profile_local_state profile_local;
+#define profile_call_stack (profile_local.call_stack)
+#define profile_call_depth (profile_local.call_depth)
+#define profile_call_overflow_depth (profile_local.call_overflow_depth)
+#define profile_call_overflow_stack (profile_local.call_overflow_stack)
+#define profile_call_overflow_untracked_depth (profile_local.call_overflow_untracked_depth)
+#define profile_current_thread (profile_local.current_thread)
 static profile_thread_state *profile_get_thread_locked(void);
 static void profile_initialize_thread_key(void);
 static void profile_thread_key_destructor(void *value);

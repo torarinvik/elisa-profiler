@@ -150,6 +150,22 @@ intermediate names and removes both reports and their progress manifests after
 the comparison completes. A failed side is surfaced as a benchmark failure and
 does not produce a misleading comparison.
 
+## Sampling callback TLS layout
+
+The collector groups its per-thread stack, depth, overflow state, and thread
+registration pointer in one TLS allocation. This lets Darwin callbacks reuse
+one resolved TLS base; state remains isolated per thread. The permanent
+callback benchmark now includes stable-identity sampling entry/exit pairs.
+
+On the development host, five repetitions of 10 million entry/exit pairs at a
+5 ms sampling period (capture transport redirected to `/dev/null`) reduced
+median elapsed callback-loop time from 170,355,000 to 114,825,000 ns, about 33%.
+This includes loop overhead and is not a whole-compiler speedup claim. Three
+small compiler workload pairs produced identical objects; their median user
+CPU times were 2.15/2.10 seconds, with noisy wall times. Full-scale impact must
+be measured separately. Native, sampling, mismatch/overflow, strict-build, and
+sanitizer checks cover the new layout.
+
 ## Large Speedscope export validation
 
 The 58,399-sample self-build capture exposed stack exhaustion in the previous

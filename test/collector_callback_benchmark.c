@@ -12,6 +12,10 @@
 extern void elisa_trace_record(const char *function_name, uint32_t line);
 extern void elisa_trace_function_entry(const char *function_name, uint32_t line);
 extern void elisa_trace_function_exit(const char *function_name, uint32_t line);
+extern void elisa_trace_function_entry_id(const char *function_name, uint32_t line,
+                                          uint64_t function_id);
+extern void elisa_trace_function_exit_id(const char *function_name, uint32_t line,
+                                         uint64_t function_id);
 extern void elisa_trace_record_value(const char *function_name, uint32_t line,
                                      const char *variable_name, uint64_t value,
                                      uint32_t is_signed);
@@ -24,6 +28,7 @@ enum {
 };
 
 static const int64_t BENCHMARK_NANOS_PER_SECOND = 1000000000;
+static const uint64_t BENCHMARK_FUNCTION_ID = 1;
 static const char BENCHMARK_FUNCTION[] = "benchmark_function";
 static const char BENCHMARK_VARIABLE[] = "benchmark_value";
 
@@ -34,6 +39,7 @@ typedef enum {
     BENCHMARK_STATEMENT_TIMING,
     BENCHMARK_SCALAR,
     BENCHMARK_FULL,
+    BENCHMARK_SAMPLING,
 } benchmark_variant;
 
 typedef struct {
@@ -49,6 +55,7 @@ static const benchmark_definition BENCHMARKS[] = {
     {"statement-timing", 1, BENCHMARK_STATEMENT_TIMING},
     {"scalar", 1, BENCHMARK_SCALAR},
     {"full-trace", 4, BENCHMARK_FULL},
+    {"sampling", 2, BENCHMARK_SAMPLING},
 };
 
 static uint64_t benchmark_read_positive_environment(const char *name,
@@ -92,6 +99,10 @@ static void benchmark_invoke(benchmark_variant variant, uint64_t iteration) {
     case BENCHMARK_FUNCTION_TIMING:
         elisa_trace_function_entry(BENCHMARK_FUNCTION, BENCHMARK_LINE);
         elisa_trace_function_exit(BENCHMARK_FUNCTION, BENCHMARK_LINE);
+        break;
+    case BENCHMARK_SAMPLING:
+        elisa_trace_function_entry_id(BENCHMARK_FUNCTION, BENCHMARK_LINE, BENCHMARK_FUNCTION_ID);
+        elisa_trace_function_exit_id(BENCHMARK_FUNCTION, BENCHMARK_LINE, BENCHMARK_FUNCTION_ID);
         break;
     case BENCHMARK_STATEMENT_TIMING:
         elisa_trace_record(BENCHMARK_FUNCTION, BENCHMARK_LINE);
