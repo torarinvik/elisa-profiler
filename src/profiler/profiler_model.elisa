@@ -315,6 +315,15 @@ module ProfilerNative:
             return -(right - left)
 
 
+        def integer_sqrt(value: i64) -> i64:
+            return NATIVE_ZERO if value <= NATIVE_ZERO
+            guess: mutable i64 = value
+            while guess > value / guess |guess, value|:
+                quotient: i64 = value / guess
+                guess <- guess / NATIVE_TWO + quotient / NATIVE_TWO + (guess % NATIVE_TWO + quotient % NATIVE_TWO) / NATIVE_TWO
+            return guess
+
+
         def native_confidence_half_width(value_stdev_ns: i64, sample_count: i64) -> i64:
             # A single observation has no estimate of dispersion. The caller
             # serializes equal bounds with `available: false` in that case.

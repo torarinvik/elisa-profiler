@@ -51,6 +51,16 @@ allocation-lifetimes-smoke: compiler-manifest-smoke
 
 test: allocation-lifetimes-smoke
 
+.PHONY: hash-smoke
+hash-smoke: compiler-manifest-smoke
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_STAGE1_BIN)" -emit exe -O0 -o "$(PROFILER_ROOT)/build/hash-smoke" \
+		"$(PROFILER_ROOT)/test/hash_smoke.elisa"
+	@"$(PROFILER_ROOT)/build/hash-smoke"
+
+test: hash-smoke
+
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
 	ELISACORE_BIN="$${ELISACORE_BIN:-$(STAGE0_BIN)}" \

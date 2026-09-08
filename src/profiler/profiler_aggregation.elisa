@@ -159,15 +159,6 @@ extend ProfilerNative:
                 destination.malformed_code <- incoming.malformed_code
 
 
-        def integer_sqrt(value: i64) -> i64:
-            return NATIVE_ZERO if value <= NATIVE_ZERO
-            guess: mutable i64 = value
-            while guess > value / guess |guess, value|:
-                quotient: i64 = value / guess
-                guess <- guess / NATIVE_TWO + quotient / NATIVE_TWO + (guess % NATIVE_TWO + quotient % NATIVE_TWO) / NATIVE_TWO
-            return guess
-
-
         def sort_i64(values: mutable darray[i64]&) -> void:
             for outer in 0..<values.count |outer, values|:
                 smallest: mutable usize = outer

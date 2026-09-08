@@ -1,0 +1,40 @@
+include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
+include "../src/profiler/profiler_model.elisa"
+include "../src/profiler/profiler_hash.elisa"
+
+extend ProfilerNative:
+    private:
+        const HASH_SMOKE_LONG_LENGTH: usize = 1000000
+        const HASH_SMOKE_A: u8 = 97
+        const HASH_SMOKE_B: u8 = 98
+        const HASH_SMOKE_C: u8 = 99
+
+        def check_repeated_a(length: usize, expected: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            data: mutable darray[u8] = []
+            for index in 0..<length |data|:
+                data.push(HASH_SMOKE_A)
+            check_hash(data, expected)
+
+        def check_hash(data: darray[u8], expected: sview) -> void can[Abort.Panic, Memory.Allocate]:
+            actual: darray[u8] = sha256_hex(data)
+            assert actual.count == NATIVE_SHA256_HEX_LENGTH
+            for index in 0..<NATIVE_SHA256_HEX_LENGTH |actual, expected|:
+                assert actual[index] == expected[index]
+
+    public:
+        def hash_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
+            check_hash([], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+            check_hash([HASH_SMOKE_A, HASH_SMOKE_B, HASH_SMOKE_C], "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+            check_repeated_a(NATIVE_SHA256_BLOCK_BYTES - NATIVE_SHA256_LENGTH_BYTES - NATIVE_ONE.usize(), "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318")
+            check_repeated_a(NATIVE_SHA256_BLOCK_BYTES - NATIVE_SHA256_LENGTH_BYTES, "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a")
+            check_repeated_a(NATIVE_SHA256_BLOCK_BYTES - NATIVE_ONE.usize(), "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34")
+            check_repeated_a(NATIVE_SHA256_BLOCK_BYTES, "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb")
+            check_repeated_a(NATIVE_SHA256_BLOCK_BYTES + NATIVE_ONE.usize(), "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0")
+            long_input: mutable darray[u8] = []
+            for index in 0..<HASH_SMOKE_LONG_LENGTH |long_input|:
+                long_input.push(HASH_SMOKE_A)
+            check_hash(long_input, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
+            return NATIVE_ZERO
+
+def main() -> i64:
+    return ProfilerNative::hash_smoke()
