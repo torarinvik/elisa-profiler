@@ -59,6 +59,10 @@ def validate(value: Any, schema: dict[str, Any], root: dict[str, Any], path: str
             raise SchemaError(f"{path}: value is below minimum")
         if "exclusiveMinimum" in schema and value <= schema["exclusiveMinimum"]:
             raise SchemaError(f"{path}: value is not above exclusive minimum")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise SchemaError(f"{path}: value is above maximum")
+        if "exclusiveMaximum" in schema and value >= schema["exclusiveMaximum"]:
+            raise SchemaError(f"{path}: value is not below exclusive maximum")
     if isinstance(value, dict):
         for required in schema.get("required", []):
             if required not in value:

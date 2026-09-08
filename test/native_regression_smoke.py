@@ -11,6 +11,8 @@ import subprocess
 import statistics
 import tempfile
 
+from profile_schema_smoke import SchemaError, validate
+
 ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / "bin" / "elisa-profiler"
 TIMEOUT_SECONDS = 120
@@ -56,6 +58,26 @@ def run(*args, ok=True, expected=None):
 
 
 def main():
+    # Keep the lightweight schema verifier honest at both integer boundaries.
+    allocation_schema_root = json.loads((ROOT / "docs/profile.schema.json").read_text(encoding="utf-8"))
+    address_schema = allocation_schema_root["$defs"]["allocation_event"]["properties"]["address"]
+    validate(0, address_schema, allocation_schema_root, "address")
+    validate(IDENTITY_ID_CANDIDATE, address_schema, allocation_schema_root, "address")
+    for invalid_address in (-1, IDENTITY_ID_CANDIDATE + 1):
+        try:
+            validate(invalid_address, address_schema, allocation_schema_root, "address")
+        except SchemaError:
+            pass
+        else:
+            raise AssertionError("schema accepted an out-of-range address")
+    exclusive_schema = {"type": "integer", "exclusiveMaximum": IDENTITY_ID_CANDIDATE}
+    validate(IDENTITY_ID_CANDIDATE - 1, exclusive_schema, exclusive_schema, "boundary")
+    try:
+        validate(IDENTITY_ID_CANDIDATE, exclusive_schema, exclusive_schema, "boundary")
+    except SchemaError:
+        pass
+    else:
+        raise AssertionError("schema accepted its exclusive maximum")
     report = {
         "schema_version": 1,
         "compiler": {"source": "nested decoy", "branch": "test", "commit": "abc"},
