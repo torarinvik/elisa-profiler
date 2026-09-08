@@ -701,6 +701,27 @@ Leading sampled leaves were `new_region_with_owner` (514), `emit_object` (501),
 attribution or exact self times. This single instrumented run does not establish
 a paired throughput gain; use the preceding controlled benchmarks for that.
 
+## Index region-fact names (2026-09-09)
+
+Region forwarding now uses name buckets with exact-name collision checks and
+source-ordered chains. Existing owner precedence, first top-level fallback,
+arity filtering, and live fact updates remain intact. A direct backend test
+exercises these cases, including two colliding names. All 606 selected
+diagnostic/region/module/overload/packed comparisons matched statuses,
+diagnostics, and successful LLVM output.
+
+The direct test also exposed an existing compiler bug: implicit packed-store
+initialization could receive a null arena. The independent fix `a6810bfb` and
+its focused regression precede the index. Both performance binaries include
+that fix; the baseline was built from a detached checkout of `a6810bfb`.
+
+Full O0 baseline/candidate wall times were 61.29/59.02 seconds and, reversing
+order, 61.53/58.76 seconds. User CPU times were 60.60/58.20 and 60.74/58.06.
+All four objects were byte-identical: 3.7–4.5% less wall time with self-hosted
+binaries on identical current source. Evidence:
+`build/region-index-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh committed bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
