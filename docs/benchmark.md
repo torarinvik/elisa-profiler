@@ -119,6 +119,23 @@ zero reported misses, and complete capture/detail quality. Comparisons against
 the stage-0-built seed are not an instrumentation-overhead baseline: that is a
 different compiler generation with different generated code.
 
+### Full self-build sampling checkpoint
+
+With compiler `bd25a22a`, a sequential full self-build pair used the same
+generation, source, `-O0`, output pathname, and target arguments. Baseline wall
+time was 307.99s and user CPU 288.81s. At a 5,000 µs sampling period, target
+wall time was 391.175s and user CPU 355.258s: approximately 27% wall and 23%
+user-CPU overhead in this single pair. Total sampled CLI wall time was 396.71s,
+about 5.5s beyond target execution. This is not a repeated-trial confidence
+estimate, and the smaller workload's 9% result must not be generalized to it.
+
+Both builds produced byte-identical 19,083,744-byte objects. The 19.4 MB JSON
+report retained 58,399 samples, zero reported misses, and complete capture/detail
+quality. Target peak RSS was 875,085,824 bytes sampled versus 1,027,948,544 bytes
+baseline; do not infer a general memory improvement from one run. The capture
+is useful at self-host scale, but reducing full-scale sampling overhead remains
+an open performance task.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
