@@ -56,6 +56,17 @@ capacity, checking that both operations keep the address and emit
 the full new size against unused capacity, causing false fixed-region overflow
 or unnecessary relocation in chained arenas.
 
+An explicitly included arena implementation must share the compiler's builtin
+allocator entry points. Mixing linked-runtime allocation with a private realloc
+implementation splits their reclaimed-span cache and can prevent reuse. The
+reuse regression moves a non-tail allocation into a second region, then reuses
+its original address in the first region and consumes the split remainder.
+Both later allocation records must name that first region, not the current bump
+region, and their sizes must sum to the original span. Splitting rebinds the
+free-block reference explicitly and preserves the reusable-span count while a
+remainder exists. Region indices after adoption
+still need a separate identity/remapping contract.
+
 ## Loss and collection boundaries
 
 The collector uses fixed-width records, a shared capture-byte budget, and a

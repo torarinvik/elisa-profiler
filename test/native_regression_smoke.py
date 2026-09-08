@@ -817,6 +817,31 @@ def main():
         assert first_growth["old_size_bytes"] * 12 == first_growth["size_bytes"] * 10
         assert full_growth["old_size_bytes"] * 16 == full_growth["size_bytes"] * 12
         assert not any(event["kind"] == "realloc_move" for event in tail_events)
+        reuse_output = work / "arena-reuse.json"
+        run("profile", ROOT / "examples" / "arena_reuse_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", reuse_output)
+        reuse_report = json.loads(reuse_output.read_text(encoding="utf-8"))
+        assert reuse_report["summary"]["capture_complete"] is True
+        reuse_events = reuse_report["run"]["repetitions"][0]["allocation_events"]
+        moved = [event for event in reuse_events if event["kind"] == "realloc_move"]
+        assert len(moved) == 1
+        move = moved[0]
+        same_address = [event for event in reuse_events
+                        if event["kind"] == "alloc" and event["address"] == move["old_address"]]
+        assert len(same_address) == 2
+        original, reused = sorted(same_address, key=lambda event: event["sequence"])
+        assert original["sequence"] < move["sequence"] < reused["sequence"]
+        assert original["arena"] == reused["arena"] == move["arena"]
+        assert original["region"] == reused["region"] != move["region"]
+        replacements = sorted((event for event in reuse_events
+                               if event["kind"] == "alloc" and event["sequence"] > move["sequence"]),
+                              key=lambda event: event["sequence"])
+        assert len(replacements) == 2
+        first_half, second_half = replacements
+        assert first_half == reused
+        assert second_half["address"] == first_half["address"] + first_half["size_bytes"]
+        assert second_half["arena"] == original["arena"] and second_half["region"] == original["region"]
+        assert original["size_bytes"] == move["old_size_bytes"] == sum(event["size_bytes"] for event in replacements)
         adoption_output = work / "arena-adoption.json"
         run("profile", ROOT / "examples" / "arena_adoption_workload.elisa", "--mode", "full",
             "--format", "json", "--output", adoption_output)
