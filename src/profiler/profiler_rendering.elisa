@@ -454,6 +454,9 @@ extend ProfilerNative:
             append_html_event_timeline(buffer, profile.event_records)
             append_html_event_timeline_range_controller(buffer)
             append_html_allocation_view(buffer, profile.allocation_records, profile.allocation_record_count)
+            append_text(buffer, "<p>")
+            append_allocation_capability_description(buffer, profile.collection_mode, profile.allocation_record_count, profile.allocation_dropped)
+            append_text(buffer, "</p>")
             append_html_thread_loss_diagnostics(buffer, profile.thread_loss)
             if profile.source_snapshot.count > NATIVE_ZERO.usize():
                 append_html_source_view(buffer, profile.source, profile.source_snapshot, profile.location_records, true)
@@ -491,6 +494,8 @@ extend ProfilerNative:
             append_i64(buffer, profile.events)
             append_text(buffer, "\nallocation records: ")
             append_i64(buffer, profile.allocation_record_count)
+            append_text(buffer, "\n")
+            append_allocation_capability_description(buffer, profile.collection_mode, profile.allocation_record_count, profile.allocation_dropped)
             append_text(buffer, "\n")
             append_text(buffer, "\nlocations: ")
             append_i64(buffer, profile.locations)

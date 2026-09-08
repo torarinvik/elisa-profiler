@@ -5,6 +5,15 @@ Other modes do not enable this collector. Records appear in each measured
 `run.repetitions[].allocation_events` array; warmups are excluded. Offline
 reports validate the records before displaying them.
 
+Selecting full or diagnostic mode enables collection, but does not prove that
+the target uses compatible hooks. Capture capabilities are `active` only when
+at least one allocation lifecycle record or hook-drop counter was observed.
+With neither, coverage is `unconfirmed` (`no_allocation_hook_evidence`), not a
+zero-allocation measurement. Other collection modes report `disabled`.
+These are capture-wide observations, not proof of complete coverage in every
+repetition or every allocator. Text and HTML reports apply the same distinction,
+including when loading older saved captures.
+
 This is runtime hook evidence, not a heap census. The current implementation
 does not compute logical live bytes, allocation lifetimes, or leaks. Peak RSS
 remains an independent operating-system observation and must not be compared

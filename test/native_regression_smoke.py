@@ -159,6 +159,32 @@ def main():
         work = Path(directory)
         forwarded_help = json.loads(run("profile", ROOT / "examples" / "hot_loop.elisa", "--", "--help"))
         assert forwarded_help["workload"]["arguments"] == ["--help"]
+        # Existing host ABI fixture emits trace callbacks but no allocation hooks.
+        # Merely selecting full mode must not imply allocation coverage.
+        hookless_target = work / "hookless-target"
+        subprocess.run([
+            os.environ.get("ELISA_CLANG", "clang"), "-std=c11", "-O2", "-fno-builtin", "-pthread",
+            str(ROOT / "test" / "collector_identity_smoke.c"),
+            str(ROOT / "scripts" / "profiler_runtime.c"), "-o", str(hookless_target),
+        ], check=True, capture_output=True, timeout=TIMEOUT_SECONDS)
+        hookless_args = ("profile", ROOT / "examples" / "hot_loop.elisa", "--prebuilt", hookless_target)
+        hookless = json.loads(run(*hookless_args, "--mode", "full"))
+        assert hookless["run"]["capabilities"]["allocation"] == {
+            "status": "unconfirmed", "reason": "no_allocation_hook_evidence", "scope": "none",
+        }
+        validate(hookless, allocation_schema_root, allocation_schema_root, "hookless")
+        assert hookless["summary"]["allocation_events"] == 0
+        hookless_capture = work / "hookless.json"
+        hookless_capture.write_text(json.dumps(hookless), encoding="utf-8")
+        for output_format in ("text", "html"):
+            assert b"allocation unconfirmed" in run(*hookless_args, "--mode", "full", "--format", output_format)
+            assert b"allocation unconfirmed" in run("report", hookless_capture, "--format", output_format)
+        hookless_disabled = json.loads(run(*hookless_args, "--mode", "functions"))
+        assert hookless_disabled["run"]["capabilities"]["allocation"]["status"] == "disabled"
+        hookless["summary"]["allocation_events_dropped"] = 1
+        hookless_capture.write_text(json.dumps(hookless), encoding="utf-8")
+        for output_format in ("text", "html"):
+            assert b"allocation active" in run("report", hookless_capture, "--format", output_format)
         capture = work / "capture.json"
         capture.write_text(json.dumps(report), encoding="utf-8")
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))
@@ -682,7 +708,9 @@ def main():
         assert b"Interrupted active stack" in interrupted_html
         assert b"diagnostic evidence, not completed-call evidence" in interrupted_html
         assert b"Capability boundary" in interrupted_html
-        assert b"Allocation:</strong> active" in interrupted_html
+        assert interrupted["summary"]["allocation_events"] == 0
+        assert interrupted["run"]["capabilities"]["allocation"]["status"] == "unconfirmed"
+        assert b"allocation unconfirmed" in interrupted_html
 
         run("profile", ROOT / "examples/hot_loop.elisa", "--repeat", "2",
             "--event-trace", "--max-event-trace-events", "10",
@@ -711,8 +739,10 @@ def main():
         assert measured["run"]["capabilities"]["sampling_detail"] == {
             "status": "disabled", "reason": "mode_not_selected", "scope": "none"
         }
+        assert measured["summary"]["allocation_events"] == 0
+        assert measured["summary"]["allocation_events_dropped"] == 0
         assert measured["run"]["capabilities"]["allocation"] == {
-            "status": "active", "reason": "elisa_arena_hooks", "scope": "capture"
+            "status": "unconfirmed", "reason": "no_allocation_hook_evidence", "scope": "none"
         }
         assert measured["run"]["capabilities"]["tasks"] == {
             "status": "unsupported", "reason": "task_lifecycle_hooks_unavailable", "scope": "none"
