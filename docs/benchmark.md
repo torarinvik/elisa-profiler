@@ -446,8 +446,9 @@ exit statuses, diagnostics, and successful LLVM output, including existing
 refusals. The module-scoped handled-call fixture also returned 42 at runtime.
 Fresh bootstrap validation of the committed revision passed: five initial
 probes, full compiler emission, byte-identical gen3/gen4, and all 40 repeat
-emissions (`build/unhandled-committed-self-host.log`). Profiler regressions
-are tracked separately.
+emissions (`build/unhandled-committed-self-host.log`). The rebuilt profiler
+also passed native and sampling regressions (`build/unhandled-native-regression.log`
+and `build/unhandled-sampling-regression.log`).
 
 ## Promote a local baseline
 
