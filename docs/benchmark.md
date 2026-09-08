@@ -327,6 +327,29 @@ emissions. The rebuilt profiler also passed native and sampling regressions.
 Logs: `build/region-committed-self-host.log`, `build/region-native-regression.log`,
 and `build/region-sampling-regression.log`.
 
+## Segment-flow annotation filter (2026-09-08)
+
+Compiler commit `b707efec` builds a compact segment-flow annotation table once
+before walking function bodies. It retains all four transition/requirement
+annotation kinds in their original order, including duplicates. Existing owner
+resolution, branch merging, and diagnostics are unchanged.
+
+Two full O0 compiler-build pairs measured baseline/candidate wall times of
+115.59/103.12 and 115.69/103.06 seconds, reversing execution order in the second
+pair. User CPU times were 114.92/102.38 and 114.97/102.30 seconds. All four emitted
+objects were byte-identical. This is about 10.8–10.9% less wall time against the
+region-optimized `a4f02f4a` baseline on this host, not an additive percentage
+claim with prior optimizations. Both binaries were self-hosted and used identical
+source/output paths. Logs: `build/segment-full-{baseline,candidate}.log` and their
+`-reverse.log` counterparts.
+
+All 385 diagnostic fixtures and two focused segment-flow fixtures matched
+baseline exit statuses, diagnostic bytes, and successful LLVM output. These
+include existing refusals, not 387 successful compilations. The focused cases
+cover explicit host restoration, guest/host mismatches, and unknown ambient
+ownership after a branch merge. A fresh seed and full self-host validation of
+the committed revision are still pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
