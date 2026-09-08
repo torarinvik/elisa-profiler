@@ -720,7 +720,12 @@ order, 61.53/58.76 seconds. User CPU times were 60.60/58.20 and 60.74/58.06.
 All four objects were byte-identical: 3.7–4.5% less wall time with self-hosted
 binaries on identical current source. Evidence:
 `build/region-index-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh committed bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap of committed `d4178fe7` passed: five probes, full
+compiler emission (19,116,424 bytes), byte-identical generation 3/4 objects, and
+all 40 repeat emissions. Profiler rebuild and native/sampling regressions also
+passed. Evidence: `build/region-index-committed-self-host.log`,
+`build/region-index-profiler-build.log`, `build/region-index-native-regression.log`,
+and `build/region-index-sampling-regression.log`.
 
 ## Promote a local baseline
 
