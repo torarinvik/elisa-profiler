@@ -79,6 +79,15 @@ Three alternating end-to-end pairs measured `-O0`/`-O1` wall times of
 the installed profiler remains at `-O0`. Optimization-level changes alone
 are not counted as performance gains.
 
+Change `c456375` removes the full-input padding copy in SHA-256. Complete
+blocks are read directly from the input; only the final partial block and
+padding use temporary storage (at most two blocks). Known-vector and
+input-preservation tests pass, as does the full native regression suite.
+Three alternating old/new CLI pairs measured 11.93/12.97s, 10.09/8.97s, and
+10.64/8.87s: median 10.64s versus 8.97s, with one slower pair. Peak resident
+memory decreased from 593–599 MB to 532–553 MB. These comparisons used the
+same compiler revision before integrating the subsequent diagnostic fixes.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
