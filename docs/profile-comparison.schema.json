@@ -221,7 +221,7 @@
       "required": ["function", "match", "repetition", "events", "call_events", "completed_calls", "inclusive_ns", "self_ns", "interval_ns", "max_interval_ns"],
       "properties": {
         "function": { "type": "string", "minLength": 1 },
-        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "structural", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "events": { "$ref": "#/$defs/resource_count_metric" },
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
@@ -239,7 +239,7 @@
       "properties": {
         "caller": { "type": "string", "minLength": 1 },
         "callee": { "type": "string", "minLength": 1 },
-        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "structural", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
         "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
@@ -252,7 +252,7 @@
       "required": ["stack", "match", "repetition", "call_events", "completed_calls", "self_ns"],
       "properties": {
         "stack": { "type": "string", "minLength": 1 },
-        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "structural", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "call_events": { "$ref": "#/$defs/resource_count_metric" },
         "completed_calls": { "$ref": "#/$defs/resource_count_metric" },
@@ -267,7 +267,7 @@
         "source": { "type": ["string", "null"] },
         "line": { "type": ["integer", "null"], "minimum": 0 },
         "function": { "type": "string", "minLength": 1 },
-        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "added", "removed", "ambiguous"] },
+        "match": { "type": "string", "enum": ["compiler_id", "readable_name", "structural", "added", "removed", "ambiguous"] },
         "repetition": { "type": "integer", "minimum": 1 },
         "kind": { "type": "string", "enum": ["statement", "value", "function"] },
         "variable": { "type": ["string", "null"] },

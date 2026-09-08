@@ -382,8 +382,13 @@ domain-specific.
   location records expose optional `identity_id`. Readable names and source
   metadata remain in every record for diagnostics and legacy compatibility.
 - Offline comparison uses those IDs for function, edge, stack, and source-location
-  matching whenever the compared records provide them. It does not merge a
-  stable-ID record with a legacy readable-name record, and it reports a
+  matching whenever the compared records provide them. Source-location rows
+  then use a bounded structural fallback—source, kind, function, variable,
+  line, signedness, and availability flags—when an ID changed or was absent.
+  The fallback is accepted only when it is unique; duplicate structural
+  candidates remain `ambiguous` and keep requested gates inconclusive. It does
+  not merge a stable-ID function, edge, or stack record with a legacy
+  readable-name record, and it reports a
   stable-identity coverage mismatch as a warning/inconclusive requested gate.
   IDs are retained as decimal text at the Elisa parser boundary so values above
   signed 64-bit range remain exact. It also validates the declared stable-ID
@@ -394,9 +399,11 @@ domain-specific.
   arbitrary duplicate. Every function, caller-edge, folded-stack, and
   source-location row in machine-readable comparison output carries `match`:
   `compiler_id` means a one-to-one stable-ID pairing, `readable_name` means a
-  one-to-one legacy fallback pairing, `added`/`removed` means that the record
-  exists on only one side, and `ambiguous` means duplicate candidates prevented
-  a safe pairing. Null metrics on an added or removed row therefore describe
+  one-to-one legacy fallback pairing, `structural` means a unique source-
+  location pairing after the stable IDs changed or were unavailable,
+  `added`/`removed` means that the record exists on only one side, and
+  `ambiguous` means duplicate candidates prevented a safe pairing. Null metrics
+  on an added or removed row therefore describe
   missing evidence, never a measured zero; ambiguous rows are not safe inputs
   to a hard gate.
 

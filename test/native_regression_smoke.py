@@ -202,6 +202,18 @@ def main():
         capture.write_text(json.dumps(report), encoding="utf-8")
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))
         assert comparison["status"] == "ok"
+        structural_baseline = copy.deepcopy(report)
+        structural_candidate = copy.deepcopy(report)
+        structural_baseline["locations"][0]["identity_id"] = IDENTITY_ID_BASELINE
+        structural_candidate["locations"][0]["identity_id"] = IDENTITY_ID_CANDIDATE
+        structural_baseline_path = work / "location-structural-baseline.json"
+        structural_candidate_path = work / "location-structural-candidate.json"
+        structural_baseline_path.write_text(json.dumps(structural_baseline), encoding="utf-8")
+        structural_candidate_path.write_text(json.dumps(structural_candidate), encoding="utf-8")
+        structural_comparison = json.loads(run("compare", structural_baseline_path, structural_candidate_path, "--format", "json"))
+        structural_rows = [row for row in structural_comparison["locations"] if row["function"] == "main"]
+        assert len(structural_rows) == 1, structural_rows
+        assert structural_rows[0]["match"] == "structural", structural_rows
         report["locations"][0]["sum"] = None
         report["locations"][0]["sum_overflow"] = True
         capture.write_text(json.dumps(report), encoding="utf-8")

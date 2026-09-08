@@ -346,6 +346,8 @@ extend ProfilerNative:
                 append_text(buffer, sview(NATIVE_COMPARISON_MATCH_ADDED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
             elif match_kind == NATIVE_COMPARISON_MATCH_KIND_REMOVED:
                 append_text(buffer, sview(NATIVE_COMPARISON_MATCH_REMOVED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            elif match_kind == NATIVE_COMPARISON_MATCH_KIND_STRUCTURAL:
+                append_text(buffer, sview(NATIVE_COMPARISON_MATCH_STRUCTURAL, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
             else:
                 append_text(buffer, sview(NATIVE_COMPARISON_MATCH_AMBIGUOUS, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
 
@@ -361,6 +363,8 @@ extend ProfilerNative:
             append_text(buffer, "</code> or <code>")
             append_text(buffer, sview(NATIVE_COMPARISON_MATCH_REMOVED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
             append_text(buffer, "</code>: evidence exists on only one side.</li><li><code>")
+            append_text(buffer, sview(NATIVE_COMPARISON_MATCH_STRUCTURAL, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
+            append_text(buffer, "</code>: source-location metadata paired records whose compiler IDs changed or were unavailable.</li><li><code>")
             append_text(buffer, sview(NATIVE_COMPARISON_MATCH_AMBIGUOUS, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
             append_text(buffer, "</code>: duplicate identity candidates made a one-to-one pairing unsafe.</li></ul></details>")
 
@@ -840,15 +844,28 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
+        def comparison_location_structural_same(record: ComparisonLocationRecord, subject: ComparisonLocationRecord) -> bool can[Abort.Panic]:
+            return record.repetition == subject.repetition and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
+
+
+        def comparison_location_identity_same(record: ComparisonLocationRecord, subject: ComparisonLocationRecord) -> bool can[Abort.Panic]:
+            if subject.identity_id.count > NATIVE_ZERO.usize():
+                return record.repetition == subject.repetition and record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
+            return record.identity_id.count == NATIVE_ZERO.usize() and comparison_location_structural_same(record, subject)
+
+
         def comparison_location_index(records: darray[ComparisonLocationRecord]&, subject: ComparisonLocationRecord) -> i64 can[Abort.Panic]:
             matched: mutable i64 = NATIVE_NEGATIVE_ONE
             for index in 0..<records.count |index, records, subject|:
                 record: ComparisonLocationRecord = records[index]
-                if subject.identity_id.count > NATIVE_ZERO.usize():
-                    if record.repetition == subject.repetition and record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id):
-                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
-                        matched <- index.i64()
-                elif record.repetition == subject.repetition and record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable):
+                if comparison_location_identity_same(record, subject):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched if matched >= NATIVE_ZERO
+            matched <- NATIVE_NEGATIVE_ONE
+            for index in 0..<records.count |index, records, subject|:
+                record: ComparisonLocationRecord = records[index]
+                if comparison_location_structural_same(record, subject):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -858,12 +875,14 @@ extend ProfilerNative:
             matched: mutable bool = false
             for index in 0..<records.count |index, records, subject, matched|:
                 record: ComparisonLocationRecord = records[index]
-                same: bool = false
-                if subject.identity_id.count > NATIVE_ZERO.usize():
-                    same <- record.repetition == subject.repetition and record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
-                else:
-                    same <- record.repetition == subject.repetition and record.identity_id.count == NATIVE_ZERO.usize() and record.line == subject.line and record.signed == subject.signed and record.source_available == subject.source_available and record.variable_available == subject.variable_available and byte_arrays_equal(record.source, subject.source) and byte_arrays_equal(record.kind, subject.kind) and byte_arrays_equal(record.function, subject.function) and byte_arrays_equal(record.variable, subject.variable)
-                if same:
+                if comparison_location_identity_same(record, subject):
+                    return true if matched
+                    matched <- true
+            return false if matched
+            matched <- false
+            for index in 0..<records.count |index, records, subject, matched|:
+                record: ComparisonLocationRecord = records[index]
+                if comparison_location_structural_same(record, subject):
                     return true if matched
                     matched <- true
             return false
@@ -878,7 +897,8 @@ extend ProfilerNative:
         def comparison_location_match_kind(baseline: darray[ComparisonLocationRecord]&, baseline_index: i64, candidate: darray[ComparisonLocationRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_location_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_location_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
-                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(baseline[baseline_index.usize()].identity_id, candidate[candidate_index.usize()].identity_id)
+                return NATIVE_COMPARISON_MATCH_KIND_STRUCTURAL if comparison_location_structural_same(baseline[baseline_index.usize()], candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_location_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
