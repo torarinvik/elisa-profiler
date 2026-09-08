@@ -679,7 +679,13 @@ order, 63.41/61.08 seconds. User CPU times were 62.65/60.71 and 62.77/60.61.
 All four objects were byte-identical: 3.1–3.7% less wall time than `520d4572`
 with self-hosted binaries on identical current source. Evidence:
 `build/frame-conformance-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh committed bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap of committed `b22adad5` passed: five probes, full
+compiler emission (19,113,008 bytes), byte-identical generation 3/4 objects, and
+all 40 repeat emissions. Profiler rebuild and native/sampling regressions also
+passed. Evidence: `build/frame-conformance-committed-self-host.log`,
+`build/frame-conformance-profiler-build.log`,
+`build/frame-conformance-native-regression.log`, and
+`build/frame-conformance-sampling-regression.log`.
 
 ## Promote a local baseline
 
