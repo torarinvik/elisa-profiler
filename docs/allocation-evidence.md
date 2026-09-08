@@ -112,6 +112,14 @@ free-block reference explicitly and preserves the reusable-span count while a
 remainder exists. Region indices after adoption
 still need a separate identity/remapping contract.
 
+The adopted-reuse fixture also checks a parent with its own region followed by
+two child regions. After adoption, both halves of a reclaimed child span must
+report parent region 1 rather than child-local region 0. The runtime reindexes
+the combined chain during adoption; leaving child-local global indices caused
+reuse/reclaim evidence to alias existing parent regions. The fixture verifies
+addresses, sizes, transferred arena identity, and the new region index. This
+does not yet supply a complete region-layout map for offline lifetime analysis.
+
 The reset fixture records allocation, reset, replacement allocation, and cleanup
 in sequence. The replacement can reuse the same backing address and size, but
 it is a new logical lifetime: a future live-allocation table must not identify

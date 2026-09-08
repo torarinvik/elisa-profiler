@@ -27,6 +27,8 @@ IDENTITY_CONTRACT_CURRENT_VERSION = 2
 TARGET_EXIT_CODE = 126
 COLLECTOR_STATUS_OK = 1
 ALLOCATION_KIND_FIRST_UNSUPPORTED = 11
+ADOPTED_REUSE_REGION = 1
+CHILD_REUSE_REGION = 0
 
 
 def run(*args, ok=True, expected=None):
@@ -925,6 +927,26 @@ def main():
         assert second_half["address"] == first_half["address"] + first_half["size_bytes"]
         assert second_half["arena"] == original["arena"] and second_half["region"] == original["region"]
         assert original["size_bytes"] == move["old_size_bytes"] == sum(event["size_bytes"] for event in replacements)
+        adopted_reuse_output = work / "arena-adopt-reuse.json"
+        run("profile", ROOT / "examples" / "arena_adopt_reuse_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", adopted_reuse_output)
+        adopted_reuse = json.loads(adopted_reuse_output.read_text(encoding="utf-8"))
+        validate(adopted_reuse, allocation_schema_root, allocation_schema_root, "adopted-reuse")
+        assert adopted_reuse["summary"]["capture_complete"] is True
+        adopted_events = adopted_reuse["run"]["repetitions"][0]["allocation_events"]
+        adopted_transfer = [event for event in adopted_events if event["kind"] == "arena_adopt"]
+        assert len(adopted_transfer) == 1
+        transfer = adopted_transfer[0]
+        adopted_halves = sorted((event for event in adopted_events
+                                if event["kind"] == "alloc" and event["sequence"] > transfer["sequence"]),
+                               key=lambda event: event["sequence"])
+        assert len(adopted_halves) == 2
+        assert all(event["arena"] == transfer["arena"] and event["region"] == ADOPTED_REUSE_REGION for event in adopted_halves)
+        assert adopted_halves[1]["address"] == adopted_halves[0]["address"] + adopted_halves[0]["size_bytes"]
+        assert any(event["kind"] == "alloc" and event["arena"] == transfer["old_address"]
+                   and event["region"] == CHILD_REUSE_REGION and event["address"] == adopted_halves[0]["address"]
+                   and event["size_bytes"] == sum(half["size_bytes"] for half in adopted_halves)
+                   for event in adopted_events)
         reset_output = work / "arena-reset.json"
         run("profile", ROOT / "examples" / "arena_reset_workload.elisa", "--mode", "full",
             "--format", "json", "--output", reset_output)
