@@ -534,6 +534,22 @@ emissions (`build/variadic-filter-committed-self-host.log`). Profiler rebuild an
 native/sampling regression checks also passed (`build/variadic-filter-native-regression.log`
 and `build/variadic-filter-sampling-regression.log`).
 
+## Compact backend variadic markers (2026-09-08)
+
+Backend declaration collection shares one variadic-marker subset across ordinary,
+module, impl, and handler function declaration paths. Other backend annotation
+checks, including extern handling, retain their full tables. All 674 selected
+diagnostic/variadic/module/impl/effect comparisons matched exit statuses, messages,
+and successful LLVM output. The real `va_list` runtime fixture printed
+`value=42 word=hello` and exited successfully.
+
+Full O0 baseline/candidate wall times were 72.96/71.48 seconds and, reversing
+order, 72.94/71.36 seconds. User CPU times were 72.45/71.01 and 72.49/70.88.
+All four emitted objects were byte-identical: 2.0–2.2% less wall time against
+`43aeeb98` on identical current source with self-hosted binaries. Logs:
+`build/backend-variadic-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
