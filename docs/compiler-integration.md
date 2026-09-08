@@ -5,7 +5,28 @@ The profiler is built with the dedicated Elisa compiler worktree at
 worktree is intentionally separate from every source compiler checkout so profiler
 experiments can repair compiler defects without modifying their owners.
 
-The current compiler integration commit is:
+## Latest verified refresh — 2026-09-08
+
+Compiler integration commit `5e03c579` includes all 11 audited local branch tips,
+including main's committed `a313a619`, plus an exact reviewed snapshot of main's
+ten pending parser/diagnostic source changes and chained-index regression fixture.
+The owner checkout was not modified. This snapshot is committed only on our
+dedicated branch; it does not imply those pending changes are committed upstream.
+
+The local compiler was reseeded from these sources, and the profiler rebuilt.
+Checks passed: parser-message parity (60/118, ratchet 43), diagnostic columns
+(166 agreeing, zero pending/diverged), `when` arm laws, chained-index execution,
+void recovery at O0–O3, and profiler native/sampling regressions. These are focused
+refresh gates, not a new full self-host fixed-point or complete `make test` run.
+Logs are in ignored `build/latest-main-*.log`.
+
+This revision retains the measured compiler optimizations `ffbb5865` and
+`8ff99380`, plus void-recovery crash fix `d378b4e7`. No new performance measurement
+is claimed for the parser/diagnostic refresh.
+
+## Earlier integration checkpoint
+
+The earlier compiler integration commit was:
 
 ```text
 85be462e fix: preserve annotation order across line directives

@@ -293,9 +293,11 @@ The candidate exactly matched all 390 baseline diagnostic/try fixture results:
 194 compiled, 176 exited 1, 19 exited 2, and one retained a pre-existing trap.
 Successful LLVM IR and diagnostics matched byte-for-byte. Module-local
 error-family parity also passed. These are equivalence checks, **not 390
-passing fixtures**: `try_void_else_void.elisa` still traps in LLVM because a
-fallback path attempts `alloca void`; the installed pre-filter compiler also
-reproduces it. That code-generation defect remains separate from this speedup.
+passing fixtures**: at that checkpoint `try_void_else_void.elisa` trapped in LLVM
+because a fallback path attempted `alloca void`; the pre-filter compiler also
+reproduced it. Follow-up compiler commit `d378b4e7` fixes that separate defect,
+with O0–O3 stage0 parity for no-op and conditional side-effect recovery on ordinary
+and generic calls. This correctness fix is not part of the speedup measurement.
 
 ## Promote a local baseline
 
