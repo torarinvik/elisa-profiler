@@ -420,7 +420,9 @@ All 387 selected diagnostic/derived/typestate fixture results matched baseline
 exit statuses, diagnostics, and successful LLVM output, including existing
 refusals. An additional focused fixture retained the changed `Alive` to `Dead`
 argument-mismatch and restoration diagnostics exactly. Fresh bootstrap
-validation of the committed revision is pending.
+validation of the committed revision passed: five initial probes, full compiler
+emission, byte-identical gen3/gen4, and all 40 repeat emissions. Evidence:
+`build/derived-committed-self-host.log`. Profiler regressions are tracked separately.
 
 ## Promote a local baseline
 
