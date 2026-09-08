@@ -1,0 +1,22 @@
+# Read-only CLI help. Keep argument recognition separate from workload parsing
+# so a target's --help after the forwarding delimiter is never intercepted.
+extend ProfilerNative:
+    private:
+        def help_flag(argument: cstr) -> bool:
+            return profiler_ffi_strcmp(argument, "--help") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-h") == NATIVE_ZERO
+
+        def help_command_known(command: cstr) -> bool:
+            return true if profiler_ffi_strcmp(command, "profile") == NATIVE_ZERO or profiler_ffi_strcmp(command, "record") == NATIVE_ZERO
+            return true if profiler_ffi_strcmp(command, "report") == NATIVE_ZERO or profiler_ffi_strcmp(command, "recover") == NATIVE_ZERO
+            return true if profiler_ffi_strcmp(command, "compare") == NATIVE_ZERO or profiler_ffi_strcmp(command, "benchmark") == NATIVE_ZERO
+            return profiler_ffi_strcmp(command, "baseline") == NATIVE_ZERO or profiler_ffi_strcmp(command, "doctor") == NATIVE_ZERO
+
+        def print_cli_help() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            text: mutable darray[u8] = []
+            append_text(text, "Elisa profiler\n\nUsage: elisa-profiler COMMAND [arguments]\n\n")
+            append_text(text, "Commands:\n  profile SOURCE [options] [-- TARGET_ARGS...]\n    Compile and measure an Elisa program.\n  record SOURCE [options] [-- TARGET_ARGS...]\n    Capture an Elisa program for later analysis.\n  report CAPTURE [--format json|text|folded|speedscope|html] [--output PATH]\n    Render a saved capture without running the program.\n  recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]\n    Recover valid records from an interrupted capture.\n")
+            append_text(text, "  compare BASELINE CANDIDATE [--format text|json|html] [--output PATH]\n    Compare compatible measurements and apply regression thresholds.\n  benchmark MANIFEST --output PATH [--format json|text|html]\n    Run workloads described by a benchmark manifest.\n  baseline promote CAPTURE --store DIR --name NAME --reason TEXT\n    Promote a reviewed capture into a baseline store.\n  doctor\n    Inspect the local compiler and host capabilities.\n\n")
+            append_text(text, "Common profile/record options:\n  --mode full|functions|statements|values|sample|diagnostic\n  --format json|text|folded|speedscope|html   --output PATH\n  --repeat N   --warmup N   --timeout SECONDS\n  --cwd PATH   --stdin PATH   --env KEY=VALUE   --random-seed SEED\n  --sample-period-us MICROSECONDS   --max-capture-bytes BYTES\n  --max-artifact-bytes BYTES   --progress PATH\n  --path-map FROM=TO   --cache-dir PATH | --no-cache\n  --prebuilt EXECUTABLE   --artifact-output PATH   --embed-source\n\n")
+            append_text(text, "Examples:\n  elisa-profiler profile examples/hot_loop.elisa --format html --output profile.html\n  elisa-profiler report capture.elisaprof --format text\n\nUse --help, -h, help, help COMMAND, or COMMAND --help for this reference.\nPlace target arguments after --; they are forwarded unchanged.\nSee README.md and docs/ for detailed option semantics and measurement limits.\n")
+            return report_error("could not write help to stdout") if not write_all_fd(NATIVE_STANDARD_OUTPUT, text)
+            return NATIVE_ZERO

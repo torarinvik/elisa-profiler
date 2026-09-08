@@ -117,6 +117,7 @@ include "./profiler_aggregation.elisa"
 include "./profiler_capabilities.elisa"
 include "./profiler_benchmark.elisa"
 include "./profiler_baseline.elisa"
+include "./profiler_help.elisa"
 
 extend ProfilerNative:
     private:
@@ -2003,6 +2004,16 @@ extend ProfilerNative:
             return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO, --cache-dir PATH, --no-cache, or --prebuilt EXECUTABLE] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
+            if help_flag(first):
+                return report_error("help flags do not accept additional arguments") if argc != NATIVE_MIN_COMMAND_ARGUMENTS
+                return print_cli_help()
+            if profiler_ffi_strcmp(first, "help") == NATIVE_ZERO:
+                return print_cli_help() if argc == NATIVE_MIN_COMMAND_ARGUMENTS
+                return report_error("usage: elisa-profiler help [COMMAND]") if argc != NATIVE_MIN_PATH_ARGUMENTS
+                return report_error("unknown help command") if not help_command_known(slots[NATIVE_TWO].cast[cstr])
+                return print_cli_help()
+            if argc == NATIVE_MIN_PATH_ARGUMENTS and help_command_known(first):
+                return print_cli_help() if help_flag(slots[NATIVE_TWO].cast[cstr])
             return report_offline(argc, slots) if profiler_ffi_strcmp(first, "report") == NATIVE_ZERO
             return recover_offline(argc, slots) if profiler_ffi_strcmp(first, "recover") == NATIVE_ZERO
             return compare_offline(argc, slots) if profiler_ffi_strcmp(first, "compare") == NATIVE_ZERO

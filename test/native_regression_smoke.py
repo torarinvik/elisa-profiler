@@ -58,6 +58,23 @@ def run(*args, ok=True, expected=None):
 
 
 def main():
+    help_text = run("--help")
+    assert b"Usage: elisa-profiler COMMAND" in help_text
+    assert b"-- TARGET_ARGS..." in help_text
+    assert run("-h") == help_text
+    assert run("help") == help_text
+    for command in ("profile", "record", "report", "recover", "compare", "benchmark", "baseline", "doctor"):
+        assert run(command, "--help") == help_text
+        assert run(command, "-h") == help_text
+        assert run("help", command) == help_text
+    run("help", "unknown", ok=False)
+    run("--help", "extra", ok=False)
+    run("help", "profile", "extra", ok=False)
+    isolated_help = subprocess.run(
+        [str(NATIVE), "--help"], capture_output=True, timeout=TIMEOUT_SECONDS,
+        env={**os.environ, "ELISA_COMPILER_ROOT": "/nonexistent/elisa-help-test"})
+    assert isolated_help.returncode == 0 and isolated_help.stdout == help_text
+    assert isolated_help.stderr == b""
     # Keep the lightweight schema verifier honest at both integer boundaries.
     allocation_schema_root = json.loads((ROOT / "docs/profile.schema.json").read_text(encoding="utf-8"))
     address_schema = allocation_schema_root["$defs"]["allocation_event"]["properties"]["address"]
@@ -139,6 +156,8 @@ def main():
     }
     with tempfile.TemporaryDirectory(prefix="elisa-native-regression-") as directory:
         work = Path(directory)
+        forwarded_help = json.loads(run("profile", ROOT / "examples" / "hot_loop.elisa", "--", "--help"))
+        assert forwarded_help["workload"]["arguments"] == ["--help"]
         capture = work / "capture.json"
         capture.write_text(json.dumps(report), encoding="utf-8")
         comparison = json.loads(run("compare", capture, capture, "--format", "json"))

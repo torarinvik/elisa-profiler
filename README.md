@@ -2,6 +2,10 @@
 
 This repository contains a profiler for programs written in Elisa.
 
+Run `bin/elisa-profiler --help` for the command reference. Help also works as
+`help COMMAND` or `COMMAND --help`, without a configured compiler. Arguments
+after the profile command's `--` delimiter belong to the target program.
+
 Full and diagnostic modes include bounded arena lifecycle evidence. See
 [allocation evidence](docs/allocation-evidence.md) for event semantics, loss
 accounting, and the remaining requirements before live-byte/lifetime analysis.
