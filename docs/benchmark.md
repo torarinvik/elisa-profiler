@@ -150,6 +150,22 @@ intermediate names and removes both reports and their progress manifests after
 the comparison completes. A failed side is surfaced as a benchmark failure and
 does not produce a misleading comparison.
 
+## Large Speedscope export validation
+
+The 58,399-sample self-build capture exposed stack exhaustion in the previous
+`-O0` profiler during Speedscope rendering. Reusing temporary storage alone,
+extracting a helper alone, and changing optimization alone did not resolve it.
+The profiler now builds at `-O1` and keeps temporary frame construction in a
+non-inlined helper. Target compilation and compiler bootstrap settings are
+unchanged. This is a scalability fix, not a claimed general wall-time speedup.
+
+The full capture exports successfully with 679,751 frame occurrences. Every
+expanded stack, sample weight, total weight, and sampling unit was checked
+against the original capture. That check also exposed and fixed an existing
+trailing-space error in leaf frame names. Native regression coverage includes
+524,288 frame occurrences and verifies all expanded names and weights.
+Frame deduplication remains a separate performance opportunity.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an

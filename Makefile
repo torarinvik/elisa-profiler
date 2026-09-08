@@ -2,6 +2,7 @@ PROFILER_ROOT := $(abspath .)
 COMPILER_WORKTREE ?= $(abspath ../elisa-compiler-worktrees/profiler)
 STAGE0_CORE ?= $(CURDIR)/../../Go projects/structpy-tree
 SEED_OPT_LEVEL ?= -O0
+NATIVE_OPT_LEVEL ?= -O1
 SEED_MAX_RSS_KB ?= 8388608
 COMPILER_WRAPPER := $(PROFILER_ROOT)/scripts/elisa-compiler
 NATIVE_PROFILER_BIN ?= $(PROFILER_ROOT)/bin/elisa-profiler
@@ -87,17 +88,17 @@ profiler-native:
 	@set -eu; native_build="$$(mktemp -d "$(PROFILER_ROOT)/bin/.native-build.XXXXXX")"; \
 		trap 'rm -rf "$$native_build"' EXIT; \
 		ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
-		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -O0 -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
+		"$(NATIVE_COMPILER_SCRIPT)" -emit exe "$(NATIVE_OPT_LEVEL)" -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
 		mv "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_BIN)"
 	@stage0="$${ELISACORE_BIN:-$(STAGE0_BIN)}"; \
 		if test -n "$$stage0"; then \
 			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
 			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
-			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level=-O0 --stage0 "$$stage0"; \
+			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level="$(NATIVE_OPT_LEVEL)" --stage0 "$$stage0"; \
 		else \
 			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
 			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
-			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level=-O0; \
+			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level="$(NATIVE_OPT_LEVEL)"; \
 		fi
 	@echo "native profiler: $(NATIVE_PROFILER_BIN)"
 

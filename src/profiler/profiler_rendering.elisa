@@ -49,7 +49,19 @@ extend ProfilerNative:
             while cursor > start |cursor, records|:
                 break if records[cursor - NATIVE_ONE.usize()] == NATIVE_BYTE_SPACE
                 cursor <- cursor - NATIVE_ONE.usize()
-            return cursor
+            return cursor - NATIVE_ONE.usize() if cursor > start else start
+
+
+        # Keep temporary frame storage in a bounded call frame, even when the
+        # compiler inlines small renderers into the outer occurrence loop.
+        @inline(never)
+        def append_speedscope_frame(buffer: mutable darray[u8]&, records: darray[u8]&, start: usize, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            frame: mutable darray[u8] = []
+            for index in start..<stop |frame, records|:
+                frame.push(records[index])
+            append_text(buffer, "{\"name\":")
+            append_json_string(buffer, frame)
+            append_text(buffer, "}")
 
 
         def append_speedscope_frames(buffer: mutable darray[u8]&, records: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
@@ -66,13 +78,8 @@ extend ProfilerNative:
                         while frame_end < stack_stop |frame_end, stack_stop, records|:
                             break if records[frame_end] == NATIVE_BYTE_SEMICOLON
                             frame_end <- frame_end + NATIVE_ONE.usize()
-                        frame: mutable darray[u8] = []
-                        for index in frame_start..<frame_end |frame, records|:
-                            frame.push(records[index])
                         append_record_separator(buffer) if not first_frame
-                        append_text(buffer, "{\"name\":")
-                        append_json_string(buffer, frame)
-                        append_text(buffer, "}")
+                        append_speedscope_frame(buffer, records, frame_start, frame_end)
                         first_frame <- false
                         frame_start <- frame_end + NATIVE_ONE.usize() if frame_end < stack_stop else stack_stop
                 line_start <- line_end + NATIVE_ONE.usize() if line_end < records.count else records.count

@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / "bin" / "elisa-profiler"
 TIMEOUT_SECONDS = 120
 FILE_READ_CHUNK_BYTES = 8192
+LARGE_EXPORT_STACK_COUNT = 16384
+LARGE_EXPORT_STACK_DEPTH = 32
 ERROR_STATUS = 2
 INCONCLUSIVE_STATUS = 4
 RECURSIVE_CALLS = 7
@@ -493,6 +495,27 @@ def main():
         speedscope = json.loads(run("report", capture, "--format", "speedscope"))
         assert speedscope["profiles"][0]["unit"] == "nanoseconds"
         assert speedscope["profiles"][0]["weights"] == [123]
+        # Exercise enough frame occurrences to expose stack growth in the
+        # renderer, independently of collector timing or compiler workloads.
+        large_export = copy.deepcopy(report)
+        frame_names = ["root"] * (LARGE_EXPORT_STACK_DEPTH - 1) + ["leaf"]
+        large_export["stacks"] = [
+            {"stack": ";".join(frame_names), "call_events": 1,
+             "completed_calls": 1, "self_ns": 1}
+            for _ in range(LARGE_EXPORT_STACK_COUNT)
+        ]
+        large_export_path = work / "large-export.json"
+        large_export_path.write_text(json.dumps(large_export), encoding="utf-8")
+        large_export_result = json.loads(run("report", large_export_path, "--format", "speedscope"))
+        exported_profile = large_export_result["profiles"][0]
+        assert exported_profile["weights"] == [1] * LARGE_EXPORT_STACK_COUNT
+        assert exported_profile["endValue"] == LARGE_EXPORT_STACK_COUNT
+        assert len(exported_profile["samples"]) == LARGE_EXPORT_STACK_COUNT
+        shared_frames = large_export_result["shared"]["frames"]
+        assert all(
+            [shared_frames[index]["name"] for index in sample] == frame_names
+            for sample in exported_profile["samples"]
+        )
         report["run"]["location_timing"] = False
         capture.write_text(json.dumps(report), encoding="utf-8")
         speedscope = json.loads(run("report", capture, "--format", "speedscope"))

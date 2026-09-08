@@ -61,6 +61,11 @@ The profiler Makefile seeds at -O0 with an 8 GiB RSS cap by default for a
 predictable local bootstrap. Override SEED_OPT_LEVEL and SEED_MAX_RSS_KB when
 the host has more headroom.
 
+The profiler executable itself uses `NATIVE_OPT_LEVEL=-O1`. Together with a
+non-inlined frame-rendering helper, this avoids stack exhaustion on large
+Speedscope exports. Target compilation still defaults to `-O0`; these are
+separate settings. `-O2` is not a validated profiler build configuration.
+
 ## Profiling direction
 
 The first implementation milestone is to compile and run an Elisa target with
