@@ -608,6 +608,7 @@ extend ProfilerNative:
             return "region_trim" if code == NATIVE_PROTOCOL_ALLOCATION_REGION_TRIM
             return "region_free" if code == NATIVE_PROTOCOL_ALLOCATION_REGION_FREE
             return "arena_adopt" if code == NATIVE_PROTOCOL_ALLOCATION_ARENA_ADOPT
+            return "region_rewind" if code == NATIVE_PROTOCOL_ALLOCATION_REGION_REWIND
             return "unknown"
 
 
@@ -640,7 +641,7 @@ extend ProfilerNative:
                 return
             kind_code: i64 = protocol_number_field(kind_field)
             kind_name: sview = allocation_kind_name(kind_code)
-            if kind_code < NATIVE_PROTOCOL_ALLOCATION_ALLOC or kind_code > NATIVE_PROTOCOL_ALLOCATION_ARENA_ADOPT:
+            if kind_code < NATIVE_PROTOCOL_ALLOCATION_ALLOC or kind_code > NATIVE_PROTOCOL_ALLOCATION_REGION_REWIND:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                 return

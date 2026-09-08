@@ -149,7 +149,7 @@ extend ProfilerNative:
             observed_repetition: mutable i64 = NATIVE_ZERO
             return false if not json_read_string_field(data, "kind", start, stop, &kind)
             return false if not json_read_number_field(data, "kind_code", start, stop, &code)
-            return false if code < NATIVE_PROTOCOL_ALLOCATION_ALLOC or code > NATIVE_PROTOCOL_ALLOCATION_ARENA_ADOPT
+            return false if code < NATIVE_PROTOCOL_ALLOCATION_ALLOC or code > NATIVE_PROTOCOL_ALLOCATION_REGION_REWIND
             return false if not protocol_field_is(kind, allocation_kind_name(code))
             return false if not json_read_number_field(data, "repetition", start, stop, &observed_repetition)
             return false if observed_repetition != repetition or observed_repetition < NATIVE_ONE

@@ -36,6 +36,7 @@ with an arbitrary prebuilt executable merely because full mode was selected.
 | 7 | `region_trim` | Blocks after the arena's current end were released. The record identifies the retained end index, not a list of freed allocations. |
 | 8 | `region_free` | Arena cleanup detached its block chain. Repeated cleanup can emit this operation even when the chain was already empty. |
 | 9 | `arena_adopt` | A child's nonempty block chain was transferred into a parent. `arena` identifies the destination parent; `old_address` identifies the consumed child arena, not an allocation. Older hooks emitted zero for the child, which means unavailable identity. |
+| 10 | `region_rewind` | Rewind retained the region header in `address` and the bump offset in `size_bytes` within that region. Later regions were reset. The old fields are zero. This offset is not a logical live-byte total. Rewind to an empty mark emits `region_reset` instead. |
 
 The sequence is collector-assigned across allocation callbacks in one process
 and is separate from diagnostic trace sequence numbers. Buffers are per thread,
@@ -98,9 +99,11 @@ independent allocator-oracle coverage:
 - Current `arena_realloc` returns immediately when the requested size does not
   grow, including zero-size requests. It emits no resize/free event in that path.
   Failed growth does not emit a success record and can terminate the target.
-- Rewind-to-mark has no dedicated hook. Region creation through paths outside
-  the hooked allocator must be inventoried before claiming complete backing
-  capacity accounting.
+- Rewind records now expose the retained region and bump offset. Consumers still
+  need to reconcile discarded allocations and reset later regions. Region creation
+  through paths outside the hooked allocator must be inventoried before claiming
+  complete backing capacity accounting. Older readers that only recognize event
+  kinds 1–9 reject rewind records; framing version 1 is not ABI negotiation.
 - Adoption now carries child identity but still needs a region-identity remapping contract.
   Reclaim and free-list reuse report the owning block index; adoption still needs
   to reconcile indices transferred from a different arena.

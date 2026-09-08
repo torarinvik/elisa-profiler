@@ -862,6 +862,33 @@ def main():
         assert before_reset["size_bytes"] == after_reset["size_bytes"]
         assert any(event["kind"] == "region_free" and event["arena"] == reset["arena"]
                    and event["sequence"] > after_reset["sequence"] for event in reset_events)
+        rewind_output = work / "arena-rewind.json"
+        run("profile", ROOT / "examples" / "arena_rewind_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", rewind_output)
+        rewind_report = json.loads(rewind_output.read_text(encoding="utf-8"))
+        validate(rewind_report, allocation_schema_root, allocation_schema_root, "rewind")
+        assert rewind_report["summary"]["capture_complete"] is True
+        rewind_events = rewind_report["run"]["repetitions"][0]["allocation_events"]
+        rewinds = [event for event in rewind_events if event["kind"] == "region_rewind"]
+        assert len(rewinds) == 1
+        rewind = rewinds[0]
+        allocations = sorted((event for event in rewind_events if event["kind"] == "alloc"),
+                             key=lambda event: event["sequence"])
+        assert len(allocations) == 4
+        retained, discarded, later, replacement = allocations
+        assert retained["sequence"] < discarded["sequence"] < later["sequence"] < rewind["sequence"] < replacement["sequence"]
+        assert discarded["address"] == replacement["address"] != retained["address"]
+        assert retained["region"] == rewind["region"] == replacement["region"] != later["region"]
+        assert rewind["size_bytes"] == retained["size_bytes"]
+        assert rewind["address"] != 0 and rewind["old_address"] == 0 and rewind["old_size_bytes"] == 0
+        assert all(event["arena"] == rewind["arena"] for event in allocations)
+        empty_rewinds = [event for event in rewind_events if event["kind"] == "region_reset"]
+        assert len(empty_rewinds) == 1
+        assert empty_rewinds[0]["arena"] == rewind["arena"]
+        assert empty_rewinds[0]["sequence"] > replacement["sequence"]
+        assert any(event["kind"] == "region_free" and event["arena"] == rewind["arena"]
+                   and event["sequence"] > empty_rewinds[0]["sequence"] for event in rewind_events)
+        assert b"region_rewind" in run("report", rewind_output, "--format", "html")
         adoption_output = work / "arena-adoption.json"
         run("profile", ROOT / "examples" / "arena_adoption_workload.elisa", "--mode", "full",
             "--format", "json", "--output", adoption_output)
