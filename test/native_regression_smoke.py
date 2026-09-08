@@ -16,6 +16,7 @@ from profile_schema_smoke import SchemaError, validate
 ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / "bin" / "elisa-profiler"
 TIMEOUT_SECONDS = 120
+FILE_READ_CHUNK_BYTES = 8192
 ERROR_STATUS = 2
 INCONCLUSIVE_STATUS = 4
 RECURSIVE_CALLS = 7
@@ -168,6 +169,15 @@ def main():
         assert forwarded_help["build_cache"]["enabled"] is False
         assert forwarded_help["build_cache"]["status"] == "disabled"
         assert forwarded_help["build_cache"]["explanation"] == "disabled; pass --cache-dir PATH to enable"
+        boundary_source = work / "read-boundary.elisa"
+        boundary_prefix = b"def main() -> i64:\n    return 0\n#"
+        for boundary_size in (FILE_READ_CHUNK_BYTES - 1, FILE_READ_CHUNK_BYTES,
+                              FILE_READ_CHUNK_BYTES + 1):
+            source_bytes = boundary_prefix + b"a" * (boundary_size - len(boundary_prefix))
+            boundary_source.write_bytes(source_bytes)
+            boundary_report = json.loads(run("profile", boundary_source, "--embed-source"))
+            assert boundary_report["source_snapshot"]["content"].encode() == source_bytes
+            assert boundary_report["source_snapshot"]["sha256"] == hashlib.sha256(source_bytes).hexdigest()
         # Existing host ABI fixture emits trace callbacks but no allocation hooks.
         # Merely selecting full mode must not imply allocation coverage.
         hookless_target = work / "hookless-target"

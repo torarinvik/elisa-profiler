@@ -270,3 +270,10 @@ signature; native regression and baseline tests pass. This avoids the failing
 argument-passing shape but does not establish the underlying compiler cause.
 The optimized regression then advances to live HTML, where a capture is
 incorrectly marked incomplete. Optimized builds remain experimental.
+
+The later compiler merge `bd25a22a` also passed full bootstrap validation:
+5/5 blocker probes, a 19,083,752-byte generation-3 object, byte-identical
+generation-3/generation-4 output, and 40 matching repeat compilations.
+Diagnostic-column validation covered 385 fixtures with 166 agreeing spans,
+zero pending spans, and zero divergences. Native profiler regression,
+trace-identity checks, and hash boundary tests passed against this compiler.
