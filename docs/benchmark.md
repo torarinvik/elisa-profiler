@@ -402,6 +402,26 @@ emission, byte-identical gen3/gen4, and all 40 repeat emissions. Evidence:
 sampling regressions (`build/lambda-native-regression.log` and
 `build/lambda-sampling-regression.log`).
 
+## Derived-state parameter lookup filter (2026-09-08)
+
+Compiler commit `f1796360` defers parameter-type lookup until the argument has
+a tracked derived-state slot marked changed. Unchanged/untracked arguments
+cannot produce this diagnostic. Postcondition lookups are unchanged.
+
+Two full O0 build pairs measured baseline/candidate wall times of 92.61/86.98
+and 92.50/87.02 seconds, reversing order in the second pair. User CPU times
+were 91.92/86.37 and 91.96/86.41 seconds. All four objects were byte-identical:
+5.9–6.1% less wall time against `27ffe9f3` on this host. Both binaries were
+self-hosted and compiled identical source/output paths. This is an incremental
+comparison, not an additive claim with prior gains. Logs:
+`build/derived-full-{baseline,candidate}.log` and their `-reverse.log` variants.
+
+All 387 selected diagnostic/derived/typestate fixture results matched baseline
+exit statuses, diagnostics, and successful LLVM output, including existing
+refusals. An additional focused fixture retained the changed `Alive` to `Dead`
+argument-mismatch and restoration diagnostics exactly. Fresh bootstrap
+validation of the committed revision is pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
