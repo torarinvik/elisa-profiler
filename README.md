@@ -293,6 +293,13 @@ before launching it. Reports mark this choice as `target.build_kind = prebuilt`
 and retain the executable path. An ordinary or partially instrumented binary is
 rejected instead of being presented as a valid profile.
 
+Source builds in `--mode functions` use `-ftrace-functions`: function entry/exit
+hooks are retained, while statement and scalar-value hooks are not emitted.
+Other instrumented modes retain full tracing. Cache keys and metadata include
+this distinction, so function-only builds cannot replace full-trace cache entries.
+Prebuilt executables keep the instrumentation selected when they were built;
+choosing function mode cannot remove callbacks from an existing binary.
+
 `--env` rejects the profiler's private transport variables (`ELISA_PROFILE_FD`,
 framing, mode, trace, sample-period, capture-budget, and recent-path keys). This prevents a
 target override from replacing the collector channel; documented target-facing

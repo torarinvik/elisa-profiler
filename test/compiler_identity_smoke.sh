@@ -25,9 +25,12 @@ ELISA_STAGE1_BIN="$STAGE1" ELISA_COMPILER_ROOT="$COMPILER_ROOT" \
 ELISA_STAGE1_BIN="$STAGE1" ELISA_COMPILER_ROOT="$COMPILER_ROOT" \
     "$WRAPPER" -emit llvm -g -ftrace -O0 -o "$WORK/second.ll" "$WORK/identity.elisa"
 
-python3 - "$WORK/first.ll" "$WORK/second.ll" <<'PY'
+ELISA_STAGE1_BIN="$STAGE1" ELISA_COMPILER_ROOT="$COMPILER_ROOT" \
+python3 - "$WORK/first.ll" "$WORK/second.ll" "$WRAPPER" "$WORK/identity.elisa" <<'PY'
 import re
 import sys
+import subprocess
+from pathlib import Path
 
 declarations = {
     "elisa_trace_record_id(ptr, i32, i64)",
@@ -57,5 +60,21 @@ def identity_evidence(path: str):
 first = identity_evidence(sys.argv[1])
 second = identity_evidence(sys.argv[2])
 assert first == second, (first, second)
+function_callbacks = {"elisa_trace_function_entry_id", "elisa_trace_function_exit_id"}
+expected_functions = [call for call in first if call[0] in function_callbacks]
+for index, (flags, functions_only) in enumerate([
+    (["-ftrace-functions"], True),
+    (["-ftrace", "-ftrace-functions"], True),
+    (["-ftrace-functions", "-ftrace"], False),
+]):
+    output = Path(sys.argv[1]).with_name(f"trace-mode-{index}.ll")
+    subprocess.run([sys.argv[3], "-emit", "llvm", "-g", *flags, "-O0",
+                    "-o", str(output), sys.argv[4]], check=True, timeout=60)
+    emitted = output.read_text(encoding="utf-8")
+    calls = [(match.group("name"), int(match.group("id")))
+             for match in call_pattern.finditer(emitted)]
+    assert [call for call in calls if call[0] in function_callbacks] == expected_functions
+    records = re.findall(r"call void @elisa_trace_record(?:_value)?_id\(", emitted)
+    assert bool(records) is not functions_only, (flags, records)
 print("compiler identity smoke OK")
 PY

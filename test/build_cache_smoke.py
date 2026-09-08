@@ -76,6 +76,21 @@ def main() -> int:
         assert third_cache["key"] != first_cache["key"]
         assert len(list(cache.iterdir())) == 4
 
+        functions = root / "functions.json"
+        functions_hit = root / "functions-hit.json"
+        full_again = root / "full-again.json"
+        run([*common, "--mode", "functions", "--output", str(functions)])
+        function_cache = cache_report(functions)
+        assert function_cache["status"] == "miss"
+        assert function_cache["key"] != third_cache["key"]
+        function_metadata = cache_metadata(cache / (str(function_cache["key"]) + ".json"))
+        assert "-ftrace-functions" in function_metadata["build_flags"].split(",")
+        run([*common, "--mode", "functions", "--output", str(functions_hit)])
+        assert cache_report(functions_hit)["status"] == "hit"
+        run([*common, "--output", str(full_again)])
+        assert cache_report(full_again)["status"] == "hit"
+        assert cache_report(full_again)["key"] == third_cache["key"]
+
     print("build cache smoke OK: miss, validated hit, and dependency invalidation pass")
     return 0
 
