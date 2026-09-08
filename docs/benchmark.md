@@ -396,7 +396,9 @@ measurements, not an additive claim with earlier gains. Logs:
 All 385 diagnostic fixtures plus two nested-call fixtures matched baseline exit
 status, diagnostic bytes, and successful LLVM output, including existing refusals.
 The accepted nested-call fixture also returned 42 at runtime. Fresh bootstrap
-validation of the committed revision is pending.
+validation of the committed revision passed: five initial probes, full compiler
+emission, byte-identical gen3/gen4, and all 40 repeat emissions. Evidence:
+`build/lambda-committed-self-host.log`. Profiler regressions are tracked separately.
 
 ## Promote a local baseline
 
