@@ -152,6 +152,15 @@ old-size evidence freezes the state before changing size or byte totals.
 These are analysis rules, not evidence that the runtime emits every resize:
 the runtime's early-return shrink/zero path still needs hook coverage.
 
+Moved realloc reconciliation consumes an already observed destination
+allocation and the latest retained source generation. It retires a still-live
+source or consumes its preceding release evidence; it never adds a third
+allocation or repeats the destination's traffic. The temporary overlap of old
+and new requests remains part of observed peak live bytes. Duplicate moves,
+size mismatch, erased source history, and moves across reset boundaries
+invalidate state. Retired slots may hold older instances of the same address,
+so source selection uses generation order rather than table position.
+
 This engine is not connected to capture reports yet. Raw-event ordering,
 realloc/adoption/rewind reconciliation, region identity, loss propagation,
 lifetime distributions, and performance validation remain necessary before

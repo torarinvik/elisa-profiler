@@ -6,6 +6,9 @@ module AllocationLifetimesSmoke:
         const OTHER_ARENA: u64 = 32
         const ADDRESS: u64 = 64
         const OTHER_ADDRESS: u64 = 128
+        const THIRD_ADDRESS: u64 = 256
+        const FOURTH_ADDRESS: u64 = 512
+        const THREE_SLOTS: usize = 3
         const BYTES: u64 = 8
         const CAPACITY: usize = 2
         const SINGLE_SLOT: usize = 1
@@ -29,6 +32,53 @@ module AllocationLifetimesSmoke:
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             assert state.live_bytes == BYTES
+            moved: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&moved, ARENA, ADDRESS, BYTES) != ZERO
+            destination_generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&moved, ARENA, OTHER_ADDRESS, BYTES + BYTES)
+            assert destination_generation != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_move(&moved, ARENA, ADDRESS, OTHER_ADDRESS, BYTES, BYTES + BYTES)
+            assert moved.live_bytes == BYTES + BYTES
+            assert moved.allocated_bytes == BYTES + BYTES + BYTES
+            assert moved.peak_live_bytes == BYTES + BYTES + BYTES
+            assert moved.allocation_count == CAPACITY.u64()
+            assert not ElisaProfilerAllocationLifetimes::observe_move(&moved, ARENA, ADDRESS, OTHER_ADDRESS, BYTES, BYTES + BYTES)
+            assert moved.quality == ElisaProfilerAllocationLifetimes::QUALITY_IDENTITY
+            assert moved.live_bytes == BYTES + BYTES
+            reclaimed: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reclaimed, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reclaimed, ARENA, OTHER_ADDRESS, BYTES + BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_release(&reclaimed, ARENA, ADDRESS)
+            assert ElisaProfilerAllocationLifetimes::observe_move(&reclaimed, ARENA, ADDRESS, OTHER_ADDRESS, BYTES, BYTES + BYTES)
+            assert reclaimed.live_bytes == BYTES + BYTES
+            assert reclaimed.allocation_count == CAPACITY.u64()
+            reused: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(THREE_SLOTS)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reused, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reused, ARENA, OTHER_ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reused, ARENA, THIRD_ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_release(&reused, ARENA, ADDRESS)
+            assert ElisaProfilerAllocationLifetimes::observe_release(&reused, ARENA, THIRD_ADDRESS)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reused, ARENA, THIRD_ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_release(&reused, ARENA, OTHER_ADDRESS)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&reused, ARENA, FOURTH_ADDRESS, BYTES + BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_move(&reused, ARENA, THIRD_ADDRESS, FOURTH_ADDRESS, BYTES, BYTES + BYTES)
+            assert reused.live_bytes == BYTES + BYTES
+            assert reused.quality == ElisaProfilerAllocationLifetimes::QUALITY_EXACT
+            erased: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&erased, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_release(&erased, ARENA, ADDRESS)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&erased, ARENA, OTHER_ADDRESS, BYTES + BYTES) != ZERO
+            assert not ElisaProfilerAllocationLifetimes::observe_move(&erased, ARENA, ADDRESS, OTHER_ADDRESS, BYTES, BYTES + BYTES)
+            assert erased.quality == ElisaProfilerAllocationLifetimes::QUALITY_MISSING_EVENT
+            assert erased.live_bytes == BYTES + BYTES
+            after_reset: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&after_reset, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&after_reset, ARENA, OTHER_ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_release(&after_reset, ARENA, OTHER_ADDRESS)
+            ElisaProfilerAllocationLifetimes::observe_arena_reset(&after_reset, ARENA)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&after_reset, ARENA, THIRD_ADDRESS, BYTES) != ZERO
+            assert not ElisaProfilerAllocationLifetimes::observe_move(&after_reset, ARENA, OTHER_ADDRESS, THIRD_ADDRESS, BYTES, BYTES)
+            assert after_reset.quality == ElisaProfilerAllocationLifetimes::QUALITY_MISSING_EVENT
+            assert after_reset.live_bytes == BYTES
             resized: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
             resized_generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&resized, ARENA, ADDRESS, BYTES)
             assert ElisaProfilerAllocationLifetimes::observe_resize(&resized, ARENA, ADDRESS, BYTES, BYTES + BYTES)

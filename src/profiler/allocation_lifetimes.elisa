@@ -21,6 +21,8 @@ module ElisaProfilerAllocationLifetimes:
             generation: u64
             size_bytes: mutable u64
             live: mutable bool
+            move_reconciled: mutable bool
+            released: mutable bool
 
         struct State:
             entries: mutable darray[Entry]
@@ -63,7 +65,7 @@ module ElisaProfilerAllocationLifetimes:
                 invalidate(state, QUALITY_OVERFLOW)
                 return ZERO
             generation: u64 = state.next_generation
-            entry: Entry = Entry{arena: arena, address: address, generation: generation, size_bytes: size_bytes, live: true}
+            entry: Entry = Entry{arena: arena, address: address, generation: generation, size_bytes: size_bytes, live: true, move_reconciled: false, released: false}
             if reusable == state.entries.count:
                 state.entries.push(entry)
             else:
@@ -100,12 +102,50 @@ module ElisaProfilerAllocationLifetimes:
             invalidate(state, QUALITY_MISSING_EVENT)
             return false
 
+        # The raw runtime emits allocation(new), optional reclaim(old), then
+        # move(old,new). Reconcile those existing entries; never allocate again.
+        # Retired source evidence must still be retained. If slot reuse erased
+        # it, fail closed rather than assuming that a release was observed.
+        def observe_move(state: mutable State&, arena: u64, old_address: u64, new_address: u64, old_size: u64, new_size: u64) -> bool can[Abort.Panic]:
+            return false if state.quality != QUALITY_EXACT
+            if old_address == new_address:
+                invalidate(state, QUALITY_IDENTITY)
+                return false
+            old_index: mutable usize = state.entries.count
+            new_index: mutable usize = state.entries.count
+            for index in 0..<state.entries.count |state, arena, old_address, new_address, old_index, new_index|:
+                if state.entries[index].arena == arena:
+                    if state.entries[index].address == old_address:
+                        if old_index == state.entries.count or state.entries[index].generation > state.entries[old_index].generation:
+                            old_index <- index
+                    if state.entries[index].address == new_address and state.entries[index].live:
+                        new_index <- index
+            if old_index == state.entries.count or new_index == state.entries.count:
+                invalidate(state, QUALITY_MISSING_EVENT)
+                return false
+            if state.entries[new_index].move_reconciled or state.entries[old_index].generation >= state.entries[new_index].generation:
+                invalidate(state, QUALITY_IDENTITY)
+                return false
+            if not state.entries[old_index].live and not state.entries[old_index].released:
+                invalidate(state, QUALITY_MISSING_EVENT)
+                return false
+            if state.entries[old_index].size_bytes != old_size or state.entries[new_index].size_bytes != new_size:
+                invalidate(state, QUALITY_SIZE_MISMATCH)
+                return false
+            if state.entries[old_index].live:
+                state.live_bytes <- state.live_bytes - old_size
+                state.entries[old_index].live <- false
+            state.entries[old_index].released <- false
+            state.entries[new_index].move_reconciled <- true
+            return true
+
         def observe_release(state: mutable State&, arena: u64, address: u64) -> bool can[Abort.Panic]:
             return false if state.quality != QUALITY_EXACT
             for index in 0..<state.entries.count |state, arena, address|:
                 if state.entries[index].live and state.entries[index].arena == arena and state.entries[index].address == address:
                     state.live_bytes <- state.live_bytes - state.entries[index].size_bytes
                     state.entries[index].live <- false
+                    state.entries[index].released <- true
                     return true
             invalidate(state, QUALITY_MISSING_EVENT)
             return false
@@ -118,6 +158,8 @@ module ElisaProfilerAllocationLifetimes:
                 invalidate(state, QUALITY_IDENTITY)
                 return
             for index in 0..<state.entries.count |state, arena|:
-                if state.entries[index].live and state.entries[index].arena == arena:
-                    state.live_bytes <- state.live_bytes - state.entries[index].size_bytes
-                    state.entries[index].live <- false
+                if state.entries[index].arena == arena:
+                    if state.entries[index].live:
+                        state.live_bytes <- state.live_bytes - state.entries[index].size_bytes
+                        state.entries[index].live <- false
+                    state.entries[index].released <- false
