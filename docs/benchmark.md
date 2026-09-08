@@ -570,7 +570,10 @@ order, 71.61/68.60 seconds. User CPU times were 70.98/68.24 and 71.03/67.99.
 All four emitted objects were byte-identical: 3.9–4.2% less wall time against
 `bcb3d87b` on identical current source with self-hosted binaries. Logs:
 `build/refinement-lookup-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap on `51abe116` passed five probes, full compiler emission
+(19,110,168 bytes), byte-identical gen3/gen4 objects, and all 40 repeat emissions
+(`build/refinement-lookup-committed-self-host.log`). Profiler rebuild and
+native/sampling regression checks remain pending.
 
 ## Promote a local baseline
 
