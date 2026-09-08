@@ -72,6 +72,13 @@ benchmarks. Empty, short, padding-boundary, and million-byte SHA-256 vectors
 pass the Elisa-native `make hash-smoke` gate; the full native regression
 suite also passed with the rebuilt profiler.
 
+An `-O1` profiler build at revision `c969164` passed the full native regression,
+including cross-section capture-completeness checks that fail at `-O2`.
+Three alternating end-to-end pairs measured `-O0`/`-O1` wall times of
+9.72/9.28s, 10.77/11.69s, and 12.20/12.78s. This showed no consistent benefit;
+the installed profiler remains at `-O0`. Optimization-level changes alone
+are not counted as performance gains.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
