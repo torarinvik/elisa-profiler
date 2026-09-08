@@ -485,8 +485,11 @@ reversed, 79.05/77.06 seconds. User CPU times were 78.43/76.56 and 78.50/76.53.
 All four emitted objects were byte-identical: approximately 2.4–2.5% less wall
 time against `90462733` on identical current source. Both binaries were
 self-hosted. Logs: `build/effect-ref-full-{baseline,candidate}.log` and their
-`-reverse.log` variants. Fresh committed bootstrap and profiler regression
-validation are pending; this is not a complete test-suite claim.
+`-reverse.log` variants. Fresh committed bootstrap validation passed on
+`d4451281`: five initial probes, full compiler emission (19,107,488 bytes),
+byte-identical gen3/gen4 objects, and identical objects across 40 repeat runs.
+Evidence: `build/effect-ref-committed-self-host.log`. Profiler rebuild and
+regression validation remain pending; this is not a complete test-suite claim.
 
 ## Promote a local baseline
 
