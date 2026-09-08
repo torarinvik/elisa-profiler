@@ -26,6 +26,7 @@ IDENTITY_CONTRACT_LEGACY_VERSION = 1
 IDENTITY_CONTRACT_CURRENT_VERSION = 2
 TARGET_EXIT_CODE = 126
 COLLECTOR_STATUS_OK = 1
+ALLOCATION_KIND_FIRST_UNSUPPORTED = 11
 
 
 def run(*args, ok=True, expected=None):
@@ -773,7 +774,7 @@ def main():
         for field, value in (
             ("address", -1), ("address", 2**64), ("size_bytes", "1"),
             ("timestamp_ns", None), ("thread_id", True), ("region", 1.5),
-            ("kind", "alloc"), ("kind_code", 0), ("repetition", 2),
+            ("kind", "alloc"), ("kind_code", 0), ("kind_code", ALLOCATION_KIND_FIRST_UNSUPPORTED), ("repetition", 2),
             ("unexpected", 0),
         ):
             malformed_allocation = copy.deepcopy(allocation_report)
