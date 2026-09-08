@@ -28,9 +28,14 @@ ELISA_STAGE1_BIN="$STAGE1" ELISA_COMPILER_ROOT="$COMPILER_ROOT" \
 ELISA_STAGE1_BIN="$STAGE1" ELISA_COMPILER_ROOT="$COMPILER_ROOT" \
 python3 - "$WORK/first.ll" "$WORK/second.ll" "$WRAPPER" "$WORK/identity.elisa" <<'PY'
 import re
+import platform
 import sys
 import subprocess
 from pathlib import Path
+
+COMPILER_TIMEOUT_SECONDS = 60
+PROGRAM_TIMEOUT_SECONDS = 10
+EXPECTED_FIXTURE_EXIT_CODE = 42
 
 declarations = {
     "elisa_trace_record_id(ptr, i32, i64)",
@@ -76,5 +81,40 @@ for index, (flags, functions_only) in enumerate([
     assert [call for call in calls if call[0] in function_callbacks] == expected_functions
     records = re.findall(r"call void @elisa_trace_record(?:_value)?_id\(", emitted)
     assert bool(records) is not functions_only, (flags, records)
-print("compiler identity smoke OK")
+for optimization in ("-O0", "-O1", "-O2", "-O3"):
+    for index, (flags, enabled) in enumerate([
+        ([], False),
+        (["-fomit-frame-pointer"], False),
+        (["-fno-omit-frame-pointer"], True),
+        (["-fno-omit-frame-pointer", "-fomit-frame-pointer"], False),
+        (["-fomit-frame-pointer", "-fno-omit-frame-pointer"], True),
+    ]):
+        output = Path(sys.argv[1]).with_name(f"frame-pointer-{optimization}-{index}.ll")
+        subprocess.run([sys.argv[3], "-emit", "llvm", *flags, optimization,
+                        "-o", str(output), sys.argv[4]], check=True, timeout=COMPILER_TIMEOUT_SECONDS)
+        emitted = output.read_text(encoding="utf-8")
+        assert not call_pattern.search(emitted), "frame-pointer policy unexpectedly enabled trace callbacks"
+        groups = dict(re.findall(r"^attributes #(\d+) = \{([^\n]*)\}", emitted, re.M))
+        definitions = re.findall(r"^define [^\n]+", emitted, re.M)
+        assert definitions, emitted
+        for definition in definitions:
+            group = re.search(r"#(\d+)", definition)
+            attributes = groups[group.group(1)] if group else ""
+            assert ('"frame-pointer"="all"' in attributes) == enabled, (optimization, flags, definition, attributes)
+        for declaration in re.findall(r"^declare [^\n]+", emitted, re.M):
+            group = re.search(r"#(\d+)", declaration)
+            attributes = groups[group.group(1)] if group else ""
+            assert '"frame-pointer"="all"' not in attributes, declaration
+    executable = Path(sys.argv[1]).with_name(f"frame-pointer-{optimization}")
+    subprocess.run([sys.argv[3], "-emit", "exe", "-fno-omit-frame-pointer",
+                    optimization, "-o", str(executable), sys.argv[4]], check=True, timeout=COMPILER_TIMEOUT_SECONDS)
+    assert subprocess.run([str(executable)], timeout=PROGRAM_TIMEOUT_SECONDS).returncode == EXPECTED_FIXTURE_EXIT_CODE
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        assembly = subprocess.run(
+            ["xcrun", "llvm-objdump", "--disassemble-symbols=_main", str(executable)],
+            check=True, capture_output=True, text=True, timeout=PROGRAM_TIMEOUT_SECONDS,
+        ).stdout
+        assert re.search(r"\bstp\s+(?:x29|fp),\s*(?:x30|lr)", assembly), assembly
+        assert re.search(r"\b(?:mov|add)\s+(?:x29|fp),\s*sp", assembly), assembly
+print("compiler identity and frame-pointer smoke OK")
 PY

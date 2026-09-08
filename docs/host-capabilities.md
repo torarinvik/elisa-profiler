@@ -21,6 +21,13 @@ capture's `sampling_detail` and `sampling_setup_failed` fields rather than infer
 support from the host name. Likewise, unsupported allocation/task fields are
 reported as unavailable, never as zero.
 
+The dedicated compiler worktree supports opt-in `-fno-omit-frame-pointer`
+preparation for native sampling experiments. Its LLVM policy, executable
+answers, and macOS ARM64 frame setup are tested at O0–O3. This prerequisite
+does not enable native sampling in the profiler: raw-address capture,
+validated unwinding, and exact-artifact symbolization remain unimplemented.
+Default target compilation and the capability matrix above are unchanged.
+
 The native collector's low-level signal and descriptor policy is currently a
 POSIX implementation detail. Porting another host requires an audited FFI
 adapter, an explicit capability entry, and focused ABI/cleanup tests before
