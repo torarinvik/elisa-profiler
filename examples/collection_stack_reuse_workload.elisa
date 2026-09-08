@@ -1,0 +1,28 @@
+# Exercise the backing-stack lifecycle used by dictionary/set growth.
+include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+
+module CollectionStackReuseWorkload:
+    private:
+        const BACKING_SLOTS: usize = 16
+        const INITIAL_SLOTS: usize = 4
+        const SECOND_SLOTS: usize = 6
+        const THIRD_SLOTS: usize = 8
+        const FIRST_REGION: usize = 0
+        const SUCCESS: i64 = 0
+        const FAILURE: i64 = 1
+
+    public:
+        def run() -> i64:
+            backing: mutable heap Region& = new_region_backend(BACKING_SLOTS, ARENA_STRATEGY_CHAINED)
+            arena: mutable Arena = Arena{begin: backing, end: backing, end_index: FIRST_REGION, strategy: ARENA_STRATEGY_CHAINED}
+            first: mutable heap Region& = collection_stack_acquire(&arena, null, INITIAL_SLOTS)
+            first_table: mutable heap void& = collection_stack_table(first)
+            second: mutable heap Region& = collection_stack_acquire(&arena, first_table, SECOND_SLOTS)
+            second_table: mutable heap void& = collection_stack_table(second)
+            third: mutable heap Region& = collection_stack_acquire(&arena, second_table, THIRD_SLOTS)
+            correct: bool = first != second and third == first and third.count == THIRD_SLOTS and third.owner_next == second and first.global_index != second.global_index
+            arena_free(&arena)
+            return SUCCESS if correct else FAILURE
+
+def main() -> i64:
+    return CollectionStackReuseWorkload::run()
