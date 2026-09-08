@@ -426,6 +426,26 @@ emission, byte-identical gen3/gen4, and all 40 repeat emissions. Evidence:
 and sampling regressions (`build/derived-native-regression.log` and
 `build/derived-sampling-regression.log`).
 
+## Unhandled-error annotation filter (2026-09-08)
+
+Compiler commit `90462733` compacts the unhandled-error checker's annotations
+to error-return markers, try-wrapper markers, and function-module provenance.
+Order and duplicates remain intact; shared fallibility and propagation logic
+is unchanged.
+
+Two full O0 build pairs measured baseline/candidate wall times of 86.69/79.04
+and 86.97/79.11 seconds, reversing order in the second pair. User CPU times
+were 86.16/78.55 and 86.41/78.55 seconds. All four objects were byte-identical:
+8.8–9.0% less wall time against `f1796360` on this host. Both binaries were
+self-hosted and used identical source/output paths. This is an incremental
+comparison, not an additive claim with previous gains. Logs:
+`build/unhandled-full-{baseline,candidate}.log` and their `-reverse.log` variants.
+
+All 397 diagnostic/try/unhandled/error-union fixture results matched baseline
+exit statuses, diagnostics, and successful LLVM output, including existing
+refusals. The module-scoped handled-call fixture also returned 42 at runtime.
+Fresh bootstrap validation of the committed revision is pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
