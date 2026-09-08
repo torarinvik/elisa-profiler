@@ -810,7 +810,12 @@ order, 55.70/54.23 seconds. User CPU times were 55.12/53.85 and 55.25/53.79.
 All four objects were byte-identical: 2.2–2.6% less wall time than `e7674ecb`
 with self-hosted binaries on identical source. Evidence:
 `build/template-bodies-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh committed bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap of committed `78c55f54` passed: five probes, full
+compiler emission (19,118,928 bytes), byte-identical generation 3/4 objects, and
+all 40 repeat emissions. Profiler rebuild and native/sampling regressions also
+passed. Evidence: `build/template-bodies-committed-self-host.log`,
+`build/template-bodies-profiler-build.log`, `build/template-bodies-native-regression.log`,
+and `build/template-bodies-sampling-regression.log`.
 
 ## Promote a local baseline
 
