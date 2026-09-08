@@ -26,6 +26,12 @@ paths = [line for line in lines if line[2] == "path"]
 assert [int(line[3]) for line in paths] == [0, 1, 2], paths
 assert [line[5] for line in paths] == ["trace-main", "trace-worker", "trace-worker"], paths
 assert [line[4] for line in paths] == ["3", "3", "1"], paths
+assert all(len(line) == 13 for line in paths), paths
+assert [line[10] for line in paths] == ["0", "0", "0"], paths
+assert [line[11] for line in paths] == ["0", "1", "1"], paths
+timestamps = [int(line[12]) for line in paths]
+assert all(timestamp >= 0 for timestamp in timestamps), timestamps
+assert timestamps == sorted(timestamps), timestamps
 
 threads = [line for line in lines if line[2] == "thread"]
 assert len(threads) == 2, threads

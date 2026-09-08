@@ -49,5 +49,8 @@ assert repetition["trace_event_limit"] == event_trace_limit
 assert repetition["trace_events_captured"] <= event_trace_limit
 assert repetition["trace_events"] == summary["events"]
 assert len(repetition["event_trace"]) == repetition["trace_events_captured"]
+assert all("thread_id" in event and "timestamp_ns" in event for event in repetition["event_trace"])
+assert all(isinstance(event["thread_id"], int) and event["thread_id"] >= 0 for event in repetition["event_trace"])
+assert all(isinstance(event["timestamp_ns"], int) and event["timestamp_ns"] >= 0 for event in repetition["event_trace"])
 print("profile budget smoke OK")
 PY

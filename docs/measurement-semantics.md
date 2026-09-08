@@ -142,16 +142,23 @@ signal captures may intentionally be partial and expose
 
 The optional `event_trace` records are ordered by a process-local monotonic
 `sequence` counter. They preserve event kind, function, source line, optional
-variable/value, and compiler identity, but they do not currently carry an event
-timestamp or a physical thread identity. The separate thread-loss records say
-which capture-local thread lost detail, not which thread emitted each retained
-event. Consequently the trace can answer “what was observed in collector order”
-and support bounded path diagnostics, but it cannot reconstruct a wall-clock
-timeline, cross-thread ordering, spans, or per-thread event chronology. Function
-timing summaries remain interval aggregates and must not be back-projected onto
-individual trace records. A future versioned event protocol may add those
-fields; until then timeline views must remain explicitly unsupported rather than
-inventing timestamps or assigning events to threads.
+variable/value, and compiler identity. New records also carry `thread_id`, a
+capture-local physical-thread identity, and `timestamp_ns`, a monotonic
+`CLOCK_MONOTONIC` timestamp in nanoseconds. A zero timestamp means that the
+platform clock was unavailable; it is not an epoch measurement. Legacy records
+may omit all three additive fields, and the reader must preserve that
+compatibility.
+
+The sequence is the authoritative collector order. Timestamps are retained
+evidence for coarse chronology, not a promise of a complete timeline: the
+collector still does not emit begin/end spans, task identities, scheduler
+waits, or a causal cross-thread relation. Timestamp collection is enabled only
+for retained trace records, so omitted or budget-dropped events cannot be
+reconstructed from neighboring values. Function timing summaries remain
+interval aggregates and must not be back-projected onto individual trace
+records. A future protocol revision can add the missing span and scheduler
+semantics; renderers must label this stream as event evidence rather than
+claiming a complete wall-clock timeline.
 
 HTML diagnostics present each retained thread-loss record as a bounded table
 with repetition, capture-local thread, event-sequence range, and each loss

@@ -22,6 +22,18 @@ extend ProfilerNative:
             return field_end + NATIVE_ONE.usize() if field_end < stop and data[field_end] == NATIVE_BYTE_TAB else field_end
 
 
+        def protocol_remaining_field_count(data: darray[u8]&, start: usize, stop: usize) -> usize:
+            count: mutable usize = NATIVE_ZERO.usize()
+            cursor: mutable usize = start
+            while cursor < stop |count, cursor, data|:
+                count <- count + NATIVE_ONE.usize()
+                while cursor < stop |cursor, data|:
+                    break if data[cursor] == NATIVE_BYTE_TAB
+                    cursor <- cursor + NATIVE_ONE.usize()
+                cursor <- cursor + NATIVE_ONE.usize() if cursor < stop
+            return count
+
+
         def protocol_field_is(value: darray[u8]&, expected: sview) -> bool can[Abort.Panic]:
             false return if value.count != profiler_ffi_sview_len(expected)
             for index in 0..<value.count |value, expected|:
@@ -504,6 +516,8 @@ extend ProfilerNative:
             signed_field: mutable darray[u8] = []
             value_field: mutable darray[u8] = []
             identity_field: mutable darray[u8] = []
+            thread_field: mutable darray[u8] = []
+            timestamp_field: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
             cursor <- protocol_field_into(data, cursor, stop, &kind_field)
             cursor <- protocol_field_into(data, cursor, stop, &function_field)
@@ -511,9 +525,14 @@ extend ProfilerNative:
             cursor <- protocol_field_into(data, cursor, stop, &variable_field)
             cursor <- protocol_field_into(data, cursor, stop, &signed_field)
             cursor <- protocol_field_into(data, cursor, stop, &value_field)
-            if cursor < stop:
+            optional_fields: usize = protocol_remaining_field_count(data, cursor, stop)
+            if optional_fields == NATIVE_ONE.usize():
                 cursor <- protocol_field_into(data, cursor, stop, &identity_field)
-            if cursor != stop:
+            elif optional_fields == NATIVE_THREE.usize():
+                cursor <- protocol_field_into(data, cursor, stop, &identity_field)
+                cursor <- protocol_field_into(data, cursor, stop, &thread_field)
+                cursor <- protocol_field_into(data, cursor, stop, &timestamp_field)
+            elif optional_fields != NATIVE_ZERO.usize():
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_EVENT
                 return
@@ -531,6 +550,8 @@ extend ProfilerNative:
             signed_value: bool = protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_TRUE
             valid: mutable bool = protocol_unsigned(sequence_field) and function_field.count > NATIVE_ZERO.usize() and protocol_unsigned(line_field)
             valid <- valid and (identity_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(identity_field))
+            valid <- valid and (thread_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(thread_field))
+            valid <- valid and (timestamp_field.count == NATIVE_ZERO.usize() or protocol_unsigned_u64(timestamp_field))
             valid <- valid and (protocol_number_field(signed_field) == NATIVE_PROTOCOL_SIGNED_FALSE or signed_value)
             valid <- valid and protocol_signed(value_field, false)
             if not signed_value:
@@ -561,6 +582,11 @@ extend ProfilerNative:
                 summary.stable_ids_available <- true
                 append_text(event_records, ",\"identity_id\":")
                 append_protocol_number(event_records, identity_field)
+            if thread_field.count > NATIVE_ZERO.usize():
+                append_text(event_records, ",\"thread_id\":")
+                append_protocol_number(event_records, thread_field)
+                append_text(event_records, ",\"timestamp_ns\":")
+                append_protocol_number(event_records, timestamp_field)
             append_text(event_records, ",\"compiler_line\":")
             append_protocol_number(event_records, line_field)
             append_text(event_records, ",\"source\":")

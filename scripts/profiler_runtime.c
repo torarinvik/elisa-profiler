@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifndef ELISA_PROFILE_TIMING
@@ -16,10 +17,6 @@
 
 #ifndef ELISA_PROFILE_CPU_TIMING
 #define ELISA_PROFILE_CPU_TIMING 0
-#endif
-
-#if ELISA_PROFILE_TIMING
-#include <time.h>
 #endif
 
 /*
@@ -175,6 +172,8 @@ typedef struct {
     uint64_t identity_id;
     uint64_t value;
     uint64_t sequence;
+    uint64_t thread_id;
+    uint64_t timestamp_ns;
 } profile_trace_event;
 
 static profile_entry *profile_table;
@@ -256,6 +255,21 @@ static volatile sig_atomic_t
 #endif
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right);
+
+static uint64_t profile_trace_timestamp_ns(void) {
+    struct timespec timestamp;
+    if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0 || timestamp.tv_sec < 0 ||
+        timestamp.tv_nsec < 0) {
+        return 0;
+    }
+    uint64_t seconds = (uint64_t)timestamp.tv_sec;
+    if (seconds > UINT64_MAX / PROFILE_NANOS_PER_SECOND) {
+        return UINT64_MAX;
+    }
+    uint64_t result = seconds * PROFILE_NANOS_PER_SECOND;
+    uint64_t nanoseconds = (uint64_t)timestamp.tv_nsec;
+    return nanoseconds > UINT64_MAX - result ? UINT64_MAX : result + nanoseconds;
+}
 
 static __uint128_t profile_saturating_add_unsigned_sum(__uint128_t left,
                                                        uint64_t right) {
@@ -1530,6 +1544,8 @@ static void profile_record(const char *function_name, uint32_t line,
                 .identity_id = identity_id,
                 .value = value,
                 .sequence = profile_event_count - 1,
+                .thread_id = thread == NULL ? 0 : thread->thread_id,
+                .timestamp_ns = profile_trace_timestamp_ns(),
             };
             if (profile_thread_trace_append_locked(thread, &event)) {
                 profile_event_trace_captured =
@@ -2119,7 +2135,14 @@ static void profile_dump_trace_event(const profile_trace_event *event) {
     if (event->identity_id != PROFILE_ID_UNSET) {
         profile_record_append_char('\t');
         profile_record_append_uint64(event->identity_id);
+    } else {
+        profile_record_append_char('\t');
+        profile_record_append_uint64(PROFILE_ID_UNSET);
     }
+    profile_record_append_char('\t');
+    profile_record_append_uint64(event->thread_id);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(event->timestamp_ns);
     profile_record_emit();
 }
 
