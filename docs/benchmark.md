@@ -488,8 +488,9 @@ self-hosted. Logs: `build/effect-ref-full-{baseline,candidate}.log` and their
 `-reverse.log` variants. Fresh committed bootstrap validation passed on
 `d4451281`: five initial probes, full compiler emission (19,107,488 bytes),
 byte-identical gen3/gen4 objects, and identical objects across 40 repeat runs.
-Evidence: `build/effect-ref-committed-self-host.log`. Profiler rebuild and
-regression validation remain pending; this is not a complete test-suite claim.
+Evidence: `build/effect-ref-committed-self-host.log`. The rebuilt profiler also
+passed native and sampling regression checks (`build/effect-ref-native-regression.log`
+and `build/effect-ref-sampling-regression.log`). This is not a complete test-suite claim.
 
 ## Promote a local baseline
 
