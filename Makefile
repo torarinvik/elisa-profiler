@@ -68,8 +68,17 @@ macho-smoke: compiler-manifest-smoke
 		"$(PROFILER_ROOT)/test/macho_smoke.elisa"
 	@"$(PROFILER_ROOT)/build/macho-smoke" </dev/null
 	@if test "$$(uname -s)" = Darwin; then \
-		"$(PROFILER_ROOT)/build/macho-smoke" <"$(PROFILER_ROOT)/build/macho-smoke"; \
+		"$(PROFILER_ROOT)/build/macho-smoke" <"$(PROFILER_ROOT)/build/macho-smoke" >"$(PROFILER_ROOT)/build/macho-starts.actual"; \
 	fi
+
+# Optional independent oracle: pass LLVM_OBJDUMP when LLVM is not on PATH.
+LLVM_OBJDUMP ?= llvm-objdump
+.PHONY: macho-oracle-smoke
+macho-oracle-smoke: macho-smoke
+	@test "$$(uname -s)" = Darwin
+	@"$(LLVM_OBJDUMP)" --macho --function-starts=addrs "$(PROFILER_ROOT)/build/macho-smoke" >"$(PROFILER_ROOT)/build/macho-starts.llvm-header"
+	@tail -n +2 "$(PROFILER_ROOT)/build/macho-starts.llvm-header" >"$(PROFILER_ROOT)/build/macho-starts.expected"
+	@diff -u "$(PROFILER_ROOT)/build/macho-starts.expected" "$(PROFILER_ROOT)/build/macho-starts.actual"
 
 test: hash-smoke macho-smoke
 

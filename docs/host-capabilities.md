@@ -65,6 +65,13 @@ distinct. The delta encoding follows LLVM's
 Starts alone do not establish exact function extents: padding, data-in-code,
 section limits, and symbol association still need handling before PC attribution.
 
+On macOS, `make macho-oracle-smoke LLVM_OBJDUMP=/path/to/llvm-objdump`
+compares every decoded start from the test executable against LLVM, in order.
+The test emits hexadecimal addresses only when an executable is fed on stdin;
+ordinary synthetic tests remain silent. The same comparison also passed for
+all 242 starts in the current profiler and all 6,033 starts in compiler
+`2f8b2180`. This verifies decoding, not source attribution or capture overhead.
+
 The native collector's low-level signal and descriptor policy is currently a
 POSIX implementation detail. Porting another host requires an audited FFI
 adapter, an explicit capability entry, and focused ABI/cleanup tests before

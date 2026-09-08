@@ -9,6 +9,9 @@ include "macho_functions_cases.elisa"
 @link_name("read")
 extern macho_test_read(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
 
+@link_name("write")
+extern macho_test_write(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
+
 extend ProfilerNative:
     private:
         const MACHO_TEST_BYTES: usize = 128
@@ -23,6 +26,27 @@ extend ProfilerNative:
         const MACHO_TEST_READ_BYTES: usize = 4096
         const MACHO_TEST_VM_ADDRESS: u32 = 4096
         const MACHO_TEST_VM_SIZE: u32 = 8192
+        const MACHO_TEST_HEX_DIGITS: usize = 16
+        const MACHO_TEST_HEX_BITS: u32 = 4
+        const MACHO_TEST_HEX_MASK: u64 = 15
+        const MACHO_TEST_DECIMAL_DIGITS: u8 = 10
+        const MACHO_TEST_ASCII_ZERO: u8 = 48
+        const MACHO_TEST_ASCII_HEX_BIAS: u8 = 87
+        const MACHO_TEST_NEWLINE: u8 = 10
+
+        @inline(never)
+        def macho_test_emit_address(address: u64) -> bool can[Abort.Panic, Memory.Allocate, Console]:
+            line: mutable darray[u8] = [MACHO_TEST_NEWLINE for _ in NATIVE_ZERO.usize()..<(MACHO_TEST_HEX_DIGITS + NATIVE_ONE.usize())]
+            for index in NATIVE_ZERO.usize()..<MACHO_TEST_HEX_DIGITS |line, address|:
+                shift: u32 = (MACHO_TEST_HEX_DIGITS - NATIVE_ONE.usize() - index).u32() * MACHO_TEST_HEX_BITS
+                digit: u8 = ((address >> shift) & MACHO_TEST_HEX_MASK).u8()
+                line[index] <- digit + (MACHO_TEST_ASCII_ZERO if digit < MACHO_TEST_DECIMAL_DIGITS else MACHO_TEST_ASCII_HEX_BIAS)
+            sent: mutable usize = NATIVE_ZERO.usize()
+            while sent < line.count |sent, line|:
+                amount: i64 = macho_test_write(NATIVE_ONE, &line[sent], line.count - sent)
+                return false if amount <= NATIVE_ZERO or amount.usize() > line.count - sent
+                sent <- sent + amount.usize()
+            return true
 
         def macho_test_word(data: mutable darray[u8]&, offset: usize, value: u32) -> void:
             for index in NATIVE_ZERO.usize()..<MACHO_WORD_BYTES |data, offset, value|:
@@ -115,6 +139,12 @@ extend ProfilerNative:
                     if (mappings[entry].protection & MACHO_EXECUTE_PROTECTION) != NATIVE_ZERO.u32():
                         assert lookup_macho_address(mappings, mappings[entry].runtime_address, &resolved) == MachOAddressStatus.Mapped
                         assert resolved == mappings[entry].image_address
+                # The real executable fixtures have the header in __TEXT.
+                # Emit all absolute starts for an independent LLVM comparison.
+                assert lookup_macho_address(mappings, MACHO_TEST_RUNTIME_HEADER, &resolved) == MachOAddressStatus.Mapped
+                for entry in NATIVE_ZERO.usize()..<starts.count |starts, resolved|:
+                    assert starts[entry] <= MACHO_MAX_ADDRESS - resolved
+                    assert macho_test_emit_address(resolved + starts[entry])
             return NATIVE_ZERO
 
         def macho_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
