@@ -38,7 +38,41 @@ int64_t elisa_profile_target_main(int64_t argc, void *argv) {
     return 0;
 }
 
+enum { ABI_EVIDENCE_REPETITIONS = 10000 };
+static _Atomic int abi_evidence_start;
+
+static void *regression_note_abi(void *argument) {
+    const uint32_t evidence = *(const uint32_t *)argument;
+    while (!atomic_load_explicit(&abi_evidence_start, memory_order_acquire)) {
+    }
+    for (size_t iteration = 0; iteration < ABI_EVIDENCE_REPETITIONS; ++iteration) {
+        profile_note_allocation_abi(evidence);
+    }
+    return NULL;
+}
+
+static void regression_concurrent_abi_evidence(void) {
+    uint32_t evidence[] = {
+        PROFILE_ALLOCATION_ABI_NEGOTIATED, PROFILE_ALLOCATION_ABI_REJECTED,
+        PROFILE_ALLOCATION_ABI_LEGACY, PROFILE_ALLOCATION_ABI_VERSIONED_CALL,
+    };
+    pthread_t workers[sizeof(evidence) / sizeof(evidence[0])];
+    uint32_t expected = 0;
+    for (size_t index = 0; index < sizeof(workers) / sizeof(workers[0]); ++index) {
+        expected |= evidence[index];
+        assert(pthread_create(&workers[index], NULL, regression_note_abi, &evidence[index]) == 0);
+    }
+    atomic_store_explicit(&abi_evidence_start, 1, memory_order_release);
+    for (size_t index = 0; index < sizeof(workers) / sizeof(workers[0]); ++index) {
+        assert(pthread_join(workers[index], NULL) == 0);
+    }
+    assert(atomic_load(&profile_allocation_abi_evidence) == expected);
+    /* Test isolation only: production never clears these monotonic bits. */
+    atomic_store(&profile_allocation_abi_evidence, 0);
+}
+
 int main(void) {
+    regression_concurrent_abi_evidence();
     size_t next_capacity = 0;
     uint64_t allocation_bytes = 0;
     assert(profile_saturating_increment_u64(UINT64_MAX) == UINT64_MAX);

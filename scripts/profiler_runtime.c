@@ -1358,6 +1358,17 @@ enum {
     PROFILE_ALLOCATION_ABI_VERSIONED_CALL = 8
 };
 static _Atomic uint32_t profile_allocation_abi_evidence;
+
+/* Evidence bits are monotonic for the lifetime of the process. Once a bit is
+ * visible, repeated callbacks need only a read, not a contended atomic write.
+ * Concurrent first observations still merge through fetch-or. */
+static void profile_note_allocation_abi(uint32_t evidence) {
+    if ((atomic_load_explicit(&profile_allocation_abi_evidence,
+                              memory_order_relaxed) & evidence) != evidence) {
+        atomic_fetch_or_explicit(&profile_allocation_abi_evidence, evidence,
+                                 memory_order_relaxed);
+    }
+}
 enum {
     PROFILE_REGION_LAYOUT_ABI_UNSUPPORTED = 0,
     PROFILE_REGION_LAYOUT_ABI_V1 = 1,
@@ -1373,10 +1384,9 @@ uint32_t elisa_profile_region_layout_negotiate(uint32_t requested_version) {
 /* Exact-version negotiation is allocation-free and independent of capture
  * mode: support for the calling convention is not evidence of collection. */
 uint32_t elisa_profile_allocation_negotiate(uint32_t requested_version) {
-    atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
+    profile_note_allocation_abi(
         requested_version == PROFILE_ALLOCATION_ABI_V1
-            ? PROFILE_ALLOCATION_ABI_NEGOTIATED : PROFILE_ALLOCATION_ABI_REJECTED,
-        memory_order_relaxed);
+            ? PROFILE_ALLOCATION_ABI_NEGOTIATED : PROFILE_ALLOCATION_ABI_REJECTED);
     return requested_version == PROFILE_ALLOCATION_ABI_V1
         ? PROFILE_ALLOCATION_ABI_V1 : PROFILE_ALLOCATION_ABI_UNSUPPORTED;
 }
@@ -1441,8 +1451,7 @@ void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
                                      size_t size, uintptr_t old_address,
                                      size_t old_size, uintptr_t arena,
                                      size_t region) {
-    atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
-                            PROFILE_ALLOCATION_ABI_VERSIONED_CALL, memory_order_relaxed);
+    profile_note_allocation_abi(PROFILE_ALLOCATION_ABI_VERSIONED_CALL);
     profile_collect_allocation_event(PROFILE_ALLOCATION_RECORD, kind, address, size, old_address, old_size, arena, region);
 }
 
@@ -1452,8 +1461,7 @@ void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
                                    size_t size, uintptr_t old_address,
                                    size_t old_size, uintptr_t arena,
                                    size_t region) {
-    atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
-                            PROFILE_ALLOCATION_ABI_LEGACY, memory_order_relaxed);
+    profile_note_allocation_abi(PROFILE_ALLOCATION_ABI_LEGACY);
     profile_collect_allocation_event(PROFILE_ALLOCATION_RECORD, kind, address, size, old_address, old_size, arena, region);
 }
 

@@ -16,6 +16,11 @@ extern void elisa_trace_function_entry_id(const char *function_name, uint32_t li
                                           uint64_t function_id);
 extern void elisa_trace_function_exit_id(const char *function_name, uint32_t line,
                                          uint64_t function_id);
+extern void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
+                                             size_t size, uintptr_t old_address,
+                                             size_t old_size, uintptr_t arena,
+                                             size_t region);
+extern uint32_t elisa_profile_allocation_negotiate(uint32_t requested_version);
 extern void elisa_trace_record_value(const char *function_name, uint32_t line,
                                      const char *variable_name, uint64_t value,
                                      uint32_t is_signed);
@@ -25,6 +30,8 @@ enum {
     BENCHMARK_DEFAULT_REPETITIONS = 5,
     BENCHMARK_LINE = 17,
     BENCHMARK_UNSIGNED_VALUE = 0,
+    BENCHMARK_ALLOCATION_KIND = 1,
+    BENCHMARK_ALLOCATION_ABI_VERSION = 1,
 };
 
 static const int64_t BENCHMARK_NANOS_PER_SECOND = 1000000000;
@@ -40,6 +47,7 @@ typedef enum {
     BENCHMARK_SCALAR,
     BENCHMARK_FULL,
     BENCHMARK_SAMPLING,
+    BENCHMARK_ALLOCATION_ABI,
 } benchmark_variant;
 
 typedef struct {
@@ -56,6 +64,7 @@ static const benchmark_definition BENCHMARKS[] = {
     {"scalar", 1, BENCHMARK_SCALAR},
     {"full-trace", 4, BENCHMARK_FULL},
     {"sampling", 2, BENCHMARK_SAMPLING},
+    {"allocation-evidence", 2, BENCHMARK_ALLOCATION_ABI},
 };
 
 static uint64_t benchmark_read_positive_environment(const char *name,
@@ -103,6 +112,10 @@ static void benchmark_invoke(benchmark_variant variant, uint64_t iteration) {
     case BENCHMARK_SAMPLING:
         elisa_trace_function_entry_id(BENCHMARK_FUNCTION, BENCHMARK_LINE, BENCHMARK_FUNCTION_ID);
         elisa_trace_function_exit_id(BENCHMARK_FUNCTION, BENCHMARK_LINE, BENCHMARK_FUNCTION_ID);
+        break;
+    case BENCHMARK_ALLOCATION_ABI:
+        (void)elisa_profile_allocation_negotiate(BENCHMARK_ALLOCATION_ABI_VERSION);
+        elisa_profile_allocation_event_v1(BENCHMARK_ALLOCATION_KIND, 0, 0, 0, 0, 0, 0);
         break;
     case BENCHMARK_STATEMENT_TIMING:
         elisa_trace_record(BENCHMARK_FUNCTION, BENCHMARK_LINE);

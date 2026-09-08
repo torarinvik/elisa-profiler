@@ -6,7 +6,7 @@ CC=${ELISA_CLANG:-clang}
 ITERATIONS=${ELISA_CALLBACK_BENCHMARK_ITERATIONS:-100000}
 REPETITIONS=${ELISA_CALLBACK_BENCHMARK_REPETITIONS:-5}
 OUTPUT=${1:-"$ROOT/build/collector-callback-benchmark.tsv"}
-EXPECTED_VARIANT_COUNT=7
+EXPECTED_VARIANT_COUNT=8
 WORK=$(mktemp -d "${ELISA_TEST_TMPDIR:-/tmp}/elisa-profiler-callback-benchmark.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 
@@ -46,6 +46,7 @@ build_and_run 3 statement-timing statements -DELISA_PROFILE_TIMING=1 0
 build_and_run 4 scalar values '' 0
 build_and_run 5 full-trace full '' 1
 build_and_run 6 sampling sample -DELISA_PROFILE_TIMING=1 0
+build_and_run 7 allocation-evidence sample -DELISA_PROFILE_TIMING=1 0
 
 awk -v expected_repetitions="$REPETITIONS" -v expected_variants="$EXPECTED_VARIANT_COUNT" '
     /^#/ || /^variant[[:space:]]/ { next }

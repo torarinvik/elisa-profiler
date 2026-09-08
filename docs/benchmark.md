@@ -196,6 +196,29 @@ workload). None was stopped by the profiler agent. The pair is same-session
 evidence under background load, not an isolated-machine benchmark. A fresh
 uninstrumented control is still needed to quantify current capture overhead.
 
+The fresh same-generation uninstrumented self-build then completed in 292.03
+seconds wall / 287.57 seconds user CPU, with the same output object. Against
+the nearby unified-TLS capture (318.154/310.140 seconds), this is approximately
+8.9% target wall / 7.8% user CPU overhead. Treat this as one same-session
+comparison under the documented background load, not a universal overhead
+guarantee or evidence that the earlier differently loaded runs were comparable.
+
+## Allocation ABI evidence fast path
+
+Negotiation and event callbacks now read their monotonic ABI-evidence bits
+before doing atomic fetch-or. Already-observed bits require no atomic write;
+concurrent first observations still merge atomically. Negotiation results,
+capture mode filtering, and event collection are unchanged. A synchronized
+four-thread regression checks that all independent evidence bits survive
+repeated concurrent updates, and native/sampling/sanitizer checks pass.
+
+Seven repetitions of 10 million negotiation/event pairs in sampling mode
+reduced median callback-loop cost from 2.578 to 1.817 ns per hook, about 30%.
+The permanent callback benchmark includes this variant. Three small compiler
+workload pairs produced identical objects but no clear speedup: median target
+wall 1.41/1.47 seconds and user CPU 1.37/1.39 seconds before/after. This is a
+hook-cost improvement, not a claimed full-compiler performance gain.
+
 ## Large Speedscope export validation
 
 The 58,399-sample self-build capture exposed stack exhaustion in the previous
