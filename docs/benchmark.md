@@ -299,6 +299,30 @@ reproduced it. Follow-up compiler commit `d378b4e7` fixes that separate defect,
 with O0–O3 stage0 parity for no-op and conditional side-effect recovery on ordinary
 and generic calls. This correctness fix is not part of the speedup measurement.
 
+## Region-forwarding lookup filter (2026-09-08)
+
+Compiler commit `a4f02f4a` avoids a whole callee-fact-table scan when the argument
+root is not a caller parameter or its region fact is already true. Facts remain
+monotone; owner resolution and propagation for unresolved parameters are unchanged.
+A fresh full-build instrumented profile of `5e03c579` observed this lookup as the
+largest leaf (1,268 of 20,051 samples). This is sampled instrumented-stack
+attribution, not exact native self-time.
+
+Two sequential full O0 compiler-build pairs, with order reversed in the second,
+measured baseline/candidate wall times of 121.75/116.38 and 122.15/116.88 seconds.
+User CPU times were 120.86/115.43 and 121.20/115.93 seconds. Both compilers were
+self-hosted, compiled identical source to the same output path, and all four
+objects matched byte-for-byte: approximately 4.3–4.4% less wall time on this host.
+These are incremental comparisons against `5e03c579`, not an additive claim with
+earlier speedups. Logs: `build/region-full-{baseline,candidate}.log` and their
+`-reverse.log` counterparts.
+
+All 42 selected region/arena/forwarding fixtures matched baseline exit status,
+diagnostic bytes, and successful LLVM output; this includes existing refusals,
+not 42 successful compilations. Caller-owned growth and forwarded nested-region
+runtime probes returned the expected 142 and 42 with both compilers. A fresh
+seed and full self-host gate for the committed revision are tracked separately.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
