@@ -20,6 +20,12 @@ void recovery at O0–O3, and profiler native/sampling regressions. These are fo
 refresh gates, not a new full self-host fixed-point or complete `make test` run.
 Logs are in ignored `build/latest-main-*.log`.
 
+The subsequent full self-host gate also passed on this revision: stage A 5/5,
+stage B full compiler emission (19,103,792 bytes), stage C byte-identical gen3/gen4
+objects, and stage D identical output across all 40 repeat emissions. Evidence:
+`build/latest-main-self-host.log`. This establishes bootstrap closure for the
+refreshed compiler, without claiming the broader aggregate `make test` passed.
+
 This revision retains the measured compiler optimizations `ffbb5865` and
 `8ff99380`, plus void-recovery crash fix `d378b4e7`. No new performance measurement
 is claimed for the parser/diagnostic refresh.
