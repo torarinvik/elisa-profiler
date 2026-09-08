@@ -2419,7 +2419,7 @@ extend ProfilerNative:
                 if build_ok:
                     executable <- prebuilt_executable
             else:
-                build_ok <- build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, source_map_path, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host, protocol_field_is(mode, "functions"))
+                build_ok <- build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, source_map_path, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host, (protocol_field_is(mode, "functions") or protocol_field_is(mode, "sample")))
             if not build_ok:
                 build_diagnostics: mutable darray[u8] = read_file(compile_error_path)
                 write_stderr(build_diagnostics)
@@ -2441,7 +2441,7 @@ extend ProfilerNative:
             source_map_data: darray[u8] = read_file(source_map_path)
             source_map: mutable NativeSourceMap = parse_native_source_map(source_map_data)
             source_map_available: bool = source_map.available
-            publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host, protocol_field_is(mode, "functions")) if not prebuilt_requested
+            publish_native_build_cache(&build_cache, cache_directory, executable, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host, (protocol_field_is(mode, "functions") or protocol_field_is(mode, "sample"))) if not prebuilt_requested
             compile_elapsed_ns: i64 = NATIVE_ZERO if prebuilt_requested else elapsed_nanoseconds(build_start, read_monotonic())
             summary: mutable CaptureSummary = empty_capture_summary()
             summary.source_mapping_available <- source_map_available

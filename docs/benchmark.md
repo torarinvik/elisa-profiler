@@ -88,6 +88,16 @@ Three alternating old/new CLI pairs measured 11.93/12.97s, 10.09/8.97s, and
 memory decreased from 593–599 MB to 532–553 MB. These comparisons used the
 same compiler revision before integrating the subsequent diagnostic fixes.
 
+Sampling was then compared using the same compiler object revision and workload
+with three callback configurations. Three-run wall-time medians were 3.32s
+for full tracing, 2.19s for function-only tracing, and 2.02s for function-only
+tracing with thread registration locking only when registration is needed.
+Corresponding user-CPU medians were 3.13s, 2.06s, and 1.87s. Sampling source
+builds now select function-only instrumentation. The approximately 39% wall
+reduction is against the previous sampling configuration, not against an
+uninstrumented compiler. Capture output went to `/dev/null` in this comparison;
+the end-to-end sampling suite separately validates retained samples and exports.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes

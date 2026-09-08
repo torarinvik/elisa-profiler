@@ -1876,9 +1876,12 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
         return;
     }
     if (profile_mode == PROFILE_MODE_SAMPLES) {
-        pthread_mutex_lock(&profile_lock);
-        (void)profile_get_thread_locked();
-        pthread_mutex_unlock(&profile_lock);
+        /* Registration is shared; subsequent stack updates are thread-local. */
+        if (profile_current_thread == NULL) {
+            pthread_mutex_lock(&profile_lock);
+            (void)profile_get_thread_locked();
+            pthread_mutex_unlock(&profile_lock);
+        }
         if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
             profile_call_stack[profile_call_depth] = (profile_call_frame){
                 .function_name = function_name,

@@ -293,10 +293,13 @@ before launching it. Reports mark this choice as `target.build_kind = prebuilt`
 and retain the executable path. An ordinary or partially instrumented binary is
 rejected instead of being presented as a valid profile.
 
-Source builds in `--mode functions` use `-ftrace-functions`: function entry/exit
+Source builds in `--mode functions` and `--mode sample` use `-ftrace-functions`: function entry/exit
 hooks are retained, while statement and scalar-value hooks are not emitted.
-Other instrumented modes retain full tracing. Cache keys and metadata include
+Other instrumented modes retain full tracing. Sampling still maintains the
+instrumented function stack; it does not collect statement or scalar-value events.
+Cache keys and metadata include
 this distinction, so function-only builds cannot replace full-trace cache entries.
+Function and sampling modes may share the same function-only executable cache entry.
 Prebuilt executables keep the instrumentation selected when they were built;
 choosing function mode cannot remove callbacks from an existing binary.
 

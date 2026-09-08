@@ -87,6 +87,10 @@ def main() -> int:
         assert "-ftrace-functions" in function_metadata["build_flags"].split(",")
         run([*common, "--mode", "functions", "--output", str(functions_hit)])
         assert cache_report(functions_hit)["status"] == "hit"
+        samples = root / "samples.json"
+        run([*common, "--mode", "sample", "--output", str(samples)])
+        assert cache_report(samples)["status"] == "hit"
+        assert cache_report(samples)["key"] == function_cache["key"]
         run([*common, "--output", str(full_again)])
         assert cache_report(full_again)["status"] == "hit"
         assert cache_report(full_again)["key"] == third_cache["key"]
