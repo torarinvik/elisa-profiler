@@ -375,8 +375,9 @@ refusals. The accepted two-slot fixture also executed and returned 42, while
 the rejected fixture retained the expected `[?, &]` versus actual `[?, ?]`
 diagnostic. The committed revision passed fresh bootstrap validation: five
 initial probes, full compiler emission, byte-identical gen3/gen4, and all 40
-repeat emissions (`build/aggregate-committed-self-host.log`). Profiler regression
-validation is tracked separately.
+repeat emissions (`build/aggregate-committed-self-host.log`). The rebuilt profiler
+also passed native and sampling regressions (`build/aggregate-native-regression.log`
+and `build/aggregate-sampling-regression.log`).
 
 ## Promote a local baseline
 
