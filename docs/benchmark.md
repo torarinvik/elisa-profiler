@@ -603,6 +603,22 @@ untracked chained-index fixture in main match our worktree byte-for-byte.
 The branch audit includes all 11 local branch tips; other dirty worktrees
 remain preserved, not silently treated as integrated changes.
 
+## Post-rebind compiler profile (2026-09-08)
+
+A fresh instrumented build of `1910e662`, linked with freshly generated collector
+and localized runtime objects, completed the full compiler workload successfully
+in 72.374 seconds. The 5 ms sampling capture contained 11,393 samples, zero
+missed samples, zero dropped frames, and reported complete capture. Evidence:
+`build/post-rebind-full-profile.json` and `build/post-rebind-full-profile.log`.
+
+Leading sampled leaves were `emit_object` (516), `arena_realloc` (514),
+`new_region_with_owner` (504), `mutable_ref_param_type` (411),
+`packed_dynamic_row_load_value` (383), and `region_fact_parameter_has_region`
+(333). These are callback-stack CPU samples, not native-PC attribution or exact
+self times. A single instrumented run is not a paired throughput benchmark.
+Readonly argument checking is the next candidate: it currently performs its
+parameter lookup before checking whether the argument is a readonly reference.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
