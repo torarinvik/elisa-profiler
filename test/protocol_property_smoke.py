@@ -19,6 +19,10 @@ PROTOCOL_PREFIX = f"ELISA_PROFILE\t{PROTOCOL_VERSION}\t".encode()
 FRAME_FNV_OFFSET = 14695981039346656037
 FRAME_FNV_PRIME = 1099511628211
 MAX_U64 = (1 << 64) - 1
+MAX_I64 = (1 << 63) - 1
+MIN_I64 = -(1 << 63)
+VALUE_RECORD_KIND = 2
+VALUE_FRAME_SEQUENCE = 2
 MAX_PROTOCOL_FRAME_BYTES = 1024 * 1024
 READ_CHUNK_BYTES = 8192
 META_FIELD_COUNT = 16
@@ -184,6 +188,52 @@ def main() -> int:
         baseline_process, baseline_report = recover(native, work / "baseline", baseline_capture)
         assert baseline_process.returncode == 0, baseline_process.stderr
         assert baseline_report is not None
+
+        # Keep framing valid so failures exercise numeric validation, not checksums.
+        for signed, boundary_values in ((False, (0, MAX_I64 + 1, MAX_U64)),
+                                        (True, (MIN_I64, 0, MAX_I64))):
+            for value in boundary_values:
+                location = protocol_record("location", VALUE_RECORD_KIND, "main", 1, 1,
+                                           "value", int(signed), value, value, value, value, 0, 0)
+                path = protocol_record("path", 0, VALUE_RECORD_KIND, "main", 1,
+                                       "value", int(signed), value)
+                capture = baseline_capture + frame(VALUE_FRAME_SEQUENCE, location) + frame(VALUE_FRAME_SEQUENCE + 1, path)
+                process, report = recover(native, work / f"boundary-{signed}-{value}", capture)
+                assert process.returncode == 0, process.stderr
+                assert report is not None
+                observed = report["locations"][0]
+                assert observed["signed"] == signed
+                for field in ("minimum", "maximum", "sum", "last"):
+                    assert observed[field] == value, (field, observed)
+
+        for signed in (False, True):
+            payload = protocol_record("location", VALUE_RECORD_KIND, "main", 1, 1,
+                                      "value", int(signed), 0, 0, "overflow", 0, 0, 0)
+            process, report = recover(native, work / f"sum-overflow-{signed}",
+                                      baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload))
+            assert process.returncode == 0, process.stderr
+            assert report is not None
+            assert report["locations"][0]["sum"] is None
+            assert report["locations"][0]["sum_overflow"] is True
+
+        for signed, invalid_values in ((False, (-1, MAX_U64 + 1, "01", "+1", "overflow")),
+                                       (True, (MIN_I64 - 1, MAX_I64 + 1, "01", "+1", "overflow"))):
+            for index, value in enumerate(invalid_values):
+                for field_index, field_name in enumerate(("minimum", "maximum", "sum", "last")):
+                    if field_name == "sum" and value == "overflow":
+                        continue
+                    values = [0, 0, 0, 0]
+                    values[field_index] = value
+                    payload = protocol_record("location", VALUE_RECORD_KIND, "main", 1, 1,
+                                              "value", int(signed), *values, 0, 0)
+                    label = f"invalid-{signed}-{index}-{field_name}"
+                    expect_rejected(native, work / label,
+                                    baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload), label)
+                payload = protocol_record("path", 0, VALUE_RECORD_KIND, "main", 1,
+                                          "value", int(signed), value)
+                label = f"invalid-{signed}-{index}-event"
+                expect_rejected(native, work / label,
+                                baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload), label)
 
         extension_capture = valid_capture(include_extension=True)
         extension_process, extension_report = recover(
