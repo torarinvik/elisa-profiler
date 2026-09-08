@@ -637,8 +637,9 @@ Evidence: `build/readonly-lookup-full-{baseline,candidate}.log` and their
 2026-09-09: five probes, full compiler emission (19,110,864 bytes), byte-identical
 generation 3/4 objects, and all 40 repeat emissions. The profiler rebuild also
 passed. Evidence: `build/readonly-lookup-committed-self-host.log` and
-`build/readonly-lookup-profiler-build.log`. Native and sampling regression
-validation remains pending.
+`build/readonly-lookup-profiler-build.log`. Native and sampling regressions also
+passed (`build/readonly-lookup-native-regression.log` and
+`build/readonly-lookup-sampling-regression.log`).
 
 ## Promote a local baseline
 
