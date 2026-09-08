@@ -762,6 +762,20 @@ passed. Evidence: `build/claim-filter-committed-self-host.log`,
 `build/claim-filter-profiler-build.log`, `build/claim-filter-native-regression.log`,
 and `build/claim-filter-sampling-regression.log`.
 
+## Post-claim-filter compiler profile (2026-09-09)
+
+A fresh instrumented `2a64005f` completed the full compiler workload in 63.512
+seconds. The 5 ms capture retained 10,521 samples, with zero missed samples,
+zero dropped frames, and complete capture. Evidence:
+`build/post-claim-full-profile.json` and `build/post-claim-full-profile.log`.
+
+Leading sampled leaves were `emit_object` (513), `arena_realloc` (474),
+`new_region_with_owner` (470), `packed_dynamic_row_load_value` (361),
+`ae_effect_declared` (305), `note_local_type` (299), `ens_check_return_bool`
+(267), and `decl_line_is_generic` (245). These are callback-stack CPU samples,
+not native-PC attribution or exact self times. The single instrumented run is
+hotspot evidence, not a controlled throughput or profiler-overhead comparison.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
