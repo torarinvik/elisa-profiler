@@ -348,7 +348,11 @@ baseline exit statuses, diagnostic bytes, and successful LLVM output. These
 include existing refusals, not 387 successful compilations. The focused cases
 cover explicit host restoration, guest/host mismatches, and unknown ambient
 ownership after a branch merge. A fresh seed and full self-host validation of
-the committed revision are still pending.
+the committed revision passed: five initial probes, full compiler emission,
+byte-identical gen3/gen4, and all 40 repeated emissions. The rebuilt profiler
+also passed native and sampling regressions. Logs:
+`build/segment-committed-self-host.log`, `build/segment-native-regression.log`,
+and `build/segment-sampling-regression.log`.
 
 ## Promote a local baseline
 
