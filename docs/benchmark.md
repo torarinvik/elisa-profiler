@@ -727,6 +727,21 @@ passed. Evidence: `build/region-index-committed-self-host.log`,
 `build/region-index-profiler-build.log`, `build/region-index-native-regression.log`,
 and `build/region-index-sampling-regression.log`.
 
+## Cumulative full-compiler comparison through region indexing (2026-09-09)
+
+The archived self-hosted `2f8b2180` compiler and current self-hosted `d4178fe7`
+compiled identical current compiler source using the same runtime and output
+path. Baseline/current wall times were 163.46/58.97 seconds; in reverse order,
+they were 163.51/59.18 seconds. User CPU times were 162.18/58.19 and
+162.18/58.42 seconds. All four emitted objects were byte-identical.
+
+Across the two timing orders this is approximately **2.77× compilation
+throughput**, or **63.9% less wall time**, on this full-compiler O0 workload.
+This is a direct cumulative comparison, not a sum of individual percentages;
+it does not establish profiler overhead or performance on other workloads.
+Evidence: `build/cumulative-index-full-{baseline,current}.log` and their
+`-reverse.log` variants.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
