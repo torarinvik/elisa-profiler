@@ -321,7 +321,11 @@ All 42 selected region/arena/forwarding fixtures matched baseline exit status,
 diagnostic bytes, and successful LLVM output; this includes existing refusals,
 not 42 successful compilations. Caller-owned growth and forwarded nested-region
 runtime probes returned the expected 142 and 42 with both compilers. A fresh
-seed and full self-host gate for the committed revision are tracked separately.
+seed and full self-host gate passed for the committed revision: five regression
+probes, full compiler emission, byte-identical gen3/gen4, and 40 matching repeat
+emissions. The rebuilt profiler also passed native and sampling regressions.
+Logs: `build/region-committed-self-host.log`, `build/region-native-regression.log`,
+and `build/region-sampling-regression.log`.
 
 ## Promote a local baseline
 
