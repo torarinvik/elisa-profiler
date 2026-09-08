@@ -450,6 +450,25 @@ emissions (`build/unhandled-committed-self-host.log`). The rebuilt profiler
 also passed native and sampling regressions (`build/unhandled-native-regression.log`
 and `build/unhandled-sampling-regression.log`).
 
+## Combined compiler optimization result (2026-09-08)
+
+An archived self-hosted `2f8b2180` compiler and the self-hosted `90462733`
+compiler each compiled identical current compiler source at O0, using the same
+runtime and output path. Two sequential pairs reversed execution order:
+
+| Execution order | Baseline wall / user seconds | Current wall / user seconds |
+| --- | --- | --- |
+| Baseline, current | 162.64 / 161.56 | 79.05 / 78.49 |
+| Current, baseline | 162.58 / 161.76 | 79.03 / 78.50 |
+
+All four emitted objects were byte-identical. This measures approximately
+2.06× compilation throughput, or 51.4% less wall time, on this full-compiler
+workload and host. It is a direct combined comparison, not a sum of incremental
+percentages, and does not establish speedups for other workloads or profiler
+overhead. Logs: `build/combined-full-{baseline,current}.log` and their
+`-reverse.log` variants. Baseline executable: `build/elisac-effects-baseline`;
+current executable: the dedicated compiler's `build/self_host_gen2/elisac-stage1-gen2`.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
