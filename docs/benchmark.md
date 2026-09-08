@@ -60,6 +60,18 @@ Function and call-edge detail was complete, but stack paths reached the
 are a performance checkpoint, not a portable speed guarantee or evidence
 that profiling overhead has been eliminated.
 
+Profiler change `8826074` subsequently reused SHA-256 schedule storage across
+message blocks. Two reverse-order end-to-end comparisons using the same
+function-only prebuilt compiler and identical arguments measured old/new CLI
+wall times of 15.94/8.91s and 15.57/8.06s (approximately 44–48% lower). Peak
+resident memory fell from 691–704 MB to 593–594 MB. These runs include
+provenance hashing, target execution, decoding, and report writing, unlike
+the callback-only measurements above. Concurrent self-host validation was
+running, so these remain local checkpoints rather than isolated release
+benchmarks. Empty, short, padding-boundary, and million-byte SHA-256 vectors
+pass the Elisa-native `make hash-smoke` gate; the full native regression
+suite also passed with the rebuilt profiler.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
