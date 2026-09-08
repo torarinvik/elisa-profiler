@@ -510,7 +510,8 @@ binaries. Logs: `build/frame-filter-full-{baseline,candidate}.log` and their
 `-reverse.log` variants. Fresh bootstrap on `a5a1442b` passed five initial probes,
 full compiler emission (19,108,520 bytes), byte-identical gen3/gen4 objects, and
 40 identical repeat emissions (`build/frame-filter-committed-self-host.log`).
-The profiler rebuild and native/sampling regressions remain pending.
+The rebuilt profiler also passed native and sampling regressions; evidence:
+`build/frame-filter-native-regression.log` and `build/frame-filter-sampling-regression.log`.
 
 ## Promote a local baseline
 
