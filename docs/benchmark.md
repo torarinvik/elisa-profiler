@@ -590,7 +590,10 @@ order, 69.14/66.29 seconds. User CPU times were 68.09/65.49 and 68.32/65.50.
 All four emitted objects were byte-identical: 3.9–4.1% less wall time against
 `51abe116` on identical current source with self-hosted binaries. Logs:
 `build/rebind-filter-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap on `1910e662` passed five probes, full compiler emission
+(19,110,912 bytes), byte-identical gen3/gen4 objects, and all 40 repeat emissions
+(`build/rebind-filter-committed-self-host.log`). Profiler rebuild and
+native/sampling regression checks remain pending.
 
 ## Promote a local baseline
 
