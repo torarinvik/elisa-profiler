@@ -1,0 +1,70 @@
+include "../src/profiler/allocation_lifetimes.elisa"
+
+module AllocationLifetimesSmoke:
+    private:
+        const ARENA: u64 = 16
+        const OTHER_ARENA: u64 = 32
+        const ADDRESS: u64 = 64
+        const OTHER_ADDRESS: u64 = 128
+        const BYTES: u64 = 8
+        const CAPACITY: usize = 2
+        const SINGLE_SLOT: usize = 1
+        const CHURN_COUNT: usize = 64
+        const ZERO: u64 = 0
+        const U64_MAX: u64 = 18446744073709551615
+
+    public:
+        def run() -> i64:
+            state: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            first: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&state, ARENA, ADDRESS, BYTES)
+            assert first != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_release(&state, ARENA, ADDRESS)
+            second: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&state, ARENA, ADDRESS, BYTES)
+            assert second > first
+            assert state.entries.count == 1
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&state, OTHER_ARENA, OTHER_ADDRESS, BYTES) > second
+            assert state.live_bytes == BYTES + BYTES
+            ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
+            ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
+            assert state.live_bytes == BYTES
+            churn: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            previous_generation: mutable u64 = ZERO
+            for index in 0..<CHURN_COUNT |churn, previous_generation|:
+                generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&churn, ARENA, ADDRESS, BYTES)
+                assert generation > previous_generation
+                previous_generation <- generation
+                assert ElisaProfilerAllocationLifetimes::observe_release(&churn, ARENA, ADDRESS)
+                assert churn.entries.count == SINGLE_SLOT
+            assert churn.live_bytes == ZERO
+            assert churn.allocation_count == CHURN_COUNT.u64()
+            assert churn.allocated_bytes == CHURN_COUNT.u64() * BYTES
+            duplicate: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&duplicate, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&duplicate, ARENA, ADDRESS, BYTES) == ZERO
+            assert duplicate.quality == ElisaProfilerAllocationLifetimes::QUALITY_IDENTITY
+            assert duplicate.live_bytes == BYTES
+            missing: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert not ElisaProfilerAllocationLifetimes::observe_release(&missing, ARENA, ADDRESS)
+            assert missing.quality == ElisaProfilerAllocationLifetimes::QUALITY_MISSING_EVENT
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&missing, ARENA, ADDRESS, BYTES) == ZERO
+            overflowing: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&overflowing, ARENA, ADDRESS, U64_MAX) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&overflowing, ARENA, OTHER_ADDRESS, BYTES) == ZERO
+            assert overflowing.quality == ElisaProfilerAllocationLifetimes::QUALITY_OVERFLOW
+            assert overflowing.live_bytes == U64_MAX
+            assert overflowing.allocated_bytes == U64_MAX
+            disabled: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(0)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&disabled, ARENA, ADDRESS, BYTES) == ZERO
+            assert disabled.quality == ElisaProfilerAllocationLifetimes::QUALITY_CAPACITY
+            assert state.peak_live_bytes == BYTES + BYTES
+            assert state.allocated_bytes == BYTES + BYTES + BYTES
+            assert state.quality == ElisaProfilerAllocationLifetimes::QUALITY_EXACT
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&state, ARENA, ADDRESS, ZERO) > second
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&state, ARENA, OTHER_ADDRESS, BYTES) == ZERO
+            assert state.quality == ElisaProfilerAllocationLifetimes::QUALITY_CAPACITY
+            ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, OTHER_ARENA)
+            assert state.live_bytes == BYTES
+            return 0
+
+def main() -> i64:
+    return AllocationLifetimesSmoke::run()

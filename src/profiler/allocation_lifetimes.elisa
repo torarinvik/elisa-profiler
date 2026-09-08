@@ -1,0 +1,97 @@
+# Bounded logical allocation state. Callers must first order and reconcile raw
+# events; this module does not infer lifetimes from an incomplete event stream.
+module ElisaProfilerAllocationLifetimes:
+    private:
+        const ZERO: u64 = 0
+        const ONE: u64 = 1
+        const U64_MAX: u64 = 18446744073709551615
+
+    public:
+        const QUALITY_EXACT: u32 = 0
+        const QUALITY_CAPACITY: u32 = 1
+        const QUALITY_OVERFLOW: u32 = 2
+        const QUALITY_IDENTITY: u32 = 3
+        const QUALITY_MISSING_EVENT: u32 = 4
+        const DEFAULT_CAPACITY: usize = 4096
+
+        struct Entry:
+            arena: u64
+            address: u64
+            generation: u64
+            size_bytes: u64
+            live: mutable bool
+
+        struct State:
+            entries: mutable darray[Entry]
+            capacity: usize
+            next_generation: mutable u64
+            live_bytes: mutable u64
+            peak_live_bytes: mutable u64
+            allocated_bytes: mutable u64
+            allocation_count: mutable u64
+            quality: mutable u32
+
+        def create(capacity: usize) -> State:
+            return State{entries: [], capacity: capacity, next_generation: ONE,
+                live_bytes: ZERO, peak_live_bytes: ZERO, allocated_bytes: ZERO,
+                allocation_count: ZERO, quality: QUALITY_EXACT}
+
+        # Preserve the first loss reason. Once evidence is unreliable, freeze
+        # state rather than silently publishing plausible exact-looking totals.
+        def invalidate(state: mutable State&, reason: u32) -> void:
+            state.quality <- reason if state.quality == QUALITY_EXACT and reason != QUALITY_EXACT
+
+        # Zero is reserved for failure; generations never depend on addresses.
+        def observe_allocation(state: mutable State&, arena: u64, address: u64, size_bytes: u64) -> u64 can[Abort.Panic, Memory.Allocate]:
+            return ZERO if state.quality != QUALITY_EXACT
+            if arena == ZERO or address == ZERO:
+                invalidate(state, QUALITY_IDENTITY)
+                return ZERO
+            reusable: mutable usize = state.entries.count
+            for index in 0..<state.entries.count |state, arena, address, reusable|:
+                if state.entries[index].live:
+                    if state.entries[index].arena == arena and state.entries[index].address == address:
+                        invalidate(state, QUALITY_IDENTITY)
+                        return ZERO
+                elif reusable == state.entries.count:
+                    reusable <- index
+            if reusable == state.entries.count and state.entries.count >= state.capacity:
+                invalidate(state, QUALITY_CAPACITY)
+                return ZERO
+            if state.next_generation == U64_MAX or size_bytes > U64_MAX - state.live_bytes or size_bytes > U64_MAX - state.allocated_bytes or state.allocation_count == U64_MAX:
+                invalidate(state, QUALITY_OVERFLOW)
+                return ZERO
+            generation: u64 = state.next_generation
+            entry: Entry = Entry{arena: arena, address: address, generation: generation, size_bytes: size_bytes, live: true}
+            if reusable == state.entries.count:
+                state.entries.push(entry)
+            else:
+                state.entries[reusable] <- entry
+            state.next_generation <- generation + ONE
+            state.live_bytes <- state.live_bytes + size_bytes
+            state.allocated_bytes <- state.allocated_bytes + size_bytes
+            state.allocation_count <- state.allocation_count + ONE
+            state.peak_live_bytes <- state.live_bytes if state.live_bytes > state.peak_live_bytes
+            return generation
+
+        def observe_release(state: mutable State&, arena: u64, address: u64) -> bool can[Abort.Panic]:
+            return false if state.quality != QUALITY_EXACT
+            for index in 0..<state.entries.count |state, arena, address|:
+                if state.entries[index].live and state.entries[index].arena == arena and state.entries[index].address == address:
+                    state.live_bytes <- state.live_bytes - state.entries[index].size_bytes
+                    state.entries[index].live <- false
+                    return true
+            invalidate(state, QUALITY_MISSING_EVENT)
+            return false
+
+        # Empty and repeated resets are valid. This is a logical release, not
+        # a claim that the arena returned its backing memory to the OS.
+        def observe_arena_reset(state: mutable State&, arena: u64) -> void can[Abort.Panic]:
+            return if state.quality != QUALITY_EXACT
+            if arena == ZERO:
+                invalidate(state, QUALITY_IDENTITY)
+                return
+            for index in 0..<state.entries.count |state, arena|:
+                if state.entries[index].live and state.entries[index].arena == arena:
+                    state.live_bytes <- state.live_bytes - state.entries[index].size_bytes
+                    state.entries[index].live <- false

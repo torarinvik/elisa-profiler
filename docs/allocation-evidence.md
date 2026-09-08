@@ -134,6 +134,20 @@ ignored, so late shutdown operations are outside that capture boundary.
 
 ## Prerequisites for lifetime accounting
 
+`src/profiler/allocation_lifetimes.elisa` provides the initial bounded Elisa
+state engine, tested by `make allocation-lifetimes-smoke`. It assigns monotonic
+generations independently of address reuse and implements logical allocation,
+release, and arena reset. Capacity exhaustion, numeric overflow, duplicate live
+identity, or a missing release freezes the state with an explicit quality code.
+Frozen totals are not exact final totals and must not be presented as such.
+The capacity bounds retained entries, including reusable retired slots; it is
+not a limit on the total number of observed lifetimes.
+
+This engine is not connected to capture reports yet. Raw-event ordering,
+realloc/adoption/rewind reconciliation, region identity, loss propagation,
+lifetime distributions, and performance validation remain necessary before
+that integration. No user-facing live-byte or leak claims are enabled by it.
+
 Before enabling live-byte or lifetime claims, the following gaps need code and
 independent allocator-oracle coverage:
 

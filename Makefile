@@ -41,6 +41,16 @@ compiler-runtime-freshness-smoke:
 
 test: compiler-runtime-freshness-smoke
 
+.PHONY: allocation-lifetimes-smoke
+allocation-lifetimes-smoke: compiler-manifest-smoke
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_STAGE1_BIN)" -emit exe -O0 -o "$(PROFILER_ROOT)/build/allocation-lifetimes-smoke" \
+		"$(PROFILER_ROOT)/test/allocation_lifetimes_smoke.elisa"
+	@"$(PROFILER_ROOT)/build/allocation-lifetimes-smoke"
+
+test: allocation-lifetimes-smoke
+
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
 	ELISACORE_BIN="$${ELISACORE_BIN:-$(STAGE0_BIN)}" \
