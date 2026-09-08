@@ -134,6 +134,24 @@ int main(void) {
     assert(profile_record_call_path(NULL, "callee", PROFILE_ID_UNSET) == NULL);
     assert(profile_call_path_dropped_count == 2);
     fail_allocations = 0;
+    const uint64_t allocation_events_before = profile_allocation_event_count;
+    const size_t allocation_records_before =
+        profile_current_thread == NULL ? 0 : profile_current_thread->allocation_size;
+    elisa_profile_allocation_event(PROFILE_ALLOCATION_ALLOC,
+                                    (uintptr_t)0x1000, 24,
+                                    0, 0, (uintptr_t)0x2000, 3);
+    assert(profile_allocation_event_count == allocation_events_before + 1);
+    assert(profile_current_thread != NULL);
+    assert(profile_current_thread->allocation_size == allocation_records_before + 1);
+    assert(profile_current_thread->allocation_events[allocation_records_before].kind ==
+           PROFILE_ALLOCATION_ALLOC);
+    assert(profile_current_thread->allocation_events[allocation_records_before].size == 24);
+    profile_mode = PROFILE_MODE_FUNCTIONS;
+    elisa_profile_allocation_event(PROFILE_ALLOCATION_ALLOC,
+                                    (uintptr_t)0x1001, 8,
+                                    0, 0, (uintptr_t)0x2000, 3);
+    assert(profile_allocation_event_count == allocation_events_before + 1);
+    profile_mode = PROFILE_MODE_FULL;
     elisa_trace_record(NULL, repeat_line);
     elisa_trace_record(NULL, repeat_line);
     assert(profile_find_locked("<unknown>", NULL, repeat_line,

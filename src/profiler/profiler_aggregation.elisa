@@ -17,6 +17,7 @@ extend ProfilerNative:
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
                 event_record_count: NATIVE_ZERO,
+                allocation_record_count: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
                 sample_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
@@ -53,6 +54,8 @@ extend ProfilerNative:
                 stack_records: [],
                 folded_records: [],
                 event_records: [],
+                allocation_records: [],
+                allocation_dropped: NATIVE_ZERO,
                 thread_loss_records: [],
                 sample_count: NATIVE_ZERO,
                 sample_missed: NATIVE_ZERO,
@@ -79,6 +82,8 @@ extend ProfilerNative:
             destination.call_edge_record_count <- native_saturating_add(destination.call_edge_record_count, incoming.call_edge_record_count)
             destination.stack_record_count <- native_saturating_add(destination.stack_record_count, incoming.stack_record_count)
             destination.event_record_count <- native_saturating_add(destination.event_record_count, incoming.event_record_count)
+            destination.allocation_record_count <- native_saturating_add(destination.allocation_record_count, incoming.allocation_record_count)
+            destination.allocation_dropped <- native_saturating_add(destination.allocation_dropped, incoming.allocation_dropped)
             destination.thread_loss_record_count <- native_saturating_add(destination.thread_loss_record_count, incoming.thread_loss_record_count)
             destination.sample_record_count <- native_saturating_add(destination.sample_record_count, incoming.sample_record_count)
             destination.dropped <- native_saturating_add(destination.dropped, incoming.dropped)
@@ -132,6 +137,8 @@ extend ProfilerNative:
             destination.sample_records.extend(incoming.sample_records)
             append_record_separator(destination.event_records)
             destination.event_records.extend(incoming.event_records)
+            append_record_separator(destination.allocation_records)
+            destination.allocation_records.extend(incoming.allocation_records)
             if incoming.thread_loss_records.count > NATIVE_ZERO.usize():
                 append_record_separator(destination.thread_loss_records)
                 destination.thread_loss_records.extend(incoming.thread_loss_records)
@@ -229,6 +236,8 @@ extend ProfilerNative:
             append_i64(buffer, summary.stack_record_count)
             append_text(buffer, ",\"thread_loss\":")
             append_i64(buffer, summary.thread_loss_record_count)
+            append_text(buffer, ",\"allocation_events\":")
+            append_i64(buffer, summary.allocation_record_count)
             append_text(buffer, "}")
             append_text(buffer, ",\"trace_dropped\":")
             append_i64(buffer, summary.dropped)
@@ -285,6 +294,11 @@ extend ProfilerNative:
                 append_text(buffer, ",\"recent_events\":[")
                 buffer.extend(summary.event_records)
                 append_text(buffer, "]")
+            append_text(buffer, ",\"allocation_events\":[")
+            buffer.extend(summary.allocation_records)
+            append_text(buffer, "]")
+            append_text(buffer, ",\"allocation_events_dropped\":")
+            append_i64(buffer, summary.allocation_dropped)
             append_text(buffer, "}")
         
         

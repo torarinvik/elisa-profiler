@@ -8,14 +8,16 @@ extend ProfilerNative:
     private:
         def append_capability_text_summary(buffer: mutable darray[u8]&, mode: darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "capability boundary: sampling active (SIGPROF instrumented Elisa stacks only); " if protocol_field_is(mode, "sample") else "capability boundary: sampling disabled; ")
-            append_text(buffer, "allocation unsupported (allocator_lifecycle_hooks_unavailable); tasks unsupported (task_lifecycle_hooks_unavailable); identity ")
+            append_text(buffer, "allocation active (elisa_arena_hooks, bounded_lifecycle_events); tasks unsupported (task_lifecycle_hooks_unavailable); identity ") if protocol_field_is(mode, "full") or protocol_field_is(mode, "diagnostic")
+            append_text(buffer, "allocation disabled (mode_not_selected); tasks unsupported (task_lifecycle_hooks_unavailable); identity ") if not protocol_field_is(mode, "full") and not protocol_field_is(mode, "diagnostic")
             append_text(buffer, "compiler_stable_ids (compiler_issued_function_and_location_ids)" if summary.stable_ids_available else "source_name_fallback (compiler_stable_ids_unavailable)")
             append_text(buffer, "\n")
 
 
         def append_capability_html_summary(buffer: mutable darray[u8]&, mode: darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "<section><h2>Capability boundary</h2><p>These are evidence limits, not zero measurements.</p><ul><li><strong>Sampling:</strong> active — SIGPROF samples the active instrumented Elisa stack only.</li>" if protocol_field_is(mode, "sample") else "<section><h2>Capability boundary</h2><p>These are evidence limits, not zero measurements.</p><ul><li><strong>Sampling:</strong> disabled for this collection mode.</li>")
-            append_text(buffer, "<li><strong>Allocation:</strong> unsupported — allocator lifecycle hooks are unavailable.</li><li><strong>Tasks:</strong> unsupported — task lifecycle hooks are unavailable.</li><li><strong>Identity:</strong> ")
+            append_text(buffer, "<li><strong>Allocation:</strong> active — bounded Elisa arena lifecycle events are captured.</li>" if protocol_field_is(mode, "full") or protocol_field_is(mode, "diagnostic") else "<li><strong>Allocation:</strong> disabled — this collection mode does not enable allocator lifecycle events.</li>")
+            append_text(buffer, "<li><strong>Tasks:</strong> unsupported — task lifecycle hooks are unavailable.</li><li><strong>Identity:</strong> ")
             append_text(buffer, "compiler stable IDs — compiler-issued function and location IDs were observed." if summary.stable_ids_available else "source-name fallback — compiler stable IDs are unavailable.")
             append_text(buffer, "</li></ul></section>")
 
@@ -39,7 +41,7 @@ extend ProfilerNative:
             append_text(buffer, "\"last_256\"" if recent_path else "\"disabled\"")
             append_text(buffer, ",\"timing\":\"cpu\",\"sampling\":\"instrumented_cpu\"" if protocol_field_is(mode, "sample") else ",\"timing\":\"wall\",\"sampling\":\"disabled\"")
             append_text(buffer, ",\"sampling_detail\":{\"status\":\"active\",\"reason\":\"sigprof_itimer_prof\",\"scope\":\"instrumented_call_stack\"}" if protocol_field_is(mode, "sample") else ",\"sampling_detail\":{\"status\":\"disabled\",\"reason\":\"mode_not_selected\",\"scope\":\"none\"}")
-            append_text(buffer, ",\"allocation\":{\"status\":\"unsupported\",\"reason\":\"allocator_lifecycle_hooks_unavailable\",\"scope\":\"none\"}")
+            append_text(buffer, ",\"allocation\":{\"status\":\"active\",\"reason\":\"elisa_arena_hooks\",\"scope\":\"capture\"}" if protocol_field_is(mode, "full") or protocol_field_is(mode, "diagnostic") else ",\"allocation\":{\"status\":\"disabled\",\"reason\":\"mode_not_selected\",\"scope\":\"none\"}")
             append_text(buffer, ",\"tasks\":{\"status\":\"unsupported\",\"reason\":\"task_lifecycle_hooks_unavailable\",\"scope\":\"none\"}")
             append_text(buffer, ",\"identity\":{\"status\":\"")
             append_text(buffer, "compiler_stable_ids\",\"reason\":\"compiler_issued_function_and_location_ids\"" if summary.stable_ids_available else "source_name_fallback\",\"reason\":\"compiler_stable_ids_unavailable\"")

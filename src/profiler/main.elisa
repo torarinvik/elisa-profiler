@@ -1117,6 +1117,8 @@ extend ProfilerNative:
             append_millis(buffer, compile_ns)
             append_text(buffer, " ms</dd></div><div><dt>Events</dt><dd>")
             append_i64(buffer, summary.events)
+            append_text(buffer, "</dd></div><div><dt>Allocation events</dt><dd>")
+            append_i64(buffer, summary.allocation_record_count)
             append_text(buffer, "</dd></div><div><dt>Locations</dt><dd>")
             append_i64(buffer, summary.locations)
             append_text(buffer, "</dd></div><div><dt>Dropped events</dt><dd>")
@@ -1143,6 +1145,7 @@ extend ProfilerNative:
             append_html_program_output(buffer, program_stdout, program_stdout_truncated, program_stderr, program_stderr_truncated)
             append_html_diagnostics(buffer, summary.capture_complete, summary.dropped, summary.call_edge_dropped, summary.stack_dropped, summary.frame_dropped, summary.capture_bytes_dropped, summary.stack_overflow_entries, summary.trace_omitted, summary.crash_signal)
             append_html_event_timeline(buffer, summary.event_records)
+            append_html_allocation_view(buffer, summary.allocation_records, summary.allocation_record_count)
             append_html_thread_loss_diagnostics(buffer, summary.thread_loss_records)
             if summary.active_stack_available:
                 append_text(buffer, "<section class='panel' aria-labelledby='active-stack-title'><h2 id='active-stack-title'>Interrupted active stack</h2><p>Tracked depth ")
@@ -1320,6 +1323,10 @@ extend ProfilerNative:
             append_i64(buffer, summary.value_events)
             append_text(buffer, ",\"function_events\":")
             append_i64(buffer, summary.function_events)
+            append_text(buffer, ",\"allocation_events\":")
+            append_i64(buffer, summary.allocation_record_count)
+            append_text(buffer, ",\"allocation_events_dropped\":")
+            append_i64(buffer, summary.allocation_dropped)
             append_text(buffer, ",\"max_stack_depth\":")
             append_i64(buffer, summary.max_stack_depth)
             append_text(buffer, ",\"stack_overflow_entries\":")
@@ -1691,7 +1698,7 @@ extend ProfilerNative:
                 append_text(report, "}")
             else:
                 append_text(report, "null")
-            append_text(report, ",\"capabilities\":{\"launch\":{\"status\":\"supported\",\"mode\":\"direct_execv\"},\"wall_timing\":{\"status\":\"supported\",\"clock\":\"CLOCK_MONOTONIC\"},\"cpu_sampling\":{\"status\":\"experimental\",\"backend\":\"SIGPROF_ITIMER_PROF\",\"scope\":\"instrumented_call_stack\"},\"attach\":{\"status\":\"unsupported\",\"reason\":\"launch_mode_only\"},\"allocation\":{\"status\":\"unsupported\",\"reason\":\"allocator_lifecycle_hooks_unavailable\"},\"tasks\":{\"status\":\"unsupported\",\"reason\":\"task_lifecycle_hooks_unavailable\"},\"unwinding\":{\"status\":\"unsupported\",\"reason\":\"raw_native_unwind_not_emitted\"}}}\n")
+            append_text(report, ",\"capabilities\":{\"launch\":{\"status\":\"supported\",\"mode\":\"direct_execv\"},\"wall_timing\":{\"status\":\"supported\",\"clock\":\"CLOCK_MONOTONIC\"},\"cpu_sampling\":{\"status\":\"experimental\",\"backend\":\"SIGPROF_ITIMER_PROF\",\"scope\":\"instrumented_call_stack\"},\"attach\":{\"status\":\"unsupported\",\"reason\":\"launch_mode_only\"},\"allocation\":{\"status\":\"supported\",\"backend\":\"elisa_arena_hooks\",\"scope\":\"arena_runtime\",\"records\":\"bounded_lifecycle_events\"},\"tasks\":{\"status\":\"unsupported\",\"reason\":\"task_lifecycle_hooks_unavailable\"},\"unwinding\":{\"status\":\"unsupported\",\"reason\":\"raw_native_unwind_not_emitted\"}}}\n")
             if output_path.count > NATIVE_ZERO.usize():
                 return NATIVE_ZERO if write_file(output_path, report)
                 return report_error("could not write doctor report")

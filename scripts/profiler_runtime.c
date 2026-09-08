@@ -55,6 +55,19 @@ typedef struct {
     uint64_t inclusive_ns;
 } profile_call_edge;
 
+typedef struct {
+    uint32_t kind;
+    uint64_t address;
+    uint64_t size;
+    uint64_t old_address;
+    uint64_t old_size;
+    uint64_t arena;
+    uint64_t region;
+    uint64_t sequence;
+    uint64_t thread_id;
+    uint64_t timestamp_ns;
+} profile_allocation_event;
+
 typedef struct profile_call_path profile_call_path;
 
 struct profile_call_path {
@@ -91,6 +104,7 @@ enum {
     PROFILE_INITIAL_LOCATION_CAPACITY = 256,
     PROFILE_INITIAL_CALL_EDGE_CAPACITY = 64,
     PROFILE_INITIAL_CALL_PATH_CAPACITY = 64,
+    PROFILE_INITIAL_ALLOCATION_CAPACITY = 128,
     PROFILE_CAPACITY_GROWTH_FACTOR = 2,
     PROFILE_TABLE_LOAD_NUMERATOR = 10,
     PROFILE_TABLE_LOAD_DENOMINATOR = 7,
@@ -111,6 +125,15 @@ enum {
     PROFILE_SAMPLE_HANDLER_BUSY = 1,
     PROFILE_THREAD_LIFECYCLE_ACTIVE = 0,
     PROFILE_THREAD_LIFECYCLE_ENDED = 1,
+    PROFILE_ALLOCATION_ALLOC = 1,
+    PROFILE_ALLOCATION_REALLOC_IN_PLACE = 2,
+    PROFILE_ALLOCATION_REALLOC_MOVE = 3,
+    PROFILE_ALLOCATION_RECLAIM = 4,
+    PROFILE_ALLOCATION_REGION_CREATE = 5,
+    PROFILE_ALLOCATION_REGION_RESET = 6,
+    PROFILE_ALLOCATION_REGION_TRIM = 7,
+    PROFILE_ALLOCATION_REGION_FREE = 8,
+    PROFILE_ALLOCATION_ARENA_ADOPT = 9,
     PROFILE_SAMPLE_SIGNAL = SIGPROF,
     PROFILE_COLLECTOR_FAILURE_STATUS = 126,
     PROFILE_COLLECTOR_STATUS_OK = 1,
@@ -614,6 +637,10 @@ struct profile_thread_state {
     profile_trace_event *trace_events;
     size_t trace_capacity;
     size_t trace_size;
+    profile_allocation_event *allocation_events;
+    size_t allocation_capacity;
+    size_t allocation_size;
+    uint64_t allocation_dropped;
 #if ELISA_PROFILE_TIMING
     const char *timing_function_name;
     const char *timing_variable_name;
@@ -628,6 +655,9 @@ struct profile_thread_state {
 
 static profile_thread_state *profile_threads;
 static uint64_t profile_thread_count;
+static uint64_t profile_allocation_event_count;
+static uint64_t profile_allocation_dropped_count;
+static _Thread_local int profile_allocation_callback_busy;
 
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right) {
     return UINT64_MAX - left < right ? UINT64_MAX : left + right;
@@ -1250,6 +1280,92 @@ static profile_thread_state *profile_get_thread_locked(void) {
     profile_thread_count =
         profile_saturating_increment_u64(profile_thread_count);
     return thread;
+}
+
+static int profile_mode_allows_allocations(void) {
+    return profile_mode == PROFILE_MODE_FULL || profile_mode == PROFILE_MODE_DIAGNOSTIC;
+}
+
+static int profile_allocation_buffer_grow_locked(profile_thread_state *thread) {
+    size_t new_capacity;
+    uint64_t new_bytes;
+    if (thread == NULL ||
+        !profile_next_capacity(thread->allocation_capacity,
+                               PROFILE_INITIAL_ALLOCATION_CAPACITY,
+                               &new_capacity) ||
+        !profile_allocation_bytes(new_capacity,
+                                  sizeof(*thread->allocation_events),
+                                  &new_bytes) ||
+        !profile_reserve_bytes_locked(new_bytes)) {
+        return 0;
+    }
+    profile_allocation_event *new_events =
+        calloc(new_capacity, sizeof(*new_events));
+    if (new_events == NULL) {
+        profile_release_bytes_locked(new_bytes);
+        return 0;
+    }
+    if (thread->allocation_events != NULL && thread->allocation_size > 0) {
+        memcpy(new_events, thread->allocation_events,
+               thread->allocation_size * sizeof(*new_events));
+    }
+    uint64_t old_bytes = 0;
+    (void)profile_allocation_bytes(thread->allocation_capacity,
+                                   sizeof(*thread->allocation_events),
+                                   &old_bytes);
+    free(thread->allocation_events);
+    profile_release_bytes_locked(old_bytes);
+    thread->allocation_events = new_events;
+    thread->allocation_capacity = new_capacity;
+    return 1;
+}
+
+/* Strongly overridden by the compiler runtime's weak no-op hook. The callback
+ * records only fixed-width data; formatting, sorting, and protocol I/O wait
+ * until profile_dump_body holds the collector lock. */
+void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
+                                     size_t size, uintptr_t old_address,
+                                     size_t old_size, uintptr_t arena,
+                                     size_t region) {
+    if (profile_fork_child_disabled || !profile_mode_allows_allocations() ||
+        profile_allocation_callback_busy) {
+        return;
+    }
+    profile_allocation_callback_busy = 1;
+    pthread_mutex_lock(&profile_lock);
+    profile_thread_state *thread = profile_get_thread_locked();
+    if (thread == NULL ||
+        (thread->allocation_size >= thread->allocation_capacity &&
+         !profile_allocation_buffer_grow_locked(thread))) {
+        profile_allocation_dropped_count =
+            profile_saturating_increment_u64(profile_allocation_dropped_count);
+        profile_budget_exceeded = 1;
+        if (thread != NULL) {
+            thread->allocation_dropped =
+                profile_saturating_increment_u64(thread->allocation_dropped);
+        }
+        pthread_mutex_unlock(&profile_lock);
+        profile_allocation_callback_busy = 0;
+        return;
+    }
+    profile_allocation_event *event =
+        &thread->allocation_events[thread->allocation_size++];
+    *event = (profile_allocation_event){
+        .kind = kind,
+        .address = (uint64_t)address,
+        .size = (uint64_t)size,
+        .old_address = (uint64_t)old_address,
+        .old_size = (uint64_t)old_size,
+        .arena = (uint64_t)arena,
+        .region = (uint64_t)region,
+        .sequence = profile_allocation_event_count,
+        .thread_id = thread->thread_id,
+        .timestamp_ns = profile_trace_timestamp_ns(),
+    };
+    profile_allocation_event_count =
+        profile_saturating_increment_u64(profile_allocation_event_count);
+    pthread_mutex_unlock(&profile_lock);
+    profile_allocation_callback_busy = 0;
 }
 
 #if ELISA_PROFILE_TIMING
@@ -2248,6 +2364,39 @@ static void profile_dump_thread_records(void) {
     }
 }
 
+static void profile_dump_allocation_records(void) {
+    for (const profile_thread_state *thread = profile_threads;
+         thread != NULL;
+         thread = thread->next) {
+        for (size_t index = 0; index < thread->allocation_size; ++index) {
+            const profile_allocation_event *event =
+                &thread->allocation_events[index];
+            profile_record_begin();
+            profile_record_append_text("allocation\t");
+            profile_record_append_uint64(event->kind);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->address);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->size);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->old_address);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->old_size);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->arena);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->region);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->sequence);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->thread_id);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->timestamp_ns);
+            profile_record_emit();
+        }
+    }
+}
+
 static void profile_dump_metadata(size_t location_count) {
     profile_record_begin();
     profile_record_append_text("meta\t");
@@ -2292,6 +2441,8 @@ static void profile_dump_metadata(size_t location_count) {
     profile_record_append_uint64(profile_sample_period_microseconds);
     profile_record_append_char('\t');
     profile_record_append_uint64((uint64_t)profile_sampling_setup_failed);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(profile_allocation_dropped_count);
     profile_record_emit();
 }
 
@@ -2695,6 +2846,7 @@ static void profile_dump_body(void) {
         profile_dump_trace_status();
         profile_dump_trace_records();
         profile_dump_thread_records();
+        profile_dump_allocation_records();
         if (!profile_event_trace_enabled &&
             (profile_crash_dumped || profile_recent_path_enabled)) {
             profile_dump_recent_path();
@@ -2723,6 +2875,7 @@ static void profile_dump_body(void) {
     profile_dump_trace_status();
     profile_dump_trace_records();
     profile_dump_thread_records();
+    profile_dump_allocation_records();
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];
         profile_record_begin();

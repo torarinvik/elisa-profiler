@@ -114,6 +114,7 @@ module ProfilerNative:
         const NATIVE_MAX_PROTOCOL_FRAMES: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_DETAIL_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_EVENT_RECORDS: i64 = 1000000
+        const NATIVE_MAX_PROTOCOL_ALLOCATION_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_SAMPLE_RECORDS: i64 = 1000000
         const NATIVE_MAX_PROTOCOL_THREAD_RECORDS: i64 = 1000000
         const NATIVE_MAX_DEPENDENCY_FILES: i64 = 100000
@@ -252,12 +253,22 @@ module ProfilerNative:
         const NATIVE_PROTOCOL_KIND_STATEMENT: i64 = 1
         const NATIVE_PROTOCOL_KIND_VALUE: i64 = 2
         const NATIVE_PROTOCOL_KIND_FUNCTION: i64 = 3
+        const NATIVE_PROTOCOL_ALLOCATION_ALLOC: i64 = 1
+        const NATIVE_PROTOCOL_ALLOCATION_REALLOC_IN_PLACE: i64 = 2
+        const NATIVE_PROTOCOL_ALLOCATION_REALLOC_MOVE: i64 = 3
+        const NATIVE_PROTOCOL_ALLOCATION_RECLAIM: i64 = 4
+        const NATIVE_PROTOCOL_ALLOCATION_REGION_CREATE: i64 = 5
+        const NATIVE_PROTOCOL_ALLOCATION_REGION_RESET: i64 = 6
+        const NATIVE_PROTOCOL_ALLOCATION_REGION_TRIM: i64 = 7
+        const NATIVE_PROTOCOL_ALLOCATION_REGION_FREE: i64 = 8
+        const NATIVE_PROTOCOL_ALLOCATION_ARENA_ADOPT: i64 = 9
         const NATIVE_PROTOCOL_SIGNED_FALSE: i64 = 0
         const NATIVE_PROTOCOL_SIGNED_TRUE: i64 = 1
         const NATIVE_PROTOCOL_ERROR_LOCATION: i64 = 1
         const NATIVE_PROTOCOL_ERROR_CALL: i64 = 2
         const NATIVE_PROTOCOL_ERROR_STACK: i64 = 3
         const NATIVE_PROTOCOL_ERROR_EVENT: i64 = 4
+        const NATIVE_PROTOCOL_ERROR_ALLOCATION: i64 = 9
         const NATIVE_PROTOCOL_ERROR_META: i64 = 5
         const NATIVE_PROTOCOL_ERROR_FRAME: i64 = 6
         const NATIVE_PROTOCOL_ERROR_THREAD: i64 = 7
@@ -352,6 +363,8 @@ module ProfilerNative:
             outcome: mutable darray[u8]
             exit_code: mutable i64
             events: mutable i64
+            allocation_record_count: mutable i64
+            allocation_dropped: mutable i64
             locations: mutable i64
             statement_events: mutable i64
             value_events: mutable i64
@@ -391,12 +404,13 @@ module ProfilerNative:
             folded_records: mutable darray[u8]
             sample_records: mutable darray[u8]
             event_records: mutable darray[u8]
+            allocation_records: mutable darray[u8]
 
         def empty_native_offline_profile() -> NativeOfflineProfile:
             return NativeOfflineProfile{
                 source: [], source_snapshot: [], source_digest: [], source_digest_available: false,
                 workload: [], collection_mode: [], outcome: [], exit_code: NATIVE_ZERO,
-                events: NATIVE_ZERO, locations: NATIVE_ZERO, statement_events: NATIVE_ZERO,
+                events: NATIVE_ZERO, allocation_record_count: NATIVE_ZERO, allocation_dropped: NATIVE_ZERO, locations: NATIVE_ZERO, statement_events: NATIVE_ZERO,
                 value_events: NATIVE_ZERO, function_events: NATIVE_ZERO, dropped: NATIVE_ZERO,
                 thread_count: NATIVE_ZERO, call_edge_dropped: NATIVE_ZERO, stack_dropped: NATIVE_ZERO,
                 frame_dropped: NATIVE_ZERO, capture_bytes_dropped: NATIVE_ZERO,
@@ -412,7 +426,7 @@ module ProfilerNative:
                 completed_repetitions: NATIVE_ZERO, successful_repetitions: NATIVE_ZERO,
                 host: NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false},
                 location_timing: false, functions: [], call_edges: [], stacks: [],
-                location_records: [], thread_loss: [], folded_records: [], sample_records: [], event_records: [],
+                location_records: [], thread_loss: [], folded_records: [], sample_records: [], event_records: [], allocation_records: [],
             }
 
         struct NativePathMap:
@@ -457,6 +471,8 @@ module ProfilerNative:
             call_edge_record_count: mutable i64
             stack_record_count: mutable i64
             event_record_count: mutable i64
+            allocation_record_count: mutable i64
+            allocation_dropped: mutable i64
             thread_loss_record_count: mutable i64
             sample_record_count: mutable i64
             dropped: mutable i64
@@ -501,6 +517,7 @@ module ProfilerNative:
             stack_records: mutable darray[u8]
             folded_records: mutable darray[u8]
             event_records: mutable darray[u8]
+            allocation_records: mutable darray[u8]
             thread_loss_records: mutable darray[u8]
             sample_records: mutable darray[u8]
             malformed: mutable bool

@@ -627,7 +627,7 @@ def main():
         assert b"Interrupted active stack" in interrupted_html
         assert b"diagnostic evidence, not completed-call evidence" in interrupted_html
         assert b"Capability boundary" in interrupted_html
-        assert b"Allocation:</strong> unsupported" in interrupted_html
+        assert b"Allocation:</strong> active" in interrupted_html
 
         run("profile", ROOT / "examples/hot_loop.elisa", "--repeat", "2",
             "--event-trace", "--max-event-trace-events", "10",
@@ -657,7 +657,7 @@ def main():
             "status": "disabled", "reason": "mode_not_selected", "scope": "none"
         }
         assert measured["run"]["capabilities"]["allocation"] == {
-            "status": "unsupported", "reason": "allocator_lifecycle_hooks_unavailable", "scope": "none"
+            "status": "active", "reason": "elisa_arena_hooks", "scope": "capture"
         }
         assert measured["run"]["capabilities"]["tasks"] == {
             "status": "unsupported", "reason": "task_lifecycle_hooks_unavailable", "scope": "none"
@@ -684,6 +684,24 @@ def main():
             "javascript_safe_integer": "2^53_minus_1",
         }
         assert measured["run"]["capabilities"]["timing"] == "wall"
+        allocation_output = work / "allocation.json"
+        run("profile", ROOT / "examples" / "allocation_workload.elisa", "--mode", "diagnostic",
+            "--format", "json", "--output", allocation_output)
+        allocation_report = json.loads(allocation_output.read_text(encoding="utf-8"))
+        allocation_events = allocation_report["run"]["repetitions"][0]["allocation_events"]
+        assert allocation_events
+        assert allocation_report["summary"]["allocation_events"] == len(allocation_events)
+        assert allocation_report["run"]["capabilities"]["allocation"] == {
+            "status": "active", "reason": "elisa_arena_hooks", "scope": "capture"
+        }
+        assert allocation_events[0]["kind"] == "region_create"
+        assert allocation_events[0]["size_bytes"] > 0
+        assert any(event["kind"] == "realloc_in_place" for event in allocation_events)
+        allocation_html = work / "allocation.html"
+        run("profile", ROOT / "examples" / "allocation_workload.elisa", "--mode", "diagnostic",
+            "--format", "html", "--output", allocation_html)
+        assert b"Memory and regions" in allocation_html.read_bytes()
+        assert b"Raw allocation lifecycle records" in allocation_html.read_bytes()
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True
         assert measured["source_mapping"]["mapped_locations"] == len(measured["locations"])
@@ -722,7 +740,7 @@ def main():
         assert len(repetitions) == 2
         assert all(
             set(item["detail_records"])
-            == {"locations", "functions", "call_edges", "stacks", "thread_loss"}
+            == {"locations", "functions", "call_edges", "stacks", "thread_loss", "allocation_events"}
             for item in repetitions
         )
         assert measured["thread_loss"]

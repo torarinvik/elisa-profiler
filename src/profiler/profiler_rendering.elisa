@@ -334,6 +334,19 @@ extend ProfilerNative:
 
 
 
+        def append_html_allocation_view(buffer: mutable darray[u8]&, records: darray[u8]&, record_count: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "<section class='panel' aria-labelledby='allocation-view-title'><h2 id='allocation-view-title'>Memory and regions</h2><p class='panel-note'>The compiler's Elisa arena hooks expose bounded allocation lifecycle evidence. Addresses and sizes are raw observations; they are not a heap census or a substitute for leak analysis.</p><dl class='allocation-summary'><div><dt>Lifecycle records</dt><dd>")
+            append_i64(buffer, record_count)
+            append_text(buffer, "</dd></div><div><dt>Evidence scope</dt><dd>full and diagnostic captures</dd></div><div><dt>Record contract</dt><dd>kind, address, size, arena, region, sequence, thread, timestamp</dd></div></dl>")
+            if record_count > NATIVE_ZERO:
+                append_text(buffer, "<details open><summary>Raw allocation lifecycle records</summary><pre>")
+                append_html_escaped(buffer, records)
+                append_text(buffer, "</pre></details>")
+            else:
+                append_text(buffer, "<p>No allocation lifecycle records were retained for this capture.</p>")
+            append_text(buffer, "<style>.allocation-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem}.allocation-summary div{padding:.7rem;background:#f6f8fa;border-radius:8px}.allocation-summary dt{color:#57606a;font-size:.8rem}.allocation-summary dd{margin:.2rem 0 0;font-weight:650}@media(prefers-color-scheme:dark){.allocation-summary div{background:#21262d}.allocation-summary dt{color:#8b949e}}</style></section>")
+
+
         # Extend the bounded event controller with exact kind and timestamp
         # range filters. This remains Elisa-owned generated UI code; the raw
         # record payload is parsed within the same hard index bound so the
@@ -412,6 +425,8 @@ extend ProfilerNative:
             append_text(buffer, "complete" if profile.capture_complete_available and profile.capture_complete else "partial" if profile.capture_complete_available else "not recorded")
             append_text(buffer, "</dd></div><div><dt>Events</dt><dd>")
             append_i64(buffer, profile.events)
+            append_text(buffer, "</dd></div><div><dt>Allocation events</dt><dd>")
+            append_text(buffer, "present" if profile.allocation_records.count > NATIVE_ZERO.usize() else "none")
             append_text(buffer, "</dd></div><div><dt>Locations</dt><dd>")
             append_i64(buffer, profile.locations)
             append_text(buffer, "</dd></div><div><dt>Dropped events</dt><dd>")
@@ -438,6 +453,7 @@ extend ProfilerNative:
             append_html_diagnostics(buffer, profile.capture_complete if profile.capture_complete_available else true, profile.dropped, profile.call_edge_dropped, profile.stack_dropped, profile.frame_dropped, profile.capture_bytes_dropped, profile.stack_overflow_entries, profile.trace_omitted, profile.crash_signal if profile.crash_signal_available else NATIVE_NEGATIVE_ONE)
             append_html_event_timeline(buffer, profile.event_records)
             append_html_event_timeline_range_controller(buffer)
+            append_html_allocation_view(buffer, profile.allocation_records, profile.allocation_record_count)
             append_html_thread_loss_diagnostics(buffer, profile.thread_loss)
             if profile.source_snapshot.count > NATIVE_ZERO.usize():
                 append_html_source_view(buffer, profile.source, profile.source_snapshot, profile.location_records, true)
@@ -473,6 +489,9 @@ extend ProfilerNative:
             append_text(buffer, "complete\n" if profile.capture_complete_available and profile.capture_complete else "partial\n" if profile.capture_complete_available else "not recorded\n")
             append_text(buffer, "events: ")
             append_i64(buffer, profile.events)
+            append_text(buffer, "\nallocation records: ")
+            append_i64(buffer, profile.allocation_record_count)
+            append_text(buffer, "\n")
             append_text(buffer, "\nlocations: ")
             append_i64(buffer, profile.locations)
             append_text(buffer, "\nstatement events: ")

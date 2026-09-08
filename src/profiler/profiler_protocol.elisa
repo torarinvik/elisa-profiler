@@ -598,6 +598,85 @@ extend ProfilerNative:
             summary.event_record_count <- native_saturating_add(summary.event_record_count, NATIVE_ONE)
 
 
+        def append_allocation_record(summary: mutable CaptureSummary&, allocation_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
+            return if protocol_record_limit_reached(summary, summary.allocation_record_count, NATIVE_PROTOCOL_ERROR_ALLOCATION, NATIVE_MAX_PROTOCOL_ALLOCATION_RECORDS)
+            kind_field: mutable darray[u8] = []
+            address_field: mutable darray[u8] = []
+            size_field: mutable darray[u8] = []
+            old_address_field: mutable darray[u8] = []
+            old_size_field: mutable darray[u8] = []
+            arena_field: mutable darray[u8] = []
+            region_field: mutable darray[u8] = []
+            sequence_field: mutable darray[u8] = []
+            thread_field: mutable darray[u8] = []
+            timestamp_field: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &kind_field)
+            cursor <- protocol_field_into(data, cursor, stop, &address_field)
+            cursor <- protocol_field_into(data, cursor, stop, &size_field)
+            cursor <- protocol_field_into(data, cursor, stop, &old_address_field)
+            cursor <- protocol_field_into(data, cursor, stop, &old_size_field)
+            cursor <- protocol_field_into(data, cursor, stop, &arena_field)
+            cursor <- protocol_field_into(data, cursor, stop, &region_field)
+            cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
+            cursor <- protocol_field_into(data, cursor, stop, &thread_field)
+            cursor <- protocol_field_into(data, cursor, stop, &timestamp_field)
+            valid: bool = cursor == stop and protocol_unsigned(kind_field) and protocol_unsigned_u64(address_field) and protocol_unsigned(size_field) and protocol_unsigned_u64(old_address_field) and protocol_unsigned(old_size_field) and protocol_unsigned_u64(arena_field) and protocol_unsigned(region_field) and protocol_unsigned_u64(sequence_field) and protocol_unsigned_u64(thread_field) and protocol_unsigned_u64(timestamp_field)
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                return
+            kind_name: mutable sview = "unknown"
+            if protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_ALLOC:
+                kind_name <- "alloc"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_REALLOC_IN_PLACE:
+                kind_name <- "realloc_in_place"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_REALLOC_MOVE:
+                kind_name <- "realloc_move"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_RECLAIM:
+                kind_name <- "reclaim"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_REGION_CREATE:
+                kind_name <- "region_create"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_REGION_RESET:
+                kind_name <- "region_reset"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_REGION_TRIM:
+                kind_name <- "region_trim"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_REGION_FREE:
+                kind_name <- "region_free"
+            elif protocol_number_field(kind_field) == NATIVE_PROTOCOL_ALLOCATION_ARENA_ADOPT:
+                kind_name <- "arena_adopt"
+            else:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                return
+            append_record_separator(allocation_records)
+            append_text(allocation_records, "{\"kind\":\"")
+            append_text(allocation_records, kind_name)
+            append_text(allocation_records, "\",\"kind_code\":")
+            append_protocol_number(allocation_records, kind_field)
+            append_text(allocation_records, ",\"address\":")
+            append_protocol_number(allocation_records, address_field)
+            append_text(allocation_records, ",\"size_bytes\":")
+            append_protocol_number(allocation_records, size_field)
+            append_text(allocation_records, ",\"old_address\":")
+            append_protocol_number(allocation_records, old_address_field)
+            append_text(allocation_records, ",\"old_size_bytes\":")
+            append_protocol_number(allocation_records, old_size_field)
+            append_text(allocation_records, ",\"arena\":")
+            append_protocol_number(allocation_records, arena_field)
+            append_text(allocation_records, ",\"region\":")
+            append_protocol_number(allocation_records, region_field)
+            append_text(allocation_records, ",\"sequence\":")
+            append_protocol_number(allocation_records, sequence_field)
+            append_text(allocation_records, ",\"thread_id\":")
+            append_protocol_number(allocation_records, thread_field)
+            append_text(allocation_records, ",\"timestamp_ns\":")
+            append_protocol_number(allocation_records, timestamp_field)
+            append_text(allocation_records, ",\"repetition\":")
+            append_i64(allocation_records, repetition)
+            append_text(allocation_records, "}")
+            summary.allocation_record_count <- native_saturating_add(summary.allocation_record_count, NATIVE_ONE)
+
+
         def append_thread_loss_record(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.thread_loss_record_count, NATIVE_PROTOCOL_ERROR_THREAD, NATIVE_MAX_PROTOCOL_THREAD_RECORDS)
             thread_id: mutable darray[u8] = []
@@ -710,6 +789,8 @@ extend ProfilerNative:
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
                 event_record_count: NATIVE_ZERO,
+                allocation_record_count: NATIVE_ZERO,
+                allocation_dropped: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
                 sample_record_count: NATIVE_ZERO,
                 dropped: NATIVE_ZERO,
@@ -754,6 +835,7 @@ extend ProfilerNative:
                 stack_records: [],
                 folded_records: [],
                 event_records: [],
+                allocation_records: [],
                 thread_loss_records: [],
                 sample_records: [],
                 malformed: false,
@@ -767,6 +849,7 @@ extend ProfilerNative:
             thread_loss_records: mutable darray[u8] = []
             folded_records: mutable darray[u8] = []
             sample_records: mutable darray[u8] = []
+            allocation_records: mutable darray[u8] = []
             begin_prefix: sview = "ELISA_PROFILE\t1\tbegin\t"
             end_prefix: sview = "ELISA_PROFILE\t1\tend\t"
             meta_prefix: sview = "ELISA_PROFILE\t1\tmeta\t"
@@ -776,6 +859,7 @@ extend ProfilerNative:
             frame_prefix: sview = "ELISA_PROFILE\t1\tframe\t"
             extension_prefix: sview = "ELISA_PROFILE\t1\textension\t"
             sample_prefix: sview = "ELISA_PROFILE\t1\tsample\t"
+            allocation_prefix: sview = "ELISA_PROFILE\t1\tallocation\t"
             protocol_prefix: sview = "ELISA_PROFILE\t1\t"
             line_start: mutable usize = NATIVE_ZERO.usize()
             line_count: mutable usize = NATIVE_ZERO.usize()
@@ -880,10 +964,12 @@ extend ProfilerNative:
                             summary.sample_period_microseconds <- parse_protocol_number(data, &cursor, line_stop)
                         if cursor < line_stop:
                             summary.sampling_setup_failed <- parse_protocol_number(data, &cursor, line_stop)
+                        if cursor < line_stop:
+                            summary.allocation_dropped <- parse_protocol_number(data, &cursor, line_stop)
                         if cursor != line_stop:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
-                        if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO or summary.frame_dropped < NATIVE_ZERO or summary.sample_count < NATIVE_ZERO or summary.sample_missed < NATIVE_ZERO or summary.sample_period_microseconds < NATIVE_ZERO or summary.sampling_setup_failed < NATIVE_ZERO:
+                        if summary.events < NATIVE_ZERO or summary.locations < NATIVE_ZERO or summary.dropped < NATIVE_ZERO or summary.max_stack_depth < NATIVE_ZERO or summary.stack_overflow_entries < NATIVE_ZERO or summary.thread_count < NATIVE_ZERO or summary.location_limit < NATIVE_ZERO or summary.call_edge_limit < NATIVE_ZERO or summary.stack_limit < NATIVE_ZERO or summary.budget_exceeded < NATIVE_ZERO or summary.call_edge_dropped < NATIVE_ZERO or summary.stack_dropped < NATIVE_ZERO or summary.capture_byte_limit < NATIVE_ZERO or summary.capture_bytes_used < NATIVE_ZERO or summary.capture_bytes_dropped < NATIVE_ZERO or summary.frame_dropped < NATIVE_ZERO or summary.sample_count < NATIVE_ZERO or summary.sample_missed < NATIVE_ZERO or summary.sample_period_microseconds < NATIVE_ZERO or summary.sampling_setup_failed < NATIVE_ZERO or summary.allocation_dropped < NATIVE_ZERO:
                             summary.malformed <- true
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                     elif frame_valid and line_prefix(data, record_start, line_stop, trace_prefix):
@@ -928,6 +1014,9 @@ extend ProfilerNative:
                     elif frame_valid and line_prefix(data, record_start, line_stop, sample_prefix):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len(sample_prefix)
                         append_sample_record(&summary, &sample_records, &folded_records, data, &cursor, line_stop, repetition)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, allocation_prefix):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len(allocation_prefix)
+                        append_allocation_record(&summary, &allocation_records, data, &cursor, line_stop, repetition)
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
                         append_event_record(&summary, &event_records, data, &cursor, line_stop, source, repetition)
@@ -947,6 +1036,7 @@ extend ProfilerNative:
             summary.stack_records <- stack_records
             summary.folded_records <- folded_records
             summary.event_records <- event_records
+            summary.allocation_records <- allocation_records
             summary.thread_loss_records <- thread_loss_records
             summary.sample_records <- sample_records
             return summary

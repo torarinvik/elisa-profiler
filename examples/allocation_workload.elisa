@@ -1,0 +1,14 @@
+# Allocation and region lifecycle workload for profiler memory evidence.
+
+const ALLOCATION_ITERATIONS: i64 = 64
+const ALLOCATION_STEP: i64 = 1
+const SUCCESS_STATUS: i64 = 0
+const FAILURE_STATUS: i64 = 1
+
+def main() -> i64:
+    values: mutable darray[i64] = []
+    index: mutable i64 = 0
+    while index < ALLOCATION_ITERATIONS |values, index|:
+        values.push(index)
+        index <- index + ALLOCATION_STEP
+    return SUCCESS_STATUS if values.count.i64() == ALLOCATION_ITERATIONS else FAILURE_STATUS
