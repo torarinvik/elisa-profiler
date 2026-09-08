@@ -233,3 +233,21 @@ The native regression suite includes `examples/runtime_trace_workload.elisa` to
 check complete captures and observed user-function events with a full runtime
 include. The compiler's `trace_callback_no_recursion.elisa` reproducer checks the
 custom-callback case when compiled with `-ftrace`.
+
+## Function-only compiler validation checkpoint
+
+On 2026-09-08, the dedicated compiler at `844e2abc` passed the full
+`compiler-self-host-smoke` run: all five blocker probes passed, generation 2
+produced a 19,082,728-byte generation-3 object, generation 3 reproduced that
+object byte-for-byte, and all 40 repeated compilations matched. The audited
+base included all 11 local compiler branch tips; dirty work in other
+worktrees was not incorporated. Function-only callback identities and trace
+flag precedence are checked by `test/compiler_identity_smoke.sh`.
+
+The profiler itself remains built at `-O0`. An experimental `-O2` build of
+profiler revision `fe690ec` trapped in the source-build cache-preparation path
+when running `profile examples/hot_loop.elisa -- --help`. Its prebuilt-target
+path completed but showed no consistent speedup in three paired trials.
+The optimized build was not installed. The existing argument-forwarding
+regression catches this failure; optimized hash vectors alone do not qualify
+an optimized profiler for use.
