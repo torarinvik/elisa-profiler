@@ -469,6 +469,25 @@ overhead. Logs: `build/combined-full-{baseline,current}.log` and their
 `-reverse.log` variants. Baseline executable: `build/elisac-effects-baseline`;
 current executable: the dedicated compiler's `build/self_host_gen2/elisac-stage1-gen2`.
 
+## Eliminate duplicate effect-reference lookup (2026-09-08)
+
+The fresh `90462733` instrumented capture completed with 12,843 samples, zero
+reported missed samples or dropped frames, and an 85.499-second target run.
+Its largest sampled leaf was `ae_effect_declared` (537 samples), called from
+effect-reference validation. This is instrumented stack attribution, not native
+self-time. Evidence: `build/post-unhandled-full-profile.json`.
+
+Removing a redundant declaration lookup after an already-returning branch
+preserved all 483 selected effects/permissions/diagnostic fixture exit statuses,
+messages, and successful LLVM output, including existing refusals.
+Full O0 baseline/candidate pairs measured 78.96/77.07 seconds and, with order
+reversed, 79.05/77.06 seconds. User CPU times were 78.43/76.56 and 78.50/76.53.
+All four emitted objects were byte-identical: approximately 2.4–2.5% less wall
+time against `90462733` on identical current source. Both binaries were
+self-hosted. Logs: `build/effect-ref-full-{baseline,candidate}.log` and their
+`-reverse.log` variants. Fresh committed bootstrap and profiler regression
+validation are pending; this is not a complete test-suite claim.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
