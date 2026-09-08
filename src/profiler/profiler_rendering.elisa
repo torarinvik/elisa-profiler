@@ -416,6 +416,11 @@ extend ProfilerNative:
             append_i64(buffer, profile.locations)
             append_text(buffer, "</dd></div><div><dt>Dropped events</dt><dd>")
             append_i64(buffer, profile.dropped)
+            append_text(buffer, "</dd></div><div><dt>Collection mode</dt><dd>")
+            if profile.collection_mode.count > NATIVE_ZERO.usize():
+                append_html_escaped(buffer, profile.collection_mode)
+            else:
+                append_text(buffer, "unavailable")
             append_text(buffer, "</dd></div><div><dt>Threads</dt><dd>")
             append_i64(buffer, profile.thread_count)
             append_text(buffer, "</dd></div>")
@@ -486,6 +491,11 @@ extend ProfilerNative:
                 append_text(buffer, " microseconds\n")
             append_text(buffer, "\nthreads: ")
             append_i64(buffer, profile.thread_count)
+            append_text(buffer, "\ncollection mode: ")
+            if profile.collection_mode.count > NATIVE_ZERO.usize():
+                buffer.extend(profile.collection_mode)
+            else:
+                append_text(buffer, "unavailable")
             append_text(buffer, "\ndropped: ")
             append_i64(buffer, profile.dropped)
             append_text(buffer, "\nthread loss records: ")

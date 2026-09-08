@@ -932,6 +932,7 @@ extend ProfilerNative:
             profile.source_snapshot <- []
             profile.source_digest <- []
             profile.workload <- []
+            profile.collection_mode <- []
             profile.outcome <- []
             profile.functions <- []
             profile.call_edges <- []
@@ -967,6 +968,10 @@ extend ProfilerNative:
             summary_stop: i64 = json_object_end(data, summary_start.usize(), data.count)
             run_stop: i64 = json_object_end(data, run_start.usize(), data.count)
             return false if summary_stop < NATIVE_ZERO or run_stop < NATIVE_ZERO
+
+            mode_start: i64 = json_key_value_start(data, "collection_mode", run_start.usize(), run_stop.usize())
+            if mode_start >= NATIVE_ZERO:
+                return false if not json_read_string_field(data, "collection_mode", run_start.usize(), run_stop.usize(), &profile.collection_mode)
 
             return false if not json_read_number_field(data, "events", summary_start.usize(), summary_stop.usize(), &profile.events)
             return false if not json_read_number_field(data, "locations", summary_start.usize(), summary_stop.usize(), &profile.locations)

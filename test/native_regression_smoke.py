@@ -74,7 +74,7 @@ def main():
         },
         "run": {
             "opt_level": "-O0", "exit_code": 0, "execution_ms_mean": 1.25,
-            "compile_ms": 2.5, "location_timing": True,
+            "compile_ms": 2.5, "collection_mode": "diagnostic", "location_timing": True,
             "repetitions": [{
                 "repetition": 1,
                 "event_trace": [
@@ -300,7 +300,9 @@ def main():
         report["source_snapshot"]["content"] = "embedded <source>"
         report["source_snapshot"]["sha256"] = hashlib.sha256(b"embedded <source>").hexdigest()
         capture.write_text(json.dumps(report), encoding="utf-8")
-        assert run("report", capture, "--format", "text").startswith(b"Elisa profiler")
+        offline_text = run("report", capture, "--format", "text")
+        assert offline_text.startswith(b"Elisa profiler")
+        assert b"collection mode: diagnostic" in offline_text
         embedded_html = run("report", capture, "--format", "html")
         assert b"Source view" in embedded_html
         assert b"source-filter" in embedded_html
@@ -344,6 +346,7 @@ def main():
         assert b"<dt>Locations</dt><dd>2</dd>" in offline_html
         assert b"<dt>Mean execution</dt><dd>1.250 ms</dd>" in offline_html
         assert b"<dt>CPU</dt><dd>unavailable</dd>" in offline_html
+        assert b"<dt>Collection mode</dt><dd>diagnostic</dd>" in offline_html
         assert b"<dt>Measured repetitions</dt><dd>0</dd>" in offline_html
         assert b"edge-filter" in offline_html
         assert b"location-filter" in offline_html
