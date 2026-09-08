@@ -1602,10 +1602,14 @@ extend ProfilerNative:
             return report_error("candidate capture could not be read") if candidate_data.count == NATIVE_ZERO.usize()
             baseline_capture: mutable darray[u8] = []
             candidate_capture: mutable darray[u8] = []
-            return report_error("baseline artifact is malformed or unsupported") if not unwrap_profile_artifact(baseline_data, &baseline_capture)
-            return report_error("candidate artifact is malformed or unsupported") if not unwrap_profile_artifact(candidate_data, &candidate_capture)
-            return report_error("baseline detail arrays contain invalid accounting") if not json_validate_detail_arrays(baseline_capture)
-            return report_error("candidate detail arrays contain invalid accounting") if not json_validate_detail_arrays(candidate_capture)
+            if not unwrap_profile_artifact(baseline_data, &baseline_capture):
+                return report_json_error("malformed_profile_artifact", "baseline artifact is malformed or unsupported") if format_json else report_error("baseline artifact is malformed or unsupported")
+            if not unwrap_profile_artifact(candidate_data, &candidate_capture):
+                return report_json_error("malformed_profile_artifact", "candidate artifact is malformed or unsupported") if format_json else report_error("candidate artifact is malformed or unsupported")
+            if not json_validate_detail_arrays(baseline_capture):
+                return report_json_error("malformed_profile", "baseline detail arrays contain invalid accounting") if format_json else report_error("baseline detail arrays contain invalid accounting")
+            if not json_validate_detail_arrays(candidate_capture):
+                return report_json_error("malformed_profile", "candidate detail arrays contain invalid accounting") if format_json else report_error("candidate detail arrays contain invalid accounting")
             baseline: mutable ComparisonCapture = ComparisonCapture{
                 source: [], workload_identity: [], collection_mode: [], compiler_branch: [], compiler_commit: [], opt_level: [], events: NATIVE_ZERO, locations: NATIVE_ZERO,
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO, sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO, sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
@@ -1616,8 +1620,10 @@ extend ProfilerNative:
                 dropped: NATIVE_ZERO, frame_dropped: NATIVE_ZERO, dropped_call_edges: NATIVE_ZERO, dropped_stacks: NATIVE_ZERO, stack_overflow_entries: NATIVE_ZERO, thread_count: NATIVE_ZERO, trace_events_omitted: NATIVE_ZERO, sample_count: NATIVE_ZERO, sample_missed: NATIVE_ZERO, sample_period_microseconds: NATIVE_ZERO, sampling_setup_failed: NATIVE_ZERO,
                 execution_mean_micros: NATIVE_ZERO, execution_stdev_micros: NATIVE_ZERO, execution_stdev_available: false, execution_ci95_low_micros: NATIVE_ZERO, execution_ci95_high_micros: NATIVE_ZERO, execution_ci95_available: false, requested_repetitions: NATIVE_ZERO, completed_repetitions: NATIVE_ZERO, successful_repetitions: NATIVE_ZERO, failed_repetitions: NATIVE_ZERO, measurement_repetitions: NATIVE_ZERO, compile_micros: NATIVE_ZERO, cpu_micros: NATIVE_ZERO, peak_rss_bytes: NATIVE_ZERO, resource_metrics_available: false, stable_ids_available: false, stable_id_namespace: [], stable_id_version: NATIVE_ZERO, stable_id_contract_known: false, exit_code: NATIVE_ZERO, detail_budget_exceeded: false, functions: [], call_edges: [], stacks: [], location_records: []
             }
-            return report_error("baseline capture is not a supported native JSON profile") if not read_comparison_capture(baseline_capture, &baseline)
-            return report_error("candidate capture is not a supported native JSON profile") if not read_comparison_capture(candidate_capture, &candidate)
+            if not read_comparison_capture(baseline_capture, &baseline):
+                return report_json_error("malformed_profile", "baseline capture is not a supported native JSON profile") if format_json else report_error("baseline capture is not a supported native JSON profile")
+            if not read_comparison_capture(candidate_capture, &candidate):
+                return report_json_error("malformed_profile", "candidate capture is not a supported native JSON profile") if format_json else report_error("candidate capture is not a supported native JSON profile")
             rendered: mutable darray[u8] = []
             gate_status: i64 = append_comparison_report(&rendered, baseline_path, candidate_path, baseline, candidate, format_json, format_html, policy, execution_order)
             if output_path.count > NATIVE_ZERO.usize():
