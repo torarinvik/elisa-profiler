@@ -30,6 +30,11 @@ extend ProfilerNative:
             check_repeated_a(NATIVE_SHA256_BLOCK_BYTES - NATIVE_ONE.usize(), "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34")
             check_repeated_a(NATIVE_SHA256_BLOCK_BYTES, "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb")
             check_repeated_a(NATIVE_SHA256_BLOCK_BYTES + NATIVE_ONE.usize(), "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0")
+            check_repeated_a(NATIVE_TWO.usize() * NATIVE_SHA256_BLOCK_BYTES - NATIVE_SHA256_LENGTH_BYTES - NATIVE_ONE.usize(), "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb")
+            check_repeated_a(NATIVE_TWO.usize() * NATIVE_SHA256_BLOCK_BYTES - NATIVE_SHA256_LENGTH_BYTES, "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c")
+            check_repeated_a(NATIVE_TWO.usize() * NATIVE_SHA256_BLOCK_BYTES - NATIVE_ONE.usize(), "c57e9278af78fa3cab38667bef4ce29d783787a2f731d4e12200270f0c32320a")
+            check_repeated_a(NATIVE_TWO.usize() * NATIVE_SHA256_BLOCK_BYTES, "6836cf13bac400e9105071cd6af47084dfacad4e5e302c94bfed24e013afb73e")
+            check_repeated_a(NATIVE_TWO.usize() * NATIVE_SHA256_BLOCK_BYTES + NATIVE_ONE.usize(), "c12cb024a2e5551cca0e08fce8f1c5e314555cc3fef6329ee994a3db752166ae")
             long_input: mutable darray[u8] = []
             for index in 0..<HASH_SMOKE_LONG_LENGTH |long_input|:
                 long_input.push(HASH_SMOKE_A)
