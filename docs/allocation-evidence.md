@@ -168,8 +168,17 @@ future layout versions remain forward-compatible and are ignored.
 
 Native regression verifies schema validation and lossless offline JSON
 preservation; protocol tests cover malformed fields and uint64 boundaries.
-Compiler emission and map reconciliation are still to be implemented. These
-records alone do not establish a complete region map or lifetime metrics.
+The compiler runtime emits layout on first bump allocation in an empty region,
+on reclaimed-span reuse, and when adoption reindexes the parent chain. This
+includes regions created up front by a region declaration, which need not
+produce an allocation-path `region_create` event. Repeated layouts are valid
+observations, not additional backing allocations. Adoption preserves header
+and data addresses while changing arena ownership and region indices.
+
+Real native fixtures verify that emitted layouts precede and contain their
+allocations, and that adoption preserves backing geometry. Unused regions and
+other lifecycle paths are not yet comprehensively mapped. Map reconciliation
+remains unfinished; these records do not establish complete lifetime metrics.
 
 ### Lifetime-state engine
 

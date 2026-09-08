@@ -1027,6 +1027,33 @@ def main():
             assert any(event["kind"] == "region_free" and event["arena"] == arena
                        and event["sequence"] > transfer["sequence"] for event in adoption_events)
         assert b"arena_adopt" in run("report", adoption_output, "--format", "html")
+        # Real runtime layouts must precede allocations and describe their
+        # actual backing ranges, including precreated and adopted regions.
+        for captured in (tail_report, reuse_report, adopted_reuse, reset_report, rewind_report, adoption_report):
+            repetition = captured["run"]["repetitions"][0]
+            layouts = repetition["region_layouts"]
+            assert layouts
+            for event in repetition["allocation_events"]:
+                if event["kind"] != "alloc":
+                    continue
+                candidates = [layout for layout in layouts
+                              if layout["arena"] == event["arena"] and layout["region"] == event["region"]
+                              and layout["sequence"] < event["sequence"]]
+                assert candidates, event
+                layout = max(candidates, key=lambda item: item["sequence"])
+                assert layout["header_address"] < layout["data_address"] <= event["address"]
+                assert event["address"] + event["size_bytes"] <= layout["data_address"] + layout["capacity_bytes"]
+        child_layouts = [layout for layout in adopted_reuse["run"]["repetitions"][0]["region_layouts"]
+                         if layout["arena"] == adopted_transfer[0]["old_address"]]
+        parent_layouts = [layout for layout in adopted_reuse["run"]["repetitions"][0]["region_layouts"]
+                          if layout["arena"] == adopted_transfer[0]["arena"]]
+        assert child_layouts and parent_layouts
+        for child_layout in child_layouts:
+            assert any(parent_layout["header_address"] == child_layout["header_address"]
+                       and parent_layout["data_address"] == child_layout["data_address"]
+                       and parent_layout["capacity_bytes"] == child_layout["capacity_bytes"]
+                       and parent_layout["region"] > child_layout["region"]
+                       for parent_layout in parent_layouts)
         runtime_trace_output = work / "runtime-trace.json"
         run("profile", ROOT / "examples" / "runtime_trace_workload.elisa", "--mode", "full",
             "--format", "json", "--output", runtime_trace_output)
