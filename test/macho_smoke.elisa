@@ -1,0 +1,93 @@
+include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
+include "../src/profiler/profiler_model.elisa"
+include "../src/profiler/profiler_macho.elisa"
+
+@link_name("read")
+extern macho_test_read(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
+
+extend ProfilerNative:
+    private:
+        const MACHO_TEST_BYTES: usize = 128
+        const MACHO_TEST_SYMBOLS: usize = 104
+        const MACHO_TEST_STRINGS: usize = 120
+        const MACHO_TEST_STRING_BYTES: u32 = 8
+        const MACHO_TEST_CPU: u32 = 0x0100000c
+        const MACHO_TEST_UNKNOWN_MAGIC: u32 = 0xcafebabe
+        const MACHO_TEST_MAX_WORD: u32 = 0xffffffff
+        const MACHO_TEST_BYTE_MASK: u32 = 255
+        const MACHO_TEST_READ_BYTES: usize = 4096
+
+        def macho_test_word(data: mutable darray[u8]&, offset: usize, value: u32) -> void:
+            for index in NATIVE_ZERO.usize()..<MACHO_WORD_BYTES |data, offset, value|:
+                data[offset + index] <- ((value >> (index.u32() * MACHO_BYTE_BITS)) & MACHO_TEST_BYTE_MASK).u8()
+
+        def macho_test_change(data: mutable darray[u8]&, offset: usize, value: u32, expected: MachOIndexStatus) -> void:
+            original: u32 = macho_word(data, offset)
+            macho_test_word(data, offset, value)
+            indexed: mutable MachOIndex = zeroed
+            assert index_macho(data, &indexed) == expected
+            assert not indexed.has_uuid and not indexed.has_symbols
+            macho_test_word(data, offset, original)
+
+    public:
+        def macho_stdin_smoke() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            data: mutable darray[u8] = []
+            chunk: mutable darray[u8] = [NATIVE_ZERO.u8() for _ in NATIVE_ZERO.usize()..<MACHO_TEST_READ_BYTES]
+            while true |data, chunk|:
+                amount: i64 = macho_test_read(NATIVE_ZERO, &chunk[NATIVE_ZERO.usize()], MACHO_TEST_READ_BYTES)
+                return NATIVE_ONE if amount < NATIVE_ZERO
+                break if amount == NATIVE_ZERO
+                for index in NATIVE_ZERO.usize()..<amount.usize() |data, chunk|:
+                    data.push(chunk[index])
+            if data.count > NATIVE_ZERO.usize():
+                indexed: mutable MachOIndex = zeroed
+                assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
+                assert indexed.has_uuid and indexed.has_symbols
+                assert indexed.symbol_count > NATIVE_ZERO.usize()
+            return NATIVE_ZERO
+
+        def macho_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
+            data: mutable darray[u8] = []
+            for unused in NATIVE_ZERO.usize()..<MACHO_TEST_BYTES |data|:
+                data.push(NATIVE_ZERO.u8())
+            uuid_command: usize = MACHO_HEADER_BYTES
+            symbols_command: usize = uuid_command + MACHO_UUID_COMMAND_BYTES
+            macho_test_word(&data, NATIVE_ZERO.usize(), MACHO_MAGIC_64)
+            macho_test_word(&data, MACHO_CPU_OFFSET, MACHO_TEST_CPU)
+            macho_test_word(&data, MACHO_COMMAND_COUNT_OFFSET, NATIVE_TWO.u32())
+            macho_test_word(&data, MACHO_COMMAND_BYTES_OFFSET, (MACHO_UUID_COMMAND_BYTES + MACHO_SYMTAB_COMMAND_BYTES).u32())
+            macho_test_word(&data, uuid_command, MACHO_UUID_COMMAND)
+            macho_test_word(&data, uuid_command + MACHO_WORD_BYTES, MACHO_UUID_COMMAND_BYTES.u32())
+            macho_test_word(&data, symbols_command, MACHO_SYMTAB_COMMAND)
+            macho_test_word(&data, symbols_command + MACHO_WORD_BYTES, MACHO_SYMTAB_COMMAND_BYTES.u32())
+            macho_test_word(&data, symbols_command + MACHO_SYMBOL_OFFSET, MACHO_TEST_SYMBOLS.u32())
+            macho_test_word(&data, symbols_command + MACHO_SYMBOL_COUNT_OFFSET, NATIVE_ONE.u32())
+            macho_test_word(&data, symbols_command + MACHO_STRINGS_OFFSET, MACHO_TEST_STRINGS.u32())
+            macho_test_word(&data, symbols_command + MACHO_STRINGS_SIZE_OFFSET, MACHO_TEST_STRING_BYTES)
+            indexed: mutable MachOIndex = zeroed
+            assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
+            assert indexed.cpu_type == MACHO_TEST_CPU
+            assert indexed.has_uuid and indexed.uuid_offset == uuid_command + MACHO_COMMAND_HEADER_BYTES
+            assert indexed.has_symbols and indexed.symbol_count == NATIVE_ONE.usize()
+            assert indexed.symbol_offset == MACHO_TEST_SYMBOLS and indexed.strings_offset == MACHO_TEST_STRINGS
+            for length in NATIVE_ZERO.usize()..<MACHO_TEST_BYTES |data, indexed|:
+                data.count <- length
+                assert index_macho(data, &indexed) == MachOIndexStatus.Truncated
+                assert not indexed.has_uuid and not indexed.has_symbols
+            data.count <- MACHO_TEST_BYTES
+            macho_test_change(&data, NATIVE_ZERO.usize(), MACHO_TEST_UNKNOWN_MAGIC, MachOIndexStatus.Unsupported)
+            macho_test_change(&data, MACHO_COMMAND_COUNT_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Malformed)
+            macho_test_change(&data, uuid_command + MACHO_WORD_BYTES, NATIVE_ZERO.u32(), MachOIndexStatus.Malformed)
+            macho_test_change(&data, uuid_command + MACHO_WORD_BYTES, (MACHO_UUID_COMMAND_BYTES - MACHO_WORD_BYTES).u32(), MachOIndexStatus.Malformed)
+            macho_test_change(&data, symbols_command, MACHO_UUID_COMMAND, MachOIndexStatus.Malformed)
+            macho_test_change(&data, uuid_command, MACHO_SYMTAB_COMMAND, MachOIndexStatus.Malformed)
+            macho_test_change(&data, symbols_command + MACHO_SYMBOL_COUNT_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Truncated)
+            macho_test_change(&data, symbols_command + MACHO_STRINGS_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Truncated)
+            macho_test_change(&data, symbols_command + MACHO_SYMBOL_OFFSET, NATIVE_ZERO.u32(), MachOIndexStatus.Malformed)
+            macho_test_change(&data, symbols_command + MACHO_STRINGS_OFFSET, MACHO_TEST_SYMBOLS.u32(), MachOIndexStatus.Malformed)
+            assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
+            return NATIVE_ZERO
+
+def main() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+    assert ProfilerNative::macho_smoke() == 0
+    return ProfilerNative::macho_stdin_smoke()

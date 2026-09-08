@@ -1,0 +1,102 @@
+# Bounds-checked thin, little-endian Mach-O metadata indexing. This is not a
+# symbolizer or unwinder. Offsets refer to the caller-owned immutable bytes.
+extend ProfilerNative:
+    private:
+        const MACHO_MAGIC_64: u32 = 0xfeedfacf
+        const MACHO_HEADER_BYTES: usize = 32
+        const MACHO_WORD_BYTES: usize = 4
+        const MACHO_BYTE_BITS: u32 = 8
+        const MACHO_CPU_OFFSET: usize = 4
+        const MACHO_SUBTYPE_OFFSET: usize = 8
+        const MACHO_COMMAND_COUNT_OFFSET: usize = 16
+        const MACHO_COMMAND_BYTES_OFFSET: usize = 20
+        const MACHO_COMMAND_HEADER_BYTES: usize = 8
+        const MACHO_COMMAND_ALIGNMENT: usize = 8
+        const MACHO_UUID_COMMAND: u32 = 27
+        const MACHO_SYMTAB_COMMAND: u32 = 2
+        const MACHO_UUID_COMMAND_BYTES: usize = 24
+        const MACHO_SYMTAB_COMMAND_BYTES: usize = 24
+        const MACHO_SYMBOL_OFFSET: usize = 8
+        const MACHO_SYMBOL_COUNT_OFFSET: usize = 12
+        const MACHO_STRINGS_OFFSET: usize = 16
+        const MACHO_STRINGS_SIZE_OFFSET: usize = 20
+        const MACHO_SYMBOL_BYTES: usize = 16
+
+        enum MachOIndexStatus:
+            Indexed
+            Unsupported
+            Truncated
+            Malformed
+
+        struct MachOIndex:
+            cpu_type: mutable u32
+            cpu_subtype: mutable u32
+            has_uuid: mutable bool
+            uuid_offset: mutable usize
+            has_symbols: mutable bool
+            symbol_offset: mutable usize
+            symbol_count: mutable usize
+            strings_offset: mutable usize
+            strings_size: mutable usize
+
+        # Only called after the containing header/command is bounds checked.
+        def macho_word(data: darray[u8]&, offset: usize) -> u32:
+            result: mutable u32 = NATIVE_ZERO.u32()
+            for index in NATIVE_ZERO.usize()..<MACHO_WORD_BYTES |result, data, offset|:
+                result <- result | (data[offset + index].u32() << (index.u32() * MACHO_BYTE_BITS))
+            return result
+
+        def index_macho(data: darray[u8]&, output: mutable MachOIndex&) -> MachOIndexStatus:
+            output <- zeroed
+            return MachOIndexStatus.Truncated if data.count < MACHO_WORD_BYTES
+            return MachOIndexStatus.Unsupported if macho_word(data, NATIVE_ZERO.usize()) != MACHO_MAGIC_64
+            return MachOIndexStatus.Truncated if data.count < MACHO_HEADER_BYTES
+            count: usize = macho_word(data, MACHO_COMMAND_COUNT_OFFSET).usize()
+            command_bytes: usize = macho_word(data, MACHO_COMMAND_BYTES_OFFSET).usize()
+            return MachOIndexStatus.Truncated if command_bytes > data.count - MACHO_HEADER_BYTES
+            return MachOIndexStatus.Malformed if count > command_bytes / MACHO_COMMAND_HEADER_BYTES
+            stop: usize = MACHO_HEADER_BYTES + command_bytes
+            cursor: mutable usize = MACHO_HEADER_BYTES
+            has_uuid: mutable bool = false
+            uuid_offset: mutable usize = NATIVE_ZERO.usize()
+            has_symbols: mutable bool = false
+            symbol_offset: mutable usize = NATIVE_ZERO.usize()
+            symbol_count: mutable usize = NATIVE_ZERO.usize()
+            strings_offset: mutable usize = NATIVE_ZERO.usize()
+            strings_size: mutable usize = NATIVE_ZERO.usize()
+            for command_index in NATIVE_ZERO.usize()..<count |cursor, data, stop, has_uuid, uuid_offset, has_symbols, symbol_offset, symbol_count, strings_offset, strings_size|:
+                return MachOIndexStatus.Malformed if stop - cursor < MACHO_COMMAND_HEADER_BYTES
+                command: u32 = macho_word(data, cursor)
+                size: usize = macho_word(data, cursor + MACHO_WORD_BYTES).usize()
+                return MachOIndexStatus.Malformed if size < MACHO_COMMAND_HEADER_BYTES or size % MACHO_COMMAND_ALIGNMENT != NATIVE_ZERO.usize()
+                return MachOIndexStatus.Malformed if size > stop - cursor
+                if command == MACHO_UUID_COMMAND:
+                    return MachOIndexStatus.Malformed if has_uuid or size != MACHO_UUID_COMMAND_BYTES
+                    has_uuid <- true
+                    uuid_offset <- cursor + MACHO_COMMAND_HEADER_BYTES
+                elif command == MACHO_SYMTAB_COMMAND:
+                    return MachOIndexStatus.Malformed if has_symbols or size != MACHO_SYMTAB_COMMAND_BYTES
+                    has_symbols <- true
+                    symbol_offset <- macho_word(data, cursor + MACHO_SYMBOL_OFFSET).usize()
+                    symbol_count <- macho_word(data, cursor + MACHO_SYMBOL_COUNT_OFFSET).usize()
+                    strings_offset <- macho_word(data, cursor + MACHO_STRINGS_OFFSET).usize()
+                    strings_size <- macho_word(data, cursor + MACHO_STRINGS_SIZE_OFFSET).usize()
+                    return MachOIndexStatus.Truncated if symbol_offset > data.count or strings_offset > data.count
+                    return MachOIndexStatus.Truncated if symbol_count > (data.count - symbol_offset) / MACHO_SYMBOL_BYTES
+                    return MachOIndexStatus.Truncated if strings_size > data.count - strings_offset
+                    return MachOIndexStatus.Malformed if symbol_count > NATIVE_ZERO.usize() and symbol_offset < stop
+                    return MachOIndexStatus.Malformed if strings_size > NATIVE_ZERO.usize() and strings_offset < stop
+                    if symbol_count > NATIVE_ZERO.usize() and strings_size > NATIVE_ZERO.usize():
+                        return MachOIndexStatus.Malformed if symbol_offset < strings_offset + strings_size and strings_offset < symbol_offset + symbol_count * MACHO_SYMBOL_BYTES
+                cursor <- cursor + size
+            return MachOIndexStatus.Malformed if cursor != stop
+            output.cpu_type <- macho_word(data, MACHO_CPU_OFFSET)
+            output.cpu_subtype <- macho_word(data, MACHO_SUBTYPE_OFFSET)
+            output.has_uuid <- has_uuid
+            output.uuid_offset <- uuid_offset
+            output.has_symbols <- has_symbols
+            output.symbol_offset <- symbol_offset
+            output.symbol_count <- symbol_count
+            output.strings_offset <- strings_offset
+            output.strings_size <- strings_size
+            return MachOIndexStatus.Indexed

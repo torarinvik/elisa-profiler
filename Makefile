@@ -60,7 +60,18 @@ hash-smoke: compiler-manifest-smoke
 		"$(PROFILER_ROOT)/test/hash_smoke.elisa"
 	@"$(PROFILER_ROOT)/build/hash-smoke"
 
-test: hash-smoke
+.PHONY: macho-smoke
+macho-smoke: compiler-manifest-smoke
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_STAGE1_BIN)" -emit exe -O1 -o "$(PROFILER_ROOT)/build/macho-smoke" \
+		"$(PROFILER_ROOT)/test/macho_smoke.elisa"
+	@"$(PROFILER_ROOT)/build/macho-smoke" </dev/null
+	@if test "$$(uname -s)" = Darwin; then \
+		"$(PROFILER_ROOT)/build/macho-smoke" <"$(PROFILER_ROOT)/build/macho-smoke"; \
+	fi
+
+test: hash-smoke macho-smoke
 
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
