@@ -1148,6 +1148,19 @@ static profile_call_path *profile_record_call_path(profile_call_path *parent,
     }
     pthread_mutex_lock(&profile_lock);
     profile_thread_state *thread = profile_get_thread_locked();
+    /* A missing ancestor cannot be reconstructed as a root. Besides avoiding
+     * false root counts, this skips lookups for descendants of dropped paths. */
+    if (parent == NULL && profile_call_depth > 0) {
+        profile_call_path_dropped_count =
+            profile_saturating_increment_u64(profile_call_path_dropped_count);
+        profile_budget_exceeded = 1;
+        if (thread != NULL) {
+            thread->stack_dropped =
+                profile_saturating_increment_u64(thread->stack_dropped);
+        }
+        pthread_mutex_unlock(&profile_lock);
+        return NULL;
+    }
     size_t existing_slot = profile_call_path_capacity == 0
                                ? 0
                                : profile_call_path_hash(parent, function_name, function_id) &

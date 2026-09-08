@@ -529,6 +529,13 @@ or allocation failure drops detail, the corresponding counter is incremented
 and the quality reason is retained. A zero value in a metric is not a synonym
 for missing data; unsupported metrics remain `null` in the schema.
 
+If an ancestor call path was dropped, its descendants are also counted as
+dropped path events: they must not be reconstructed as roots or credited to
+an existing root with the same function name. Function and call-edge counts
+remain independently collectable. Once that subtree returns, a genuine root
+can still update its retained path. The collector skips path-table lookups
+for descendants whose missing ancestry already makes the path unavailable.
+
 `capture_byte_limit` is the shared per-run collector budget. It covers the
 collector's aggregate tables, registered thread state, call-path nodes, and
 estimated retained event-trace records. `capture_bytes_used` is the currently

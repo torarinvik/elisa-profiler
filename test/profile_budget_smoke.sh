@@ -9,6 +9,25 @@ DETAIL_LIMIT=1
 EVENT_TRACE_LIMIT=10
 CAPTURE_BYTE_LIMIT=1024
 
+"${ELISA_CLANG:-clang}" -std=c11 -O2 -fno-builtin -pthread -DELISA_PROFILE_TIMING=1 \
+    "$ROOT/test/collector_path_loss_smoke.c" "$ROOT/scripts/profiler_runtime.c" \
+    -o "$WORK/path-loss"
+ELISA_PROFILE_MODE=functions ELISA_PROFILE_MAX_STACKS="$DETAIL_LIMIT" ELISA_PROFILE_FD=3 \
+    "$WORK/path-loss" 3>"$WORK/path-loss.raw"
+python3 - "$WORK/path-loss.raw" <<'PY'
+import sys
+META_STACK_DROPPED_INDEX = 14
+EXPECTED_DROPPED_PATH_EVENTS = 2
+records = [line.rstrip("\n").split("\t") for line in open(sys.argv[1])]
+paths = [record for record in records if record[2] == "stack"]
+assert len(paths) == 1, paths
+assert paths[0][3:6] == ["root", "2", "2"], paths
+metadata = next(record for record in records if record[2] == "meta")
+assert int(metadata[META_STACK_DROPPED_INDEX]) == EXPECTED_DROPPED_PATH_EVENTS, metadata
+functions = [record for record in records if record[2:4] == ["location", "3"]]
+assert {record[4]: int(record[6]) for record in functions} == {"root": 3, "child": 1}
+PY
+
 ELISA_PROFILE_MAX_LOCATIONS="$DETAIL_LIMIT" \
 ELISA_PROFILE_MAX_CALL_EDGES="$DETAIL_LIMIT" \
 ELISA_PROFILE_MAX_STACKS="$DETAIL_LIMIT" \
