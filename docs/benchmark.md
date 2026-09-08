@@ -379,6 +379,25 @@ repeat emissions (`build/aggregate-committed-self-host.log`). The rebuilt profil
 also passed native and sampling regressions (`build/aggregate-native-regression.log`
 and `build/aggregate-sampling-regression.log`).
 
+## Lambda-argument scan filter (2026-09-08)
+
+Compiler commit `27ffe9f3` avoids the lambda-return checker's declaration scan
+for calls with no direct lambda arguments. Recursive argument traversal remains
+unchanged, so an inner call's invalid lambda still produces its diagnostic.
+
+Two full O0 build pairs measured baseline/candidate wall times of 96.38/92.66
+and 96.43/92.69 seconds, with order reversed in the second pair. User CPU times
+were 95.80/92.09 and 95.89/91.99 seconds. All four objects were byte-identical:
+about 3.9% less wall time against `37a988dd` on this host. Both binaries were
+self-hosted and used identical source/output paths. These are incremental
+measurements, not an additive claim with earlier gains. Logs:
+`build/lambda-full-{baseline,candidate}.log` and their `-reverse.log` variants.
+
+All 385 diagnostic fixtures plus two nested-call fixtures matched baseline exit
+status, diagnostic bytes, and successful LLVM output, including existing refusals.
+The accepted nested-call fixture also returned 42 at runtime. Fresh bootstrap
+validation of the committed revision is pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
