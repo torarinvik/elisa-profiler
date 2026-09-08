@@ -27,12 +27,23 @@ and `timestamp_ns` are nonnegative uint64 values. `repetition` is positive and
 must match the containing repetition. JSON readers must retain integer
 precision; JavaScript `Number` cannot represent all these values exactly.
 
-The wire records use the existing version-1 capture framing. The hook symbol
-itself does not yet negotiate an ABI version. Its current signature is
-`elisa_profile_allocation_event(uint32_t, uintptr_t, size_t, uintptr_t,
-size_t, uintptr_t, size_t)`; the compiler runtime supplies a weak no-op and
-the collector supplies the strong definition. Do not assume compatibility
-with an arbitrary prebuilt executable merely because full mode was selected.
+The wire records use version-1 capture framing, independently of hook ABI
+versioning. The current runtime requests exact version 1 through
+`elisa_profile_allocation_negotiate(uint32_t) -> uint32_t`. A reply of 1
+permits calls to `elisa_profile_allocation_event_v1(uint32_t, uintptr_t,
+size_t, uintptr_t, size_t, uintptr_t, size_t)`. Zero means unsupported; other
+requested versions are rejected, not silently interpreted as version 1.
+The ordinary executable shim returns zero and supplies a weak no-op v1 event
+function. The collector supplies strong implementations. Negotiation is
+allocation-free, stateless, and independent of the selected capture mode.
+
+The collector retains the unversioned `elisa_profile_allocation_event` entry
+point for older runtime objects. Such calls do not prove negotiation occurred.
+Captured artifacts do not yet distinguish legacy producers from negotiated
+ones or report the cause of an unsuccessful negotiation. In particular,
+`active` remains observed hook evidence, not an ABI-handshake claim. Do not
+assume compatibility with an arbitrary prebuilt executable merely because
+full mode was selected. Unsuccessful negotiation emits no v1 events.
 
 | Code | Kind | Current emitted meaning |
 | --- | --- | --- |

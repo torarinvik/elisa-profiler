@@ -1321,10 +1321,22 @@ static int profile_allocation_buffer_grow_locked(profile_thread_state *thread) {
     return 1;
 }
 
+enum {
+    PROFILE_ALLOCATION_ABI_UNSUPPORTED = 0,
+    PROFILE_ALLOCATION_ABI_V1 = 1
+};
+
+/* Exact-version negotiation is allocation-free and independent of capture
+ * mode: support for the calling convention is not evidence of collection. */
+uint32_t elisa_profile_allocation_negotiate(uint32_t requested_version) {
+    return requested_version == PROFILE_ALLOCATION_ABI_V1
+        ? PROFILE_ALLOCATION_ABI_V1 : PROFILE_ALLOCATION_ABI_UNSUPPORTED;
+}
+
 /* Strong override of the compiler runtime's weak no-op hook. The callback
  * records only fixed-width data; formatting, sorting, and protocol I/O wait
  * until profile_dump_body holds the collector lock. */
-void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
+void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
                                      size_t size, uintptr_t old_address,
                                      size_t old_size, uintptr_t arena,
                                      size_t region) {
@@ -1374,6 +1386,16 @@ void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
         profile_saturating_increment_u64(profile_allocation_event_count);
     pthread_mutex_unlock(&profile_lock);
     profile_allocation_callback_busy = 0;
+}
+
+/* Compatibility entry point for previously built runtime objects. It does
+ * not prove that the producer negotiated the versioned interface. */
+void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
+                                   size_t size, uintptr_t old_address,
+                                   size_t old_size, uintptr_t arena,
+                                   size_t region) {
+    elisa_profile_allocation_event_v1(kind, address, size, old_address,
+                                      old_size, arena, region);
 }
 
 #if ELISA_PROFILE_TIMING

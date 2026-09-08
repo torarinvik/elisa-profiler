@@ -135,9 +135,18 @@ int main(void) {
     assert(profile_call_path_dropped_count == 2);
     fail_allocations = 0;
     const uint64_t allocation_events_before = profile_allocation_event_count;
+    assert(elisa_profile_allocation_negotiate(PROFILE_ALLOCATION_ABI_V1) ==
+           PROFILE_ALLOCATION_ABI_V1);
+    assert(elisa_profile_allocation_negotiate(PROFILE_ALLOCATION_ABI_UNSUPPORTED) ==
+           PROFILE_ALLOCATION_ABI_UNSUPPORTED);
+    assert(elisa_profile_allocation_negotiate(PROFILE_ALLOCATION_ABI_V1 + 1) ==
+           PROFILE_ALLOCATION_ABI_UNSUPPORTED);
+    assert(elisa_profile_allocation_negotiate(UINT32_MAX) ==
+           PROFILE_ALLOCATION_ABI_UNSUPPORTED);
+    assert(profile_allocation_event_count == allocation_events_before);
     const size_t allocation_records_before =
         profile_current_thread == NULL ? 0 : profile_current_thread->allocation_size;
-    elisa_profile_allocation_event(PROFILE_ALLOCATION_ALLOC,
+    elisa_profile_allocation_event_v1(PROFILE_ALLOCATION_ALLOC,
                                     (uintptr_t)0x1000, 24,
                                     0, 0, (uintptr_t)0x2000, 3);
     assert(profile_allocation_event_count == allocation_events_before + 1);
@@ -162,6 +171,12 @@ int main(void) {
     assert(profile_allocation_dropped_count == allocation_dropped_before);
     assert(profile_allocation_callback_busy == 0);
     profile_dumped = 0;
+    /* Legacy producers remain usable, without claiming ABI negotiation. */
+    elisa_profile_allocation_event(PROFILE_ALLOCATION_ALLOC,
+                                    (uintptr_t)0x1001, 8,
+                                    0, 0, (uintptr_t)0x2000, 3);
+    assert(profile_allocation_event_count == allocation_events_before + 2);
+    assert(profile_current_thread->allocation_size == allocation_records_before + 2);
     elisa_trace_record(NULL, repeat_line);
     elisa_trace_record(NULL, repeat_line);
     assert(profile_find_locked("<unknown>", NULL, repeat_line,
