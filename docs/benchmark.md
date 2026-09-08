@@ -373,7 +373,10 @@ All 385 diagnostic fixtures plus two new multi-slot fixtures matched baseline
 exit statuses, diagnostics, and successful LLVM output; this includes existing
 refusals. The accepted two-slot fixture also executed and returned 42, while
 the rejected fixture retained the expected `[?, &]` versus actual `[?, ?]`
-diagnostic. The committed revision's fresh bootstrap validation is pending.
+diagnostic. The committed revision passed fresh bootstrap validation: five
+initial probes, full compiler emission, byte-identical gen3/gen4, and all 40
+repeat emissions (`build/aggregate-committed-self-host.log`). Profiler regression
+validation is tracked separately.
 
 ## Promote a local baseline
 
