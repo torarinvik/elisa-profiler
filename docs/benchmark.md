@@ -398,7 +398,9 @@ status, diagnostic bytes, and successful LLVM output, including existing refusal
 The accepted nested-call fixture also returned 42 at runtime. Fresh bootstrap
 validation of the committed revision passed: five initial probes, full compiler
 emission, byte-identical gen3/gen4, and all 40 repeat emissions. Evidence:
-`build/lambda-committed-self-host.log`. Profiler regressions are tracked separately.
+`build/lambda-committed-self-host.log`. The rebuilt profiler passed native and
+sampling regressions (`build/lambda-native-regression.log` and
+`build/lambda-sampling-regression.log`).
 
 ## Promote a local baseline
 
