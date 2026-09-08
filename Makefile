@@ -67,6 +67,8 @@ compiler-seed:
 			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)"; \
 		fi
 
+# Instrument targets, not the profiler's own hashing/decoding loops. Self tracing
+# invokes runtime trace hooks during preparation and severely distorts CLI cost.
 profiler-native:
 	@test -x "$(NATIVE_COMPILER_SCRIPT)" || { echo "stage1 compiler wrapper missing: $(NATIVE_COMPILER_SCRIPT)" >&2; exit 2; }
 	@test -x "$(NATIVE_STAGE1_BIN)" || { echo "stage1 compiler missing: $(NATIVE_STAGE1_BIN) (run make compiler-seed)" >&2; exit 2; }
@@ -75,7 +77,7 @@ profiler-native:
 	@set -eu; native_build="$$(mktemp -d "$(PROFILER_ROOT)/bin/.native-build.XXXXXX")"; \
 		trap 'rm -rf "$$native_build"' EXIT; \
 		ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
-		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -ftrace -O0 -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
+		"$(NATIVE_COMPILER_SCRIPT)" -emit exe -O0 -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
 		mv "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_BIN)"
 	@stage0="$${ELISACORE_BIN:-$(STAGE0_BIN)}"; \
 		if test -n "$$stage0"; then \
