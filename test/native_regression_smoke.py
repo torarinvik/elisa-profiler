@@ -800,6 +800,23 @@ def main():
             "--format", "html", "--output", allocation_html)
         assert b"Memory and regions" in allocation_html.read_bytes()
         assert b"Raw allocation lifecycle records" in allocation_html.read_bytes()
+        tail_output = work / "arena-tail-growth.json"
+        run("profile", ROOT / "examples" / "arena_tail_growth_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", tail_output)
+        tail_report = json.loads(tail_output.read_text(encoding="utf-8"))
+        assert tail_report["summary"]["capture_complete"] is True
+        tail_events = tail_report["run"]["repetitions"][0]["allocation_events"]
+        tail_growth = [event for event in tail_events if event["kind"] == "realloc_in_place"]
+        assert len(tail_growth) == 2
+        first_growth, full_growth = tail_growth
+        assert first_growth["address"] != 0
+        assert first_growth["address"] == first_growth["old_address"] == full_growth["address"] == full_growth["old_address"]
+        assert first_growth["arena"] == full_growth["arena"]
+        assert first_growth["region"] == full_growth["region"]
+        assert first_growth["size_bytes"] == full_growth["old_size_bytes"]
+        assert first_growth["old_size_bytes"] * 12 == first_growth["size_bytes"] * 10
+        assert full_growth["old_size_bytes"] * 16 == full_growth["size_bytes"] * 12
+        assert not any(event["kind"] == "realloc_move" for event in tail_events)
         adoption_output = work / "arena-adoption.json"
         run("profile", ROOT / "examples" / "arena_adoption_workload.elisa", "--mode", "full",
             "--format", "json", "--output", adoption_output)

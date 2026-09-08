@@ -49,6 +49,13 @@ their cross-operation arena identities can be inconsistent and must not be used
 to reconstruct lifetimes. The arena adoption regression checks allocation,
 transfer, and cleanup identity agreement in current builds.
 
+Tail growth consumes only the additional pointer-sized slots. The tail-capacity
+regression grows an allocation within its current region and then to exact
+capacity, checking that both operations keep the address and emit
+`realloc_in_place` with consecutive old/new sizes. An earlier runtime compared
+the full new size against unused capacity, causing false fixed-region overflow
+or unnecessary relocation in chained arenas.
+
 ## Loss and collection boundaries
 
 The collector uses fixed-width records, a shared capture-byte budget, and a
