@@ -576,6 +576,22 @@ variants. Fresh bootstrap on `51abe116` passed five probes, full compiler emissi
 passed native and sampling regressions (`build/refinement-lookup-native-regression.log`
 and `build/refinement-lookup-sampling-regression.log`).
 
+## Compact linear-mutable rebind claims (2026-09-08)
+
+The reassignment checker now collects its rebind-claim annotation subset once,
+preserving original rows, order, and duplicates. All 387 selected diagnostic and
+threading comparisons matched statuses, messages, and successful LLVM output.
+A direct semantic harness verifies that the parser retains the trailing receiver
+claim in `rebind ... = get ...` and that only the dropped-receiver case receives
+the expected diagnostic, at its exact source line.
+
+Full O0 baseline/candidate wall times were 68.98/66.31 seconds and, reversing
+order, 69.14/66.29 seconds. User CPU times were 68.09/65.49 and 68.32/65.50.
+All four emitted objects were byte-identical: 3.9–4.1% less wall time against
+`51abe116` on identical current source with self-hosted binaries. Logs:
+`build/rebind-filter-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
