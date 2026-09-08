@@ -21,6 +21,19 @@ module AllocationLifetimesSmoke:
 
     public:
         def run() -> i64:
+            sized: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&sized, ARENA, ADDRESS, BYTES) != ZERO
+            assert not ElisaProfilerAllocationLifetimes::observe_sized_release(&sized, ARENA, ADDRESS, BYTES + ONE)
+            assert sized.quality == ElisaProfilerAllocationLifetimes::QUALITY_SIZE_MISMATCH
+            assert sized.live_bytes == BYTES and sized.entries[FIRST_ENTRY].live
+            assert not ElisaProfilerAllocationLifetimes::observe_sized_release(&sized, ARENA, ADDRESS, BYTES)
+            matching: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&matching, ARENA, ADDRESS, ZERO) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_sized_release(&matching, ARENA, ADDRESS, ZERO)
+            assert matching.quality == ElisaProfilerAllocationLifetimes::QUALITY_EXACT
+            assert not matching.entries[FIRST_ENTRY].live
+            assert not ElisaProfilerAllocationLifetimes::observe_sized_release(&matching, ARENA, ADDRESS, ZERO)
+            assert matching.quality == ElisaProfilerAllocationLifetimes::QUALITY_MISSING_EVENT
             state: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
             first: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&state, ARENA, ADDRESS, BYTES)
             assert first != ZERO

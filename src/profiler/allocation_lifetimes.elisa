@@ -150,6 +150,19 @@ module ElisaProfilerAllocationLifetimes:
             invalidate(state, QUALITY_MISSING_EVENT)
             return false
 
+        # Raw reclaim records carry an old size. Validate it before retiring
+        # an entry; a contradictory size must not partially update live bytes.
+        def observe_sized_release(state: mutable State&, arena: u64, address: u64, old_size: u64) -> bool can[Abort.Panic]:
+            return false if state.quality != QUALITY_EXACT
+            for index in 0..<state.entries.count |state, arena, address, old_size|:
+                if state.entries[index].live and state.entries[index].arena == arena and state.entries[index].address == address:
+                    if state.entries[index].size_bytes != old_size:
+                        invalidate(state, QUALITY_SIZE_MISMATCH)
+                        return false
+                    return observe_release(state, arena, address)
+            invalidate(state, QUALITY_MISSING_EVENT)
+            return false
+
         # Ownership transfer does not allocate or release logical bytes. Check
         # all collisions before mutation so a rejected transfer is transactional.
         # Region-index remapping is the raw-event reconciler's responsibility.
