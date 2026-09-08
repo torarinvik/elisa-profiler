@@ -135,6 +135,7 @@ int main(void) {
     assert(profile_call_path_dropped_count == 2);
     fail_allocations = 0;
     const uint64_t allocation_events_before = profile_allocation_event_count;
+    assert(atomic_load(&profile_allocation_abi_evidence) == 0);
     assert(elisa_profile_allocation_negotiate(PROFILE_ALLOCATION_ABI_V1) ==
            PROFILE_ALLOCATION_ABI_V1);
     assert(elisa_profile_allocation_negotiate(PROFILE_ALLOCATION_ABI_UNSUPPORTED) ==
@@ -144,12 +145,17 @@ int main(void) {
     assert(elisa_profile_allocation_negotiate(UINT32_MAX) ==
            PROFILE_ALLOCATION_ABI_UNSUPPORTED);
     assert(profile_allocation_event_count == allocation_events_before);
+    assert(atomic_load(&profile_allocation_abi_evidence) ==
+           (PROFILE_ALLOCATION_ABI_NEGOTIATED | PROFILE_ALLOCATION_ABI_REJECTED));
     const size_t allocation_records_before =
         profile_current_thread == NULL ? 0 : profile_current_thread->allocation_size;
     elisa_profile_allocation_event_v1(PROFILE_ALLOCATION_ALLOC,
                                     (uintptr_t)0x1000, 24,
                                     0, 0, (uintptr_t)0x2000, 3);
     assert(profile_allocation_event_count == allocation_events_before + 1);
+    assert(atomic_load(&profile_allocation_abi_evidence) ==
+           (PROFILE_ALLOCATION_ABI_NEGOTIATED | PROFILE_ALLOCATION_ABI_REJECTED |
+            PROFILE_ALLOCATION_ABI_VERSIONED_CALL));
     assert(profile_current_thread != NULL);
     assert(profile_current_thread->allocation_size == allocation_records_before + 1);
     assert(profile_current_thread->allocation_events[allocation_records_before].kind ==
@@ -176,6 +182,9 @@ int main(void) {
                                     (uintptr_t)0x1001, 8,
                                     0, 0, (uintptr_t)0x2000, 3);
     assert(profile_allocation_event_count == allocation_events_before + 2);
+    assert(atomic_load(&profile_allocation_abi_evidence) ==
+           (PROFILE_ALLOCATION_ABI_NEGOTIATED | PROFILE_ALLOCATION_ABI_REJECTED |
+            PROFILE_ALLOCATION_ABI_VERSIONED_CALL | PROFILE_ALLOCATION_ABI_LEGACY));
     assert(profile_current_thread->allocation_size == allocation_records_before + 2);
     elisa_trace_record(NULL, repeat_line);
     elisa_trace_record(NULL, repeat_line);

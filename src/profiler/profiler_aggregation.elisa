@@ -17,6 +17,7 @@ extend ProfilerNative:
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
                 event_record_count: NATIVE_ZERO,
+                allocation_abi_flags: NATIVE_NEGATIVE_ONE,
                 allocation_record_count: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
                 sample_record_count: NATIVE_ZERO,
@@ -302,6 +303,17 @@ extend ProfilerNative:
                 append_text(buffer, ",\"recent_events\":[")
                 buffer.extend(summary.event_records)
                 append_text(buffer, "]")
+            if summary.allocation_abi_flags >= NATIVE_ZERO:
+                flags: i64 = summary.allocation_abi_flags
+                append_text(buffer, ",\"allocation_hook_abi\":{\"negotiated_v1\":")
+                append_text(buffer, "true" if flags / NATIVE_ALLOCATION_ABI_NEGOTIATED % NATIVE_TWO == NATIVE_ONE else "false")
+                append_text(buffer, ",\"legacy_calls\":")
+                append_text(buffer, "true" if flags / NATIVE_ALLOCATION_ABI_LEGACY % NATIVE_TWO == NATIVE_ONE else "false")
+                append_text(buffer, ",\"rejected_version\":")
+                append_text(buffer, "true" if flags / NATIVE_ALLOCATION_ABI_REJECTED % NATIVE_TWO == NATIVE_ONE else "false")
+                append_text(buffer, ",\"v1_calls\":")
+                append_text(buffer, "true" if flags / NATIVE_ALLOCATION_ABI_VERSIONED_CALL % NATIVE_TWO == NATIVE_ONE else "false")
+                append_text(buffer, "}")
             append_text(buffer, ",\"allocation_events\":[")
             buffer.extend(summary.allocation_records)
             append_text(buffer, "]")

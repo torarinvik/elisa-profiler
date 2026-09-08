@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1323,12 +1324,21 @@ static int profile_allocation_buffer_grow_locked(profile_thread_state *thread) {
 
 enum {
     PROFILE_ALLOCATION_ABI_UNSUPPORTED = 0,
-    PROFILE_ALLOCATION_ABI_V1 = 1
+    PROFILE_ALLOCATION_ABI_V1 = 1,
+    PROFILE_ALLOCATION_ABI_NEGOTIATED = 1,
+    PROFILE_ALLOCATION_ABI_LEGACY = 2,
+    PROFILE_ALLOCATION_ABI_REJECTED = 4,
+    PROFILE_ALLOCATION_ABI_VERSIONED_CALL = 8
 };
+static _Atomic uint32_t profile_allocation_abi_evidence;
 
 /* Exact-version negotiation is allocation-free and independent of capture
  * mode: support for the calling convention is not evidence of collection. */
 uint32_t elisa_profile_allocation_negotiate(uint32_t requested_version) {
+    atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
+        requested_version == PROFILE_ALLOCATION_ABI_V1
+            ? PROFILE_ALLOCATION_ABI_NEGOTIATED : PROFILE_ALLOCATION_ABI_REJECTED,
+        memory_order_relaxed);
     return requested_version == PROFILE_ALLOCATION_ABI_V1
         ? PROFILE_ALLOCATION_ABI_V1 : PROFILE_ALLOCATION_ABI_UNSUPPORTED;
 }
@@ -1336,7 +1346,7 @@ uint32_t elisa_profile_allocation_negotiate(uint32_t requested_version) {
 /* Strong override of the compiler runtime's weak no-op hook. The callback
  * records only fixed-width data; formatting, sorting, and protocol I/O wait
  * until profile_dump_body holds the collector lock. */
-void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
+static void profile_collect_allocation_event(uint32_t kind, uintptr_t address,
                                      size_t size, uintptr_t old_address,
                                      size_t old_size, uintptr_t arena,
                                      size_t region) {
@@ -1388,14 +1398,24 @@ void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
     profile_allocation_callback_busy = 0;
 }
 
+void elisa_profile_allocation_event_v1(uint32_t kind, uintptr_t address,
+                                     size_t size, uintptr_t old_address,
+                                     size_t old_size, uintptr_t arena,
+                                     size_t region) {
+    atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
+                            PROFILE_ALLOCATION_ABI_VERSIONED_CALL, memory_order_relaxed);
+    profile_collect_allocation_event(kind, address, size, old_address, old_size, arena, region);
+}
+
 /* Compatibility entry point for previously built runtime objects. It does
  * not prove that the producer negotiated the versioned interface. */
 void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
                                    size_t size, uintptr_t old_address,
                                    size_t old_size, uintptr_t arena,
                                    size_t region) {
-    elisa_profile_allocation_event_v1(kind, address, size, old_address,
-                                      old_size, arena, region);
+    atomic_fetch_or_explicit(&profile_allocation_abi_evidence,
+                            PROFILE_ALLOCATION_ABI_LEGACY, memory_order_relaxed);
+    profile_collect_allocation_event(kind, address, size, old_address, old_size, arena, region);
 }
 
 #if ELISA_PROFILE_TIMING
@@ -2428,6 +2448,11 @@ static void profile_dump_allocation_records(void) {
 }
 
 static void profile_dump_metadata(size_t location_count) {
+    profile_record_begin();
+    profile_record_append_text("extension\tallocation_hook_abi\t1\t");
+    profile_record_append_uint64(atomic_load_explicit(
+        &profile_allocation_abi_evidence, memory_order_relaxed));
+    profile_record_emit();
     profile_record_begin();
     profile_record_append_text("meta\t");
     profile_record_append_uint64(profile_event_count);

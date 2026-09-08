@@ -796,6 +796,10 @@ def main():
             "--format", "json", "--output", allocation_output)
         allocation_report = json.loads(allocation_output.read_text(encoding="utf-8"))
         allocation_events = allocation_report["run"]["repetitions"][0]["allocation_events"]
+        assert allocation_report["run"]["repetitions"][0]["allocation_hook_abi"] == {
+            "negotiated_v1": True, "legacy_calls": False,
+            "rejected_version": False, "v1_calls": True,
+        }
         assert allocation_events
         assert allocation_report["summary"]["allocation_events"] == len(allocation_events)
         assert allocation_report["run"]["capabilities"]["allocation"] == {
@@ -808,6 +812,12 @@ def main():
         malformed_allocation = copy.deepcopy(allocation_report)
         malformed_allocation["run"]["repetitions"][0]["allocation_events"] = {}
         malformed_allocation_output = work / "malformed-allocation.json"
+        for invalid_abi in (None, [], {}, {"negotiated_v1": 1, "legacy_calls": False,
+                                          "rejected_version": False, "v1_calls": True}):
+            malformed_abi = copy.deepcopy(allocation_report)
+            malformed_abi["run"]["repetitions"][0]["allocation_hook_abi"] = invalid_abi
+            malformed_allocation_output.write_text(json.dumps(malformed_abi), encoding="utf-8")
+            run("report", malformed_allocation_output, "--format", "html", ok=False)
         malformed_allocation_output.write_text(json.dumps(malformed_allocation), encoding="utf-8")
         run("report", malformed_allocation_output, "--format", "html", ok=False)
         malformed_allocation_output.write_text(

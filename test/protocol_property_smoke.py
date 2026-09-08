@@ -23,6 +23,9 @@ MAX_I64 = (1 << 63) - 1
 MIN_I64 = -(1 << 63)
 VALUE_RECORD_KIND = 2
 VALUE_FRAME_SEQUENCE = 2
+ALLOCATION_ABI_FLAGS = {"negotiated_v1": 1, "legacy_calls": 2,
+                        "rejected_version": 4, "v1_calls": 8}
+ALLOCATION_ABI_MAX_FLAGS = sum(ALLOCATION_ABI_FLAGS.values())
 MAX_PROTOCOL_FRAME_BYTES = 1024 * 1024
 READ_CHUNK_BYTES = 8192
 META_FIELD_COUNT = 16
@@ -188,6 +191,25 @@ def main() -> int:
         baseline_process, baseline_report = recover(native, work / "baseline", baseline_capture)
         assert baseline_process.returncode == 0, baseline_process.stderr
         assert baseline_report is not None
+        assert "allocation_hook_abi" not in baseline_report["run"]["repetitions"][0]
+
+        for flags in range(ALLOCATION_ABI_MAX_FLAGS + 1):
+            payload = protocol_record("extension", "allocation_hook_abi", 1, flags)
+            process, report = recover(native, work / f"abi-{flags}",
+                                      baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload))
+            assert process.returncode == 0, process.stderr
+            assert report["run"]["repetitions"][0]["allocation_hook_abi"] == {
+                name: bool(flags & mask) for name, mask in ALLOCATION_ABI_FLAGS.items()
+            }
+        for index, fields in enumerate(((1,), (1, -1), (1, ALLOCATION_ABI_MAX_FLAGS + 1),
+                                        (1, "01"), (1, 0, 0), (0, 0))):
+            payload = protocol_record("extension", "allocation_hook_abi", *fields)
+            expect_rejected(native, work / f"abi-invalid-{index}",
+                            baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload), "invalid ABI evidence")
+        payload = protocol_record("extension", "allocation_hook_abi", 1, 0)
+        expect_rejected(native, work / "abi-duplicate",
+                        baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload) + frame(VALUE_FRAME_SEQUENCE + 1, payload),
+                        "duplicate ABI evidence")
 
         # Keep framing valid so failures exercise numeric validation, not checksums.
         for signed, boundary_values in ((False, (0, MAX_I64 + 1, MAX_U64)),

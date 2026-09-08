@@ -252,6 +252,11 @@ module ProfilerNative:
         const NATIVE_PROGRESS_SCHEMA_VERSION: i64 = 1
         const NATIVE_PROTOCOL_KIND_STATEMENT: i64 = 1
         const NATIVE_PROTOCOL_KIND_VALUE: i64 = 2
+        const NATIVE_ALLOCATION_ABI_NEGOTIATED: i64 = 1
+        const NATIVE_ALLOCATION_ABI_LEGACY: i64 = 2
+        const NATIVE_ALLOCATION_ABI_REJECTED: i64 = 4
+        const NATIVE_ALLOCATION_ABI_VERSIONED_CALL: i64 = 8
+        const NATIVE_ALLOCATION_ABI_MAX_FLAGS: i64 = 15
         const NATIVE_PROTOCOL_KIND_FUNCTION: i64 = 3
         const NATIVE_PROTOCOL_ALLOCATION_ALLOC: i64 = 1
         const NATIVE_PROTOCOL_ALLOCATION_REALLOC_IN_PLACE: i64 = 2
@@ -473,6 +478,7 @@ module ProfilerNative:
             call_edge_record_count: mutable i64
             stack_record_count: mutable i64
             event_record_count: mutable i64
+            allocation_abi_flags: mutable i64
             allocation_record_count: mutable i64
             allocation_dropped: mutable i64
             thread_loss_record_count: mutable i64

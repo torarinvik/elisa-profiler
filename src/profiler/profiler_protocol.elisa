@@ -789,6 +789,7 @@ extend ProfilerNative:
                 call_edge_record_count: NATIVE_ZERO,
                 stack_record_count: NATIVE_ZERO,
                 event_record_count: NATIVE_ZERO,
+                allocation_abi_flags: NATIVE_NEGATIVE_ONE,
                 allocation_record_count: NATIVE_ZERO,
                 allocation_dropped: NATIVE_ZERO,
                 thread_loss_record_count: NATIVE_ZERO,
@@ -1020,6 +1021,19 @@ extend ProfilerNative:
                     elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\tpath\t"):
                         cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\tpath\t")
                         append_event_record(&summary, &event_records, data, &cursor, line_stop, source, repetition)
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tallocation_hook_abi\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tallocation_hook_abi\t")
+                        version: i64 = parse_protocol_number(data, &cursor, line_stop)
+                        if version < NATIVE_ONE:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                        elif version == NATIVE_ONE:
+                            flags: i64 = parse_protocol_number(data, &cursor, line_stop)
+                            if summary.allocation_abi_flags != NATIVE_NEGATIVE_ONE or flags < NATIVE_ZERO or flags > NATIVE_ALLOCATION_ABI_MAX_FLAGS or cursor != line_stop:
+                                summary.malformed <- true
+                                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                            else:
+                                summary.allocation_abi_flags <- flags
                     elif frame_valid and line_prefix(data, record_start, line_stop, extension_prefix):
                         # Extensions are transport-level records. Their framing,
                         # sequence, length, and checksum have already been

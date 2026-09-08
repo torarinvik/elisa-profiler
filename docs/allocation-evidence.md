@@ -39,8 +39,25 @@ allocation-free, stateless, and independent of the selected capture mode.
 
 The collector retains the unversioned `elisa_profile_allocation_event` entry
 point for older runtime objects. Such calls do not prove negotiation occurred.
-Captured artifacts do not yet distinguish legacy producers from negotiated
-ones or report the cause of an unsuccessful negotiation. In particular,
+New captures include an optional `allocation_hook_abi` object in each measured
+repetition. Its boolean fields record successful `negotiated_v1`, `v1_calls`,
+`legacy_calls`, and `rejected_version` observations. They can coexist when a
+process contains multiple producers. The collector snapshots atomic evidence
+flags when writing metadata; the flags are not event counts or a proof of
+complete coverage. A v1 call does not itself prove negotiation occurred.
+Older or interrupted captures can omit this object: absence means unknown,
+not false. A rejected request means the producer requested an unsupported
+version; the current collector supports exact version 1. The requested version
+number is not retained. A target linked only to a no-op shim cannot report its
+rejection to this collector.
+
+The framed extension payload is `extension\tallocation_hook_abi\t1\tFLAGS`.
+Bits 1, 2, 4, and 8 mean negotiated v1, legacy calls, rejected requests, and
+v1 calls respectively. The v1 decoder requires one canonical integer from 0
+through 15 and rejects duplicate v1 records. Unknown future extension versions
+are ignored rather than interpreted using the v1 layout. Missing metadata,
+including a dropped metadata frame, does not imply zero observations.
+
 `active` remains observed hook evidence, not an ABI-handshake claim. Do not
 assume compatibility with an arbitrary prebuilt executable merely because
 full mode was selected. Unsuccessful negotiation emits no v1 events.

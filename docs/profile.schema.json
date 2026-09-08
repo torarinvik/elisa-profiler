@@ -547,7 +547,18 @@
           "type": "array",
           "items": { "$ref": "#/$defs/allocation_event" }
         },
-        "allocation_events_dropped": { "type": "integer", "minimum": 0 }
+        "allocation_events_dropped": { "type": "integer", "minimum": 0 },
+        "allocation_hook_abi": {
+          "type": "object",
+          "required": ["negotiated_v1", "legacy_calls", "rejected_version", "v1_calls"],
+          "properties": {
+            "negotiated_v1": { "type": "boolean" },
+            "legacy_calls": { "type": "boolean" },
+            "rejected_version": { "type": "boolean" },
+            "v1_calls": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
       },
       "additionalProperties": true
     },
