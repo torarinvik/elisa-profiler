@@ -251,3 +251,13 @@ path completed but showed no consistent speedup in three paired trials.
 The optimized build was not installed. The existing argument-forwarding
 regression catches this failure; optimized hash vectors alone do not qualify
 an optimized profiler for use.
+
+The cache-preparation trap was subsequently isolated to a profiler error:
+`prepare_native_build_cache` passed `&cache` to a helper even though `cache`
+was already a `NativeBuildCache&`. This handed the helper a reference slot
+instead of the struct. Stage 0 rejects the extra reference level; stage 1
+currently accepts it, a remaining diagnostic gap. Passing `cache` directly
+fixes all four affected status paths. The native regression now checks the
+disabled-cache status and explanation explicitly. This is not sufficient to
+enable `-O2`: the optimized build subsequently fails in offline text reporting,
+which still needs investigation.

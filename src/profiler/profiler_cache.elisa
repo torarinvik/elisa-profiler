@@ -253,7 +253,7 @@ extend ProfilerNative:
         ) -> void can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
             cache <- empty_native_build_cache()
             if not requested:
-                cache_set_status(&cache, "disabled", "disabled; pass --cache-dir PATH to enable")
+                cache_set_status(cache, "disabled", "disabled; pass --cache-dir PATH to enable")
                 return
             cache.enabled <- true
             cache.key <- []
@@ -264,16 +264,16 @@ extend ProfilerNative:
             compiler_tool_digest: darray[u8] = cache_path_identity(compiler_tool)
             objcopy_tool_digest: darray[u8] = cache_path_identity(objcopy_tool)
             if stage1_digest.count == NATIVE_ZERO.usize() or wrapper_digest.count == NATIVE_ZERO.usize() or runtime_digest.count == NATIVE_ZERO.usize() or collector_digest.count == NATIVE_ZERO.usize() or compiler_tool_digest.count == NATIVE_ZERO.usize() or objcopy_tool_digest.count == NATIVE_ZERO.usize():
-                cache_set_status(&cache, "bypass", "bypass; a build input could not be hashed")
+                cache_set_status(cache, "bypass", "bypass; a build input could not be hashed")
                 return
             computed_key: darray[u8] = cache_key(source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_dirty_metadata, stage1_digest, wrapper_digest, runtime_digest, collector_digest, compiler_tool_digest, objcopy_tool_digest, opt_level, host, functions_only)
             cache.key <- []
             cache.key.extend(computed_key)
             if cache.key.count == NATIVE_ZERO.usize():
-                cache_set_status(&cache, "bypass", "bypass; cache key could not be computed")
+                cache_set_status(cache, "bypass", "bypass; cache key could not be computed")
                 return
             if not cache_directory_ready(directory):
-                cache_set_status(&cache, "bypass", "bypass; cache directory is unavailable")
+                cache_set_status(cache, "bypass", "bypass; cache directory is unavailable")
                 return
             cache_copy_text(cache.status, "miss")
             cache_copy_text(cache.explanation, "miss; no validated cache entry")

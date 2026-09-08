@@ -161,6 +161,9 @@ def main():
         work = Path(directory)
         forwarded_help = json.loads(run("profile", ROOT / "examples" / "hot_loop.elisa", "--", "--help"))
         assert forwarded_help["workload"]["arguments"] == ["--help"]
+        assert forwarded_help["build_cache"]["enabled"] is False
+        assert forwarded_help["build_cache"]["status"] == "disabled"
+        assert forwarded_help["build_cache"]["explanation"] == "disabled; pass --cache-dir PATH to enable"
         # Existing host ABI fixture emits trace callbacks but no allocation hooks.
         # Merely selecting full mode must not imply allocation coverage.
         hookless_target = work / "hookless-target"
