@@ -38,6 +38,11 @@ truncation, duplicate metadata commands, invalid sizes, and overlapping tables
 are handled explicitly; failed parses clear the output index. It is not a
 complete Mach-O loader validator, address resolver, or native capture backend,
 and is not yet connected to the profiler CLI.
+Its symbol decoder preserves raw type, section, and 64-bit value fields and
+returns borrowed name ranges without allocating strings. It checks table
+bounds again before reading, handles the specified zero-index empty name,
+and rejects invalid string offsets and missing terminators. Symbol values
+are not yet resolved to runtime addresses or interpreted as function ranges.
 
 The native collector's low-level signal and descriptor policy is currently a
 POSIX implementation detail. Porting another host requires an audited FFI

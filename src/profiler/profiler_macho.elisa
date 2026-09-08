@@ -21,6 +21,49 @@ extend ProfilerNative:
         const MACHO_STRINGS_OFFSET: usize = 16
         const MACHO_STRINGS_SIZE_OFFSET: usize = 20
         const MACHO_SYMBOL_BYTES: usize = 16
+        const MACHO_SYMBOL_TYPE_OFFSET: usize = 4
+        const MACHO_SYMBOL_SECTION_OFFSET: usize = 5
+        const MACHO_SYMBOL_VALUE_OFFSET: usize = 8
+        const MACHO_VALUE_BYTES: usize = 8
+
+        struct MachOSymbol:
+            kind: mutable u8
+            section: mutable u8
+            value: mutable u64
+            name_start: mutable usize
+            name_stop: mutable usize
+
+        # Decode without copying names. A zero string index means an empty name,
+        # regardless of the string table contents (Mach-O nlist contract).
+        # Recheck ranges so a stale index cannot cause an out-of-bounds read.
+        def macho_symbol(data: darray[u8]&, indexed: MachOIndex&, ordinal: usize, output: mutable MachOSymbol&) -> bool:
+            output <- zeroed
+            return false if not indexed.has_symbols or ordinal >= indexed.symbol_count
+            return false if indexed.symbol_offset > data.count or indexed.strings_offset > data.count
+            return false if indexed.symbol_count > (data.count - indexed.symbol_offset) / MACHO_SYMBOL_BYTES
+            return false if indexed.strings_size > data.count - indexed.strings_offset
+            entry: usize = indexed.symbol_offset + ordinal * MACHO_SYMBOL_BYTES
+            name_index: usize = macho_word(data, entry).usize()
+            start: mutable usize = indexed.strings_offset
+            stop: mutable usize = start
+            if name_index != NATIVE_ZERO.usize():
+                return false if name_index >= indexed.strings_size
+                start <- start + name_index
+                stop <- start
+                limit: usize = indexed.strings_offset + indexed.strings_size
+                while stop < limit |stop, data, limit|:
+                    break if data[stop] == NATIVE_ZERO.u8()
+                    stop <- stop + NATIVE_ONE.usize()
+                return false if stop == limit
+            value: mutable u64 = NATIVE_ZERO.u64()
+            for byte in NATIVE_ZERO.usize()..<MACHO_VALUE_BYTES |value, data, entry|:
+                value <- value | (data[entry + MACHO_SYMBOL_VALUE_OFFSET + byte].u64() << (byte.u32() * MACHO_BYTE_BITS))
+            output.kind <- data[entry + MACHO_SYMBOL_TYPE_OFFSET]
+            output.section <- data[entry + MACHO_SYMBOL_SECTION_OFFSET]
+            output.value <- value
+            output.name_start <- start
+            output.name_stop <- stop
+            return true
 
         enum MachOIndexStatus:
             Indexed

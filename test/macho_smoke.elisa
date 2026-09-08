@@ -14,6 +14,7 @@ extend ProfilerNative:
         const MACHO_TEST_CPU: u32 = 0x0100000c
         const MACHO_TEST_UNKNOWN_MAGIC: u32 = 0xcafebabe
         const MACHO_TEST_MAX_WORD: u32 = 0xffffffff
+        const MACHO_TEST_MAX_VALUE: u64 = 0xffffffffffffffff
         const MACHO_TEST_BYTE_MASK: u32 = 255
         const MACHO_TEST_READ_BYTES: usize = 4096
 
@@ -44,6 +45,9 @@ extend ProfilerNative:
                 assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
                 assert indexed.has_uuid and indexed.has_symbols
                 assert indexed.symbol_count > NATIVE_ZERO.usize()
+                symbol: mutable MachOSymbol = zeroed
+                for ordinal in NATIVE_ZERO.usize()..<indexed.symbol_count |data, indexed, symbol|:
+                    assert macho_symbol(data, indexed, ordinal, &symbol)
             return NATIVE_ZERO
 
         def macho_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
@@ -86,6 +90,32 @@ extend ProfilerNative:
             macho_test_change(&data, symbols_command + MACHO_SYMBOL_OFFSET, NATIVE_ZERO.u32(), MachOIndexStatus.Malformed)
             macho_test_change(&data, symbols_command + MACHO_STRINGS_OFFSET, MACHO_TEST_SYMBOLS.u32(), MachOIndexStatus.Malformed)
             assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
+            symbol: mutable MachOSymbol = zeroed
+            assert macho_symbol(data, indexed, NATIVE_ZERO.usize(), &symbol)
+            assert symbol.name_start == symbol.name_stop
+            macho_test_word(&data, MACHO_TEST_SYMBOLS, NATIVE_ONE.u32())
+            data[MACHO_TEST_STRINGS + NATIVE_ONE.usize()] <- MACHO_TEST_BYTE_MASK.u8()
+            data[MACHO_TEST_SYMBOLS + MACHO_SYMBOL_TYPE_OFFSET] <- MACHO_TEST_BYTE_MASK.u8()
+            data[MACHO_TEST_SYMBOLS + MACHO_SYMBOL_SECTION_OFFSET] <- NATIVE_ONE.u8()
+            macho_test_word(&data, MACHO_TEST_SYMBOLS + MACHO_SYMBOL_VALUE_OFFSET, MACHO_TEST_MAX_WORD)
+            macho_test_word(&data, MACHO_TEST_SYMBOLS + MACHO_SYMBOL_VALUE_OFFSET + MACHO_WORD_BYTES, MACHO_TEST_MAX_WORD)
+            assert macho_symbol(data, indexed, NATIVE_ZERO.usize(), &symbol)
+            assert symbol.value == MACHO_TEST_MAX_VALUE
+            assert symbol.kind == MACHO_TEST_BYTE_MASK.u8() and symbol.section == NATIVE_ONE.u8()
+            assert symbol.name_stop - symbol.name_start == NATIVE_ONE.usize()
+            assert not macho_symbol(data, indexed, indexed.symbol_count, &symbol)
+            assert symbol.value == NATIVE_ZERO.u64()
+            macho_test_word(&data, MACHO_TEST_SYMBOLS, MACHO_TEST_STRING_BYTES)
+            assert not macho_symbol(data, indexed, NATIVE_ZERO.usize(), &symbol)
+            macho_test_word(&data, MACHO_TEST_SYMBOLS, MACHO_TEST_STRING_BYTES - NATIVE_ONE.u32())
+            data[MACHO_TEST_BYTES - NATIVE_ONE.usize()] <- MACHO_TEST_BYTE_MASK.u8()
+            assert not macho_symbol(data, indexed, NATIVE_ZERO.usize(), &symbol)
+            macho_test_word(&data, MACHO_TEST_SYMBOLS, NATIVE_ZERO.u32())
+            indexed.strings_size <- NATIVE_ZERO.usize()
+            assert macho_symbol(data, indexed, NATIVE_ZERO.usize(), &symbol)
+            data.count <- MACHO_TEST_SYMBOLS
+            assert not macho_symbol(data, indexed, NATIVE_ZERO.usize(), &symbol)
+            data.count <- MACHO_TEST_BYTES
             return NATIVE_ZERO
 
 def main() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
