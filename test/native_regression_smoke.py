@@ -112,12 +112,34 @@ def main():
         identity_candidate_path.write_text(json.dumps(identity_candidate), encoding="utf-8")
         identity_comparison = json.loads(run("compare", identity_baseline_path, identity_candidate_path, "--format", "json"))
         identity_changes = [row for row in identity_comparison["functions"] if row["function"] == "same_readable_name"]
-        assert len(identity_changes) == 2, identity_changes
-        assert {row["match"] for row in identity_changes} == {"removed", "added"}, identity_changes
-        assert any(row["events"]["baseline"] is not None and row["events"]["candidate"] is None for row in identity_changes)
-        assert any(row["events"]["baseline"] is None and row["events"]["candidate"] is not None for row in identity_changes)
+        assert len(identity_changes) == 1, identity_changes
+        assert identity_changes[0]["match"] == "structural", identity_changes
+        assert identity_changes[0]["events"]["baseline"] is not None
+        assert identity_changes[0]["events"]["candidate"] is not None
         assert identity_comparison["baseline"]["identity"] == "compiler_stable_ids"
         assert identity_comparison["candidate"]["identity"] == "compiler_stable_ids"
+        structural_detail_baseline = copy.deepcopy(report)
+        structural_detail_candidate = copy.deepcopy(report)
+        structural_detail_baseline["functions"] = [identity_function]
+        structural_detail_candidate["functions"] = [dict(identity_function, identity_id=IDENTITY_ID_CANDIDATE)]
+        edge = {
+            "caller": "caller", "callee": "callee", "caller_id": 100, "callee_id": 101,
+            "call_events": 2, "completed_calls": 2, "inclusive_ns": 20,
+        }
+        structural_detail_baseline["call_edges"] = [edge]
+        structural_detail_candidate["call_edges"] = [dict(edge, caller_id=200, callee_id=201)]
+        for index, stack in enumerate(structural_detail_baseline["stacks"]):
+            stack["stack_ids"] = str(index + 1)
+        for index, stack in enumerate(structural_detail_candidate["stacks"]):
+            stack["stack_ids"] = str(index + 10)
+        structural_detail_baseline_path = work / "detail-structural-baseline.json"
+        structural_detail_candidate_path = work / "detail-structural-candidate.json"
+        structural_detail_baseline_path.write_text(json.dumps(structural_detail_baseline), encoding="utf-8")
+        structural_detail_candidate_path.write_text(json.dumps(structural_detail_candidate), encoding="utf-8")
+        structural_detail_comparison = json.loads(run("compare", structural_detail_baseline_path, structural_detail_candidate_path, "--format", "json"))
+        assert {row["match"] for row in structural_detail_comparison["functions"]} == {"structural"}
+        assert {row["match"] for row in structural_detail_comparison["call_edges"]} == {"structural"}
+        assert {row["match"] for row in structural_detail_comparison["stacks"]} == {"structural"}
         legacy_candidate = copy.deepcopy(identity_baseline)
         del legacy_candidate["functions"][0]["identity_id"]
         legacy_candidate_path = work / "identity-legacy-candidate.json"

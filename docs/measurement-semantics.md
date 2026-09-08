@@ -391,14 +391,14 @@ domain-specific.
   location records expose optional `identity_id`. Readable names and source
   metadata remain in every record for diagnostics and legacy compatibility.
 - Offline comparison uses those IDs for function, edge, stack, and source-location
-  matching whenever the compared records provide them. Source-location rows
-  then use a bounded structural fallback—source, kind, function, variable,
-  line, signedness, and availability flags—when an ID changed or was absent.
-  The fallback is accepted only when it is unique; duplicate structural
-  candidates remain `ambiguous` and keep requested gates inconclusive. It does
-  not merge a stable-ID function, edge, or stack record with a legacy
-  readable-name record, and it reports a
-  stable-identity coverage mismatch as a warning/inconclusive requested gate.
+  matching whenever the compared records provide them. When an ID changed or
+  was absent, it uses a bounded structural fallback: source-location rows use
+  source, kind, function, variable, line, signedness, and availability flags;
+  functions use name; edges use caller/callee names; and stacks use the
+  readable folded path. Each fallback is accepted only when it is unique;
+  duplicate structural candidates remain `ambiguous` and keep requested gates
+  inconclusive. A stable-identity coverage mismatch remains a warning and makes
+  requested gates inconclusive even when a structural row can be displayed.
   IDs are retained as decimal text at the Elisa parser boundary so values above
   signed 64-bit range remain exact. It also validates the declared stable-ID
   namespace/version and treats an unknown or mismatched contract as the same
@@ -408,8 +408,8 @@ domain-specific.
   arbitrary duplicate. Every function, caller-edge, folded-stack, and
   source-location row in machine-readable comparison output carries `match`:
   `compiler_id` means a one-to-one stable-ID pairing, `readable_name` means a
-  one-to-one legacy fallback pairing, `structural` means a unique source-
-  location pairing after the stable IDs changed or were unavailable,
+  one-to-one legacy fallback pairing, `structural` means a unique structural
+  pairing after the stable IDs changed or were unavailable,
   `added`/`removed` means that the record exists on only one side, and
   `ambiguous` means duplicate candidates prevented a safe pairing. Null metrics
   on an added or removed row therefore describe

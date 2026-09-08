@@ -289,15 +289,28 @@ extend ProfilerNative:
             append_text(buffer, "</td></tr></tbody></table><p class='panel-note'>Use the raw comparison JSON for exact bounds and repetition accounting; an overlapping interval is evidence of uncertainty, not proof that the implementation is equivalent.</p></section>")
 
 
+        def comparison_function_identity_same(record: ComparisonFunctionRecord, subject: ComparisonFunctionRecord) -> bool can[Abort.Panic]:
+            if subject.identity_id.count > NATIVE_ZERO.usize():
+                return record.repetition == subject.repetition and record.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_id, subject.identity_id)
+            return record.repetition == subject.repetition and record.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(record.function, subject.function)
+
+
+        def comparison_function_structural_same(record: ComparisonFunctionRecord, subject: ComparisonFunctionRecord) -> bool can[Abort.Panic]:
+            return record.repetition == subject.repetition and byte_arrays_equal(record.function, subject.function)
+
+
         def comparison_function_index(records: darray[ComparisonFunctionRecord]&, subject: ComparisonFunctionRecord) -> i64 can[Abort.Panic]:
             matched: mutable i64 = NATIVE_NEGATIVE_ONE
-            for index in 0..<records.count |index, records, subject|:
+            for index in 0..<records.count |index, records, subject, matched|:
                 candidate: ComparisonFunctionRecord = records[index]
-                if subject.identity_id.count > NATIVE_ZERO.usize():
-                    if candidate.repetition == subject.repetition and candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id):
-                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
-                        matched <- index.i64()
-                elif candidate.repetition == subject.repetition and candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function):
+                if comparison_function_identity_same(candidate, subject):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched if matched >= NATIVE_ZERO
+            matched <- NATIVE_NEGATIVE_ONE
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonFunctionRecord = records[index]
+                if comparison_function_structural_same(candidate, subject):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -307,12 +320,14 @@ extend ProfilerNative:
             matched: mutable bool = false
             for index in 0..<records.count |index, records, subject, matched|:
                 candidate: ComparisonFunctionRecord = records[index]
-                same: bool = false
-                if subject.identity_id.count > NATIVE_ZERO.usize():
-                    same <- candidate.repetition == subject.repetition and candidate.identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_id, subject.identity_id)
-                else:
-                    same <- candidate.repetition == subject.repetition and candidate.identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.function, subject.function)
-                if same:
+                if comparison_function_identity_same(candidate, subject):
+                    return true if matched
+                    matched <- true
+            return false if matched
+            matched <- false
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonFunctionRecord = records[index]
+                if comparison_function_structural_same(candidate, subject):
                     return true if matched
                     matched <- true
             return false
@@ -330,7 +345,9 @@ extend ProfilerNative:
         def comparison_function_match_kind(baseline: darray[ComparisonFunctionRecord]&, baseline_index: i64, candidate: darray[ComparisonFunctionRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_function_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_function_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
-                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(baseline[baseline_index.usize()].identity_id, candidate[candidate_index.usize()].identity_id)
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME if baseline[baseline_index.usize()].identity_id.count == NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_id.count == NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_STRUCTURAL if comparison_function_structural_same(baseline[baseline_index.usize()], candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_function_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
@@ -364,7 +381,7 @@ extend ProfilerNative:
             append_text(buffer, sview(NATIVE_COMPARISON_MATCH_REMOVED, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
             append_text(buffer, "</code>: evidence exists on only one side.</li><li><code>")
             append_text(buffer, sview(NATIVE_COMPARISON_MATCH_STRUCTURAL, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
-            append_text(buffer, "</code>: source-location metadata paired records whose compiler IDs changed or were unavailable.</li><li><code>")
+            append_text(buffer, "</code>: a unique structural key paired records whose compiler IDs changed or were unavailable; source locations use their source/kind/function/variable/line tuple, functions use name, edges use caller/callee names, and stacks use the readable folded path.</li><li><code>")
             append_text(buffer, sview(NATIVE_COMPARISON_MATCH_AMBIGUOUS, NATIVE_ZERO, NATIVE_NEGATIVE_ONE))
             append_text(buffer, "</code>: duplicate identity candidates made a one-to-one pairing unsafe.</li></ul></details>")
 
@@ -497,15 +514,28 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
+        def comparison_call_edge_identity_same(record: ComparisonCallEdgeRecord, subject: ComparisonCallEdgeRecord) -> bool can[Abort.Panic]:
+            if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
+                return record.repetition == subject.repetition and record.caller_identity_id.count > NATIVE_ZERO.usize() and record.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(record.callee_identity_id, subject.callee_identity_id)
+            return record.repetition == subject.repetition and record.caller_identity_id.count == NATIVE_ZERO.usize() and record.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(record.caller, subject.caller) and byte_arrays_equal(record.callee, subject.callee)
+
+
+        def comparison_call_edge_structural_same(record: ComparisonCallEdgeRecord, subject: ComparisonCallEdgeRecord) -> bool can[Abort.Panic]:
+            return record.repetition == subject.repetition and byte_arrays_equal(record.caller, subject.caller) and byte_arrays_equal(record.callee, subject.callee)
+
+
         def comparison_call_edge_index(records: darray[ComparisonCallEdgeRecord]&, subject: ComparisonCallEdgeRecord) -> i64 can[Abort.Panic]:
             matched: mutable i64 = NATIVE_NEGATIVE_ONE
-            for index in 0..<records.count |index, records, subject|:
+            for index in 0..<records.count |index, records, subject, matched|:
                 candidate: ComparisonCallEdgeRecord = records[index]
-                if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
-                    if candidate.repetition == subject.repetition and candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id):
-                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
-                        matched <- index.i64()
-                elif candidate.repetition == subject.repetition and candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee):
+                if comparison_call_edge_identity_same(candidate, subject):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched if matched >= NATIVE_ZERO
+            matched <- NATIVE_NEGATIVE_ONE
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonCallEdgeRecord = records[index]
+                if comparison_call_edge_structural_same(candidate, subject):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -515,12 +545,14 @@ extend ProfilerNative:
             matched: mutable bool = false
             for index in 0..<records.count |index, records, subject, matched|:
                 candidate: ComparisonCallEdgeRecord = records[index]
-                same: bool = false
-                if subject.caller_identity_id.count > NATIVE_ZERO.usize() and subject.callee_identity_id.count > NATIVE_ZERO.usize():
-                    same <- candidate.repetition == subject.repetition and candidate.caller_identity_id.count > NATIVE_ZERO.usize() and candidate.callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller_identity_id, subject.caller_identity_id) and byte_arrays_equal(candidate.callee_identity_id, subject.callee_identity_id)
-                else:
-                    same <- candidate.repetition == subject.repetition and candidate.caller_identity_id.count == NATIVE_ZERO.usize() and candidate.callee_identity_id.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.caller, subject.caller) and byte_arrays_equal(candidate.callee, subject.callee)
-                if same:
+                if comparison_call_edge_identity_same(candidate, subject):
+                    return true if matched
+                    matched <- true
+            return false if matched
+            matched <- false
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonCallEdgeRecord = records[index]
+                if comparison_call_edge_structural_same(candidate, subject):
                     return true if matched
                     matched <- true
             return false
@@ -535,7 +567,9 @@ extend ProfilerNative:
         def comparison_call_edge_match_kind(baseline: darray[ComparisonCallEdgeRecord]&, baseline_index: i64, candidate: darray[ComparisonCallEdgeRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_call_edge_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_call_edge_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
-                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and baseline[baseline_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and baseline[baseline_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].caller_identity_id.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].callee_identity_id.count > NATIVE_ZERO.usize() and byte_arrays_equal(baseline[baseline_index.usize()].caller_identity_id, candidate[candidate_index.usize()].caller_identity_id) and byte_arrays_equal(baseline[baseline_index.usize()].callee_identity_id, candidate[candidate_index.usize()].callee_identity_id)
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME if baseline[baseline_index.usize()].caller_identity_id.count == NATIVE_ZERO.usize() and baseline[baseline_index.usize()].callee_identity_id.count == NATIVE_ZERO.usize() and candidate[candidate_index.usize()].caller_identity_id.count == NATIVE_ZERO.usize() and candidate[candidate_index.usize()].callee_identity_id.count == NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_STRUCTURAL if comparison_call_edge_structural_same(baseline[baseline_index.usize()], candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_call_edge_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
@@ -649,15 +683,28 @@ extend ProfilerNative:
             append_text(buffer, "]")
 
 
+        def comparison_stack_identity_same(record: ComparisonStackRecord, subject: ComparisonStackRecord) -> bool can[Abort.Panic]:
+            if subject.identity_path.count > NATIVE_ZERO.usize():
+                return record.repetition == subject.repetition and record.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(record.identity_path, subject.identity_path)
+            return record.repetition == subject.repetition and record.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(record.path, subject.path)
+
+
+        def comparison_stack_structural_same(record: ComparisonStackRecord, subject: ComparisonStackRecord) -> bool can[Abort.Panic]:
+            return record.repetition == subject.repetition and byte_arrays_equal(record.path, subject.path)
+
+
         def comparison_stack_index(records: darray[ComparisonStackRecord]&, subject: ComparisonStackRecord) -> i64 can[Abort.Panic]:
             matched: mutable i64 = NATIVE_NEGATIVE_ONE
-            for index in 0..<records.count |index, records, subject|:
+            for index in 0..<records.count |index, records, subject, matched|:
                 candidate: ComparisonStackRecord = records[index]
-                if subject.identity_path.count > NATIVE_ZERO.usize():
-                    if candidate.repetition == subject.repetition and candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path):
-                        return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
-                        matched <- index.i64()
-                elif candidate.repetition == subject.repetition and candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path):
+                if comparison_stack_identity_same(candidate, subject):
+                    return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
+                    matched <- index.i64()
+            return matched if matched >= NATIVE_ZERO
+            matched <- NATIVE_NEGATIVE_ONE
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonStackRecord = records[index]
+                if comparison_stack_structural_same(candidate, subject):
                     return NATIVE_NEGATIVE_ONE if matched >= NATIVE_ZERO
                     matched <- index.i64()
             return matched
@@ -667,12 +714,14 @@ extend ProfilerNative:
             matched: mutable bool = false
             for index in 0..<records.count |index, records, subject, matched|:
                 candidate: ComparisonStackRecord = records[index]
-                same: bool = false
-                if subject.identity_path.count > NATIVE_ZERO.usize():
-                    same <- candidate.repetition == subject.repetition and candidate.identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(candidate.identity_path, subject.identity_path)
-                else:
-                    same <- candidate.repetition == subject.repetition and candidate.identity_path.count == NATIVE_ZERO.usize() and byte_arrays_equal(candidate.path, subject.path)
-                if same:
+                if comparison_stack_identity_same(candidate, subject):
+                    return true if matched
+                    matched <- true
+            return false if matched
+            matched <- false
+            for index in 0..<records.count |index, records, subject, matched|:
+                candidate: ComparisonStackRecord = records[index]
+                if comparison_stack_structural_same(candidate, subject):
                     return true if matched
                     matched <- true
             return false
@@ -687,7 +736,9 @@ extend ProfilerNative:
         def comparison_stack_match_kind(baseline: darray[ComparisonStackRecord]&, baseline_index: i64, candidate: darray[ComparisonStackRecord]&, candidate_index: i64) -> i64 can[Abort.Panic]:
             if baseline_index >= NATIVE_ZERO and candidate_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_stack_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) or comparison_stack_match_is_ambiguous(baseline, candidate[candidate_index.usize()])
-                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_path.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_path.count > NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID if baseline[baseline_index.usize()].identity_path.count > NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_path.count > NATIVE_ZERO.usize() and byte_arrays_equal(baseline[baseline_index.usize()].identity_path, candidate[candidate_index.usize()].identity_path)
+                return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME if baseline[baseline_index.usize()].identity_path.count == NATIVE_ZERO.usize() and candidate[candidate_index.usize()].identity_path.count == NATIVE_ZERO.usize()
+                return NATIVE_COMPARISON_MATCH_KIND_STRUCTURAL if comparison_stack_structural_same(baseline[baseline_index.usize()], candidate[candidate_index.usize()])
                 return NATIVE_COMPARISON_MATCH_KIND_READABLE_NAME
             if baseline_index >= NATIVE_ZERO:
                 return NATIVE_COMPARISON_MATCH_KIND_AMBIGUOUS if comparison_stack_match_is_ambiguous(candidate, baseline[baseline_index.usize()]) else NATIVE_COMPARISON_MATCH_KIND_REMOVED
