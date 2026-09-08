@@ -25,6 +25,55 @@ extend ProfilerNative:
         const MACHO_SYMBOL_SECTION_OFFSET: usize = 5
         const MACHO_SYMBOL_VALUE_OFFSET: usize = 8
         const MACHO_VALUE_BYTES: usize = 8
+        const MACHO_SEGMENT_COMMAND: u32 = 25
+        const MACHO_SEGMENT_BYTES: usize = 72
+        const MACHO_SECTION_BYTES: usize = 80
+        const MACHO_SEGMENT_VM_OFFSET: usize = 24
+        const MACHO_SEGMENT_SIZE_OFFSET: usize = 32
+        const MACHO_SEGMENT_FILE_OFFSET: usize = 40
+        const MACHO_SEGMENT_FILE_SIZE_OFFSET: usize = 48
+        const MACHO_SEGMENT_PROTECTION_OFFSET: usize = 60
+        const MACHO_SEGMENT_SECTIONS_OFFSET: usize = 64
+        const MACHO_MAX_ADDRESS: u64 = 0xffffffffffffffff
+        const MACHO_EXECUTE_PROTECTION: u32 = 4
+
+        struct MachOSegment:
+            vm_address: mutable u64
+            vm_size: mutable u64
+            file_offset: mutable u64
+            file_size: mutable u64
+            protection: mutable u32
+
+        # The caller supplies a load-command boundary. This validates the entire
+        # segment command and file range; section contents are not yet decoded.
+        def macho_segment(data: darray[u8]&, offset: usize, output: mutable MachOSegment&) -> bool:
+            output <- zeroed
+            return false if offset > data.count
+            return false if data.count - offset < MACHO_SEGMENT_BYTES
+            return false if macho_word(data, offset) != MACHO_SEGMENT_COMMAND
+            size: usize = macho_word(data, offset + MACHO_WORD_BYTES).usize()
+            return false if size < MACHO_SEGMENT_BYTES or size > data.count - offset
+            sections: usize = macho_word(data, offset + MACHO_SEGMENT_SECTIONS_OFFSET).usize()
+            remaining: usize = size - MACHO_SEGMENT_BYTES
+            return false if remaining % MACHO_SECTION_BYTES != NATIVE_ZERO.usize() or sections != remaining / MACHO_SECTION_BYTES
+            address: u64 = macho_value(data, offset + MACHO_SEGMENT_VM_OFFSET)
+            vm_size: u64 = macho_value(data, offset + MACHO_SEGMENT_SIZE_OFFSET)
+            file_offset: u64 = macho_value(data, offset + MACHO_SEGMENT_FILE_OFFSET)
+            file_size: u64 = macho_value(data, offset + MACHO_SEGMENT_FILE_SIZE_OFFSET)
+            return false if vm_size > MACHO_MAX_ADDRESS - address or file_size > vm_size
+            return false if file_offset > data.count.u64()
+            return false if file_size > data.count.u64() - file_offset
+            output.vm_address <- address
+            output.vm_size <- vm_size
+            output.file_offset <- file_offset
+            output.file_size <- file_size
+            output.protection <- macho_word(data, offset + MACHO_SEGMENT_PROTECTION_OFFSET)
+            return true
+
+        # Addresses here are unslid image addresses, not live process pointers.
+        def macho_segment_contains(segment: MachOSegment&, address: u64) -> bool:
+            return false if address < segment.vm_address
+            return address - segment.vm_address < segment.vm_size
 
         struct MachOSymbol:
             kind: mutable u8
@@ -55,12 +104,9 @@ extend ProfilerNative:
                     break if data[stop] == NATIVE_ZERO.u8()
                     stop <- stop + NATIVE_ONE.usize()
                 return false if stop == limit
-            value: mutable u64 = NATIVE_ZERO.u64()
-            for byte in NATIVE_ZERO.usize()..<MACHO_VALUE_BYTES |value, data, entry|:
-                value <- value | (data[entry + MACHO_SYMBOL_VALUE_OFFSET + byte].u64() << (byte.u32() * MACHO_BYTE_BITS))
             output.kind <- data[entry + MACHO_SYMBOL_TYPE_OFFSET]
             output.section <- data[entry + MACHO_SYMBOL_SECTION_OFFSET]
-            output.value <- value
+            output.value <- macho_value(data, entry + MACHO_SYMBOL_VALUE_OFFSET)
             output.name_start <- start
             output.name_stop <- stop
             return true
@@ -72,6 +118,7 @@ extend ProfilerNative:
             Malformed
 
         struct MachOIndex:
+            segment_count: mutable usize
             cpu_type: mutable u32
             cpu_subtype: mutable u32
             has_uuid: mutable bool
@@ -83,6 +130,12 @@ extend ProfilerNative:
             strings_size: mutable usize
 
         # Only called after the containing header/command is bounds checked.
+        def macho_value(data: darray[u8]&, offset: usize) -> u64:
+            result: mutable u64 = NATIVE_ZERO.u64()
+            for byte in NATIVE_ZERO.usize()..<MACHO_VALUE_BYTES |result, data, offset|:
+                result <- result | (data[offset + byte].u64() << (byte.u32() * MACHO_BYTE_BITS))
+            return result
+
         def macho_word(data: darray[u8]&, offset: usize) -> u32:
             result: mutable u32 = NATIVE_ZERO.u32()
             for index in NATIVE_ZERO.usize()..<MACHO_WORD_BYTES |result, data, offset|:
@@ -107,13 +160,18 @@ extend ProfilerNative:
             symbol_count: mutable usize = NATIVE_ZERO.usize()
             strings_offset: mutable usize = NATIVE_ZERO.usize()
             strings_size: mutable usize = NATIVE_ZERO.usize()
-            for command_index in NATIVE_ZERO.usize()..<count |cursor, data, stop, has_uuid, uuid_offset, has_symbols, symbol_offset, symbol_count, strings_offset, strings_size|:
+            segment_count: mutable usize = NATIVE_ZERO.usize()
+            for command_index in NATIVE_ZERO.usize()..<count |cursor, data, stop, has_uuid, uuid_offset, has_symbols, symbol_offset, symbol_count, strings_offset, strings_size, segment_count|:
                 return MachOIndexStatus.Malformed if stop - cursor < MACHO_COMMAND_HEADER_BYTES
                 command: u32 = macho_word(data, cursor)
                 size: usize = macho_word(data, cursor + MACHO_WORD_BYTES).usize()
                 return MachOIndexStatus.Malformed if size < MACHO_COMMAND_HEADER_BYTES or size % MACHO_COMMAND_ALIGNMENT != NATIVE_ZERO.usize()
                 return MachOIndexStatus.Malformed if size > stop - cursor
-                if command == MACHO_UUID_COMMAND:
+                if command == MACHO_SEGMENT_COMMAND:
+                    segment: mutable MachOSegment = zeroed
+                    return MachOIndexStatus.Malformed if not macho_segment(data, cursor, &segment)
+                    segment_count <- segment_count + NATIVE_ONE.usize()
+                elif command == MACHO_UUID_COMMAND:
                     return MachOIndexStatus.Malformed if has_uuid or size != MACHO_UUID_COMMAND_BYTES
                     has_uuid <- true
                     uuid_offset <- cursor + MACHO_COMMAND_HEADER_BYTES
@@ -134,6 +192,7 @@ extend ProfilerNative:
                 cursor <- cursor + size
             return MachOIndexStatus.Malformed if cursor != stop
             output.cpu_type <- macho_word(data, MACHO_CPU_OFFSET)
+            output.segment_count <- segment_count
             output.cpu_subtype <- macho_word(data, MACHO_SUBTYPE_OFFSET)
             output.has_uuid <- has_uuid
             output.uuid_offset <- uuid_offset

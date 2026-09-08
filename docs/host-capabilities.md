@@ -43,6 +43,10 @@ returns borrowed name ranges without allocating strings. It checks table
 bounds again before reading, handles the specified zero-index empty name,
 and rejects invalid string offsets and missing terminators. Symbol values
 are not yet resolved to runtime addresses or interpreted as function ranges.
+Segment commands are also bounds-checked, including section-array sizing,
+file ranges, and virtual-address overflow. The decoder exposes initial memory
+protection and unslid virtual ranges with exclusive ends, including zero-fill
+segments. Section contents and runtime image slides remain unimplemented.
 
 The native collector's low-level signal and descriptor policy is currently a
 POSIX implementation detail. Porting another host requires an audited FFI

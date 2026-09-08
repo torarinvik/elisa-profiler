@@ -17,6 +17,8 @@ extend ProfilerNative:
         const MACHO_TEST_MAX_VALUE: u64 = 0xffffffffffffffff
         const MACHO_TEST_BYTE_MASK: u32 = 255
         const MACHO_TEST_READ_BYTES: usize = 4096
+        const MACHO_TEST_VM_ADDRESS: u32 = 4096
+        const MACHO_TEST_VM_SIZE: u32 = 8192
 
         def macho_test_word(data: mutable darray[u8]&, offset: usize, value: u32) -> void:
             for index in NATIVE_ZERO.usize()..<MACHO_WORD_BYTES |data, offset, value|:
@@ -31,6 +33,53 @@ extend ProfilerNative:
             macho_test_word(data, offset, original)
 
     public:
+        def macho_segment_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
+            data: mutable darray[u8] = [NATIVE_ZERO.u8() for _ in NATIVE_ZERO.usize()..<(MACHO_HEADER_BYTES + MACHO_SEGMENT_BYTES)]
+            command: usize = MACHO_HEADER_BYTES
+            macho_test_word(&data, NATIVE_ZERO.usize(), MACHO_MAGIC_64)
+            macho_test_word(&data, MACHO_COMMAND_COUNT_OFFSET, NATIVE_ONE.u32())
+            macho_test_word(&data, MACHO_COMMAND_BYTES_OFFSET, MACHO_SEGMENT_BYTES.u32())
+            macho_test_word(&data, command, MACHO_SEGMENT_COMMAND)
+            macho_test_word(&data, command + MACHO_WORD_BYTES, MACHO_SEGMENT_BYTES.u32())
+            macho_test_word(&data, command + MACHO_SEGMENT_VM_OFFSET, MACHO_TEST_VM_ADDRESS)
+            macho_test_word(&data, command + MACHO_SEGMENT_SIZE_OFFSET, MACHO_TEST_VM_SIZE)
+            macho_test_word(&data, command + MACHO_SEGMENT_FILE_SIZE_OFFSET, data.count.u32())
+            macho_test_word(&data, command + MACHO_SEGMENT_PROTECTION_OFFSET, MACHO_EXECUTE_PROTECTION)
+            indexed: mutable MachOIndex = zeroed
+            segment: mutable MachOSegment = zeroed
+            assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
+            assert indexed.segment_count == NATIVE_ONE.usize()
+            assert macho_segment(data, command, &segment)
+            assert segment.file_size == data.count.u64()
+            assert segment.protection == MACHO_EXECUTE_PROTECTION
+            assert macho_segment_contains(segment, MACHO_TEST_VM_ADDRESS.u64())
+            assert macho_segment_contains(segment, (MACHO_TEST_VM_ADDRESS + MACHO_TEST_VM_SIZE - NATIVE_ONE.u32()).u64())
+            assert not macho_segment_contains(segment, (MACHO_TEST_VM_ADDRESS - NATIVE_ONE.u32()).u64())
+            assert not macho_segment_contains(segment, (MACHO_TEST_VM_ADDRESS + MACHO_TEST_VM_SIZE).u64())
+            macho_test_change(&data, command + MACHO_SEGMENT_SECTIONS_OFFSET, NATIVE_ONE.u32(), MachOIndexStatus.Malformed)
+            macho_test_change(&data, command + MACHO_SEGMENT_FILE_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Malformed)
+            macho_test_change(&data, command + MACHO_SEGMENT_FILE_SIZE_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Malformed)
+            macho_test_change(&data, command + MACHO_SEGMENT_SIZE_OFFSET, NATIVE_ZERO.u32(), MachOIndexStatus.Malformed)
+            macho_test_word(&data, command + MACHO_SEGMENT_VM_OFFSET, MACHO_TEST_MAX_WORD)
+            macho_test_change(&data, command + MACHO_SEGMENT_VM_OFFSET + MACHO_WORD_BYTES, MACHO_TEST_MAX_WORD, MachOIndexStatus.Malformed)
+            assert not macho_segment(data, data.count, &segment)
+            assert segment.vm_address == NATIVE_ZERO.u64()
+            macho_test_word(&data, command + MACHO_SEGMENT_VM_OFFSET, MACHO_TEST_VM_ADDRESS)
+            original_count: usize = data.count
+            for length in NATIVE_ZERO.usize()..<original_count |data, command, segment|:
+                data.count <- length
+                assert not macho_segment(data, command, &segment)
+                assert segment.vm_address == NATIVE_ZERO.u64()
+            data.count <- original_count
+            # A zero-fill segment has no file bytes; an empty VM range must not
+            # accidentally match its starting address.
+            macho_test_word(&data, command + MACHO_SEGMENT_FILE_SIZE_OFFSET, NATIVE_ZERO.u32())
+            assert macho_segment(data, command, &segment)
+            macho_test_word(&data, command + MACHO_SEGMENT_SIZE_OFFSET, NATIVE_ZERO.u32())
+            assert macho_segment(data, command, &segment)
+            assert not macho_segment_contains(segment, MACHO_TEST_VM_ADDRESS.u64())
+            return NATIVE_ZERO
+
         def macho_stdin_smoke() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
             data: mutable darray[u8] = []
             chunk: mutable darray[u8] = [NATIVE_ZERO.u8() for _ in NATIVE_ZERO.usize()..<MACHO_TEST_READ_BYTES]
@@ -45,6 +94,7 @@ extend ProfilerNative:
                 assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
                 assert indexed.has_uuid and indexed.has_symbols
                 assert indexed.symbol_count > NATIVE_ZERO.usize()
+                assert indexed.segment_count > NATIVE_ZERO.usize()
                 symbol: mutable MachOSymbol = zeroed
                 for ordinal in NATIVE_ZERO.usize()..<indexed.symbol_count |data, indexed, symbol|:
                     assert macho_symbol(data, indexed, ordinal, &symbol)
@@ -120,4 +170,5 @@ extend ProfilerNative:
 
 def main() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
     assert ProfilerNative::macho_smoke() == 0
+    assert ProfilerNative::macho_segment_smoke() == 0
     return ProfilerNative::macho_stdin_smoke()
