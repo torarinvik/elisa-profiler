@@ -1,0 +1,69 @@
+extend ProfilerNative:
+    private:
+        const MACHO_TEST_START_BYTES: usize = 16
+        const MACHO_TEST_LEB_MAX_BYTES: usize = 10
+        const MACHO_TEST_LEB_FIRST: u64 = 128
+        const MACHO_TEST_LEB_SECOND: u64 = 130
+
+    public:
+        def macho_functions_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
+            payload: usize = MACHO_HEADER_BYTES + NATIVE_TWO.usize() * MACHO_LINKEDIT_COMMAND_BYTES
+            data: mutable darray[u8] = [NATIVE_ZERO.u8() for _ in NATIVE_ZERO.usize()..<(payload + MACHO_TEST_START_BYTES)]
+            command: usize = MACHO_HEADER_BYTES
+            second: usize = command + MACHO_LINKEDIT_COMMAND_BYTES
+            macho_test_word(&data, NATIVE_ZERO.usize(), MACHO_MAGIC_64)
+            macho_test_word(&data, MACHO_COMMAND_COUNT_OFFSET, NATIVE_TWO.u32())
+            macho_test_word(&data, MACHO_COMMAND_BYTES_OFFSET, (NATIVE_TWO.usize() * MACHO_LINKEDIT_COMMAND_BYTES).u32())
+            macho_test_word(&data, command, MACHO_FUNCTION_STARTS_COMMAND)
+            macho_test_word(&data, command + MACHO_WORD_BYTES, MACHO_LINKEDIT_COMMAND_BYTES.u32())
+            macho_test_word(&data, command + MACHO_LINKEDIT_OFFSET, payload.u32())
+            macho_test_word(&data, command + MACHO_LINKEDIT_SIZE_OFFSET, MACHO_TEST_START_BYTES.u32())
+            macho_test_word(&data, second + MACHO_WORD_BYTES, MACHO_LINKEDIT_COMMAND_BYTES.u32())
+            indexed: mutable MachOIndex = zeroed
+            starts: mutable darray[u64] = []
+            assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
+            assert indexed.has_function_starts and indexed.function_starts_offset == payload
+            data[payload] <- MACHO_LEB_CONTINUATION
+            data[payload + NATIVE_ONE.usize()] <- NATIVE_ONE.u8()
+            data[payload + NATIVE_TWO.usize()] <- NATIVE_TWO.u8()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Indexed
+            assert starts.count == NATIVE_TWO.usize()
+            assert starts[NATIVE_ZERO.usize()] == MACHO_TEST_LEB_FIRST
+            assert starts[NATIVE_ONE.usize()] == MACHO_TEST_LEB_SECOND
+            macho_test_change(&data, second, MACHO_FUNCTION_STARTS_COMMAND, MachOIndexStatus.Malformed)
+            macho_test_change(&data, command + MACHO_LINKEDIT_OFFSET, NATIVE_ZERO.u32(), MachOIndexStatus.Malformed)
+            macho_test_change(&data, command + MACHO_LINKEDIT_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Truncated)
+            macho_test_change(&data, command + MACHO_LINKEDIT_SIZE_OFFSET, MACHO_TEST_MAX_WORD, MachOIndexStatus.Truncated)
+            indexed.function_starts_size <- NATIVE_ONE.usize()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Malformed
+            assert starts.count == NATIVE_ZERO.usize()
+            indexed.function_starts_size <- MACHO_TEST_START_BYTES
+            for entry in NATIVE_ZERO.usize()..<MACHO_TEST_START_BYTES |data, payload|:
+                data[payload + entry] <- NATIVE_ZERO.u8()
+            data[payload + NATIVE_ONE.usize()] <- NATIVE_ONE.u8()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Malformed
+            # Maximum representable delta; reject a larger final payload and
+            # a continuation beyond ten bytes before any oversized shift.
+            for entry in NATIVE_ZERO.usize()..<(MACHO_TEST_LEB_MAX_BYTES - NATIVE_ONE.usize()) |data, payload|:
+                data[payload + entry] <- MACHO_TEST_BYTE_MASK.u8()
+            last: usize = payload + MACHO_TEST_LEB_MAX_BYTES - NATIVE_ONE.usize()
+            data[last] <- NATIVE_ONE.u8()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Indexed
+            assert starts.count == NATIVE_ONE.usize() and starts[NATIVE_ZERO.usize()] == MACHO_MAX_ADDRESS
+            data[last] <- NATIVE_TWO.u8()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Malformed
+            data[last] <- MACHO_LEB_CONTINUATION
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Malformed
+            data[last] <- NATIVE_ONE.u8()
+            data[last + NATIVE_ONE.usize()] <- NATIVE_ONE.u8()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Malformed
+            assert starts.count == NATIVE_ZERO.usize()
+            indexed.function_starts_size <- NATIVE_ZERO.usize()
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Indexed
+            indexed.has_function_starts <- false
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Unsupported
+            indexed.has_function_starts <- true
+            indexed.function_starts_size <- MACHO_TEST_START_BYTES
+            data.count <- payload
+            assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Truncated
+            return NATIVE_ZERO

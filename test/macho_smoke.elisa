@@ -2,7 +2,9 @@ include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa
 include "../src/profiler/profiler_model.elisa"
 include "../src/profiler/profiler_macho.elisa"
 include "../src/profiler/profiler_macho_map.elisa"
+include "../src/profiler/profiler_macho_functions.elisa"
 include "macho_map_cases.elisa"
+include "macho_functions_cases.elisa"
 
 @link_name("read")
 extern macho_test_read(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
@@ -97,6 +99,11 @@ extend ProfilerNative:
                 assert indexed.has_uuid and indexed.has_symbols
                 assert indexed.symbol_count > NATIVE_ZERO.usize()
                 assert indexed.segment_count > NATIVE_ZERO.usize()
+                starts: mutable darray[u64] = []
+                assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Indexed
+                assert starts.count > NATIVE_ZERO.usize()
+                for entry in NATIVE_ONE.usize()..<starts.count |starts|:
+                    assert starts[entry] > starts[entry - NATIVE_ONE.usize()]
                 symbol: mutable MachOSymbol = zeroed
                 for ordinal in NATIVE_ZERO.usize()..<indexed.symbol_count |data, indexed, symbol|:
                     assert macho_symbol(data, indexed, ordinal, &symbol)
@@ -182,4 +189,5 @@ def main() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
     assert ProfilerNative::macho_smoke() == 0
     assert ProfilerNative::macho_segment_smoke() == 0
     assert ProfilerNative::macho_map_smoke() == 0
+    assert ProfilerNative::macho_functions_smoke() == 0
     return ProfilerNative::macho_stdin_smoke()

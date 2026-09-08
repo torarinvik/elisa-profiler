@@ -15,6 +15,10 @@ extend ProfilerNative:
         const MACHO_COMMAND_ALIGNMENT: usize = 8
         const MACHO_UUID_COMMAND: u32 = 27
         const MACHO_SYMTAB_COMMAND: u32 = 2
+        const MACHO_FUNCTION_STARTS_COMMAND: u32 = 38
+        const MACHO_LINKEDIT_COMMAND_BYTES: usize = 16
+        const MACHO_LINKEDIT_OFFSET: usize = 8
+        const MACHO_LINKEDIT_SIZE_OFFSET: usize = 12
         const MACHO_UUID_COMMAND_BYTES: usize = 24
         const MACHO_SYMTAB_COMMAND_BYTES: usize = 24
         const MACHO_SYMBOL_OFFSET: usize = 8
@@ -120,6 +124,9 @@ extend ProfilerNative:
             Malformed
 
         struct MachOIndex:
+            has_function_starts: mutable bool
+            function_starts_offset: mutable usize
+            function_starts_size: mutable usize
             segment_count: mutable usize
             cpu_type: mutable u32
             cpu_subtype: mutable u32
@@ -163,7 +170,10 @@ extend ProfilerNative:
             strings_offset: mutable usize = NATIVE_ZERO.usize()
             strings_size: mutable usize = NATIVE_ZERO.usize()
             segment_count: mutable usize = NATIVE_ZERO.usize()
-            for command_index in NATIVE_ZERO.usize()..<count |cursor, data, stop, has_uuid, uuid_offset, has_symbols, symbol_offset, symbol_count, strings_offset, strings_size, segment_count|:
+            has_function_starts: mutable bool = false
+            function_starts_offset: mutable usize = NATIVE_ZERO.usize()
+            function_starts_size: mutable usize = NATIVE_ZERO.usize()
+            for command_index in NATIVE_ZERO.usize()..<count |cursor, data, stop, has_uuid, uuid_offset, has_symbols, symbol_offset, symbol_count, strings_offset, strings_size, segment_count, has_function_starts, function_starts_offset, function_starts_size|:
                 return MachOIndexStatus.Malformed if stop - cursor < MACHO_COMMAND_HEADER_BYTES
                 command: u32 = macho_word(data, cursor)
                 size: usize = macho_word(data, cursor + MACHO_WORD_BYTES).usize()
@@ -173,6 +183,14 @@ extend ProfilerNative:
                     segment: mutable MachOSegment = zeroed
                     return MachOIndexStatus.Malformed if not macho_segment(data, cursor, &segment)
                     segment_count <- segment_count + NATIVE_ONE.usize()
+                elif command == MACHO_FUNCTION_STARTS_COMMAND:
+                    return MachOIndexStatus.Malformed if has_function_starts or size != MACHO_LINKEDIT_COMMAND_BYTES
+                    has_function_starts <- true
+                    function_starts_offset <- macho_word(data, cursor + MACHO_LINKEDIT_OFFSET).usize()
+                    function_starts_size <- macho_word(data, cursor + MACHO_LINKEDIT_SIZE_OFFSET).usize()
+                    return MachOIndexStatus.Truncated if function_starts_offset > data.count
+                    return MachOIndexStatus.Truncated if function_starts_size > data.count - function_starts_offset
+                    return MachOIndexStatus.Malformed if function_starts_size > NATIVE_ZERO.usize() and function_starts_offset < stop
                 elif command == MACHO_UUID_COMMAND:
                     return MachOIndexStatus.Malformed if has_uuid or size != MACHO_UUID_COMMAND_BYTES
                     has_uuid <- true
@@ -194,6 +212,9 @@ extend ProfilerNative:
                 cursor <- cursor + size
             return MachOIndexStatus.Malformed if cursor != stop
             output.cpu_type <- macho_word(data, MACHO_CPU_OFFSET)
+            output.has_function_starts <- has_function_starts
+            output.function_starts_offset <- function_starts_offset
+            output.function_starts_size <- function_starts_size
             output.segment_count <- segment_count
             output.cpu_subtype <- macho_word(data, MACHO_SUBTYPE_OFFSET)
             output.has_uuid <- has_uuid

@@ -1,0 +1,49 @@
+# Decode LC_FUNCTION_STARTS once. Values are cumulative image-relative offsets,
+# not source-level extents: padding, data-in-code, and the last function's end
+# require additional metadata before attributing arbitrary PCs to functions.
+extend ProfilerNative:
+    private:
+        const MACHO_LEB_PAYLOAD_BITS: u32 = 7
+        const MACHO_LEB_LAST_SHIFT: u32 = 63
+        const MACHO_LEB_PAYLOAD_MASK: u8 = 127
+        const MACHO_LEB_CONTINUATION: u8 = 128
+
+        def decode_macho_function_starts[@r](data: darray[u8]&, indexed: MachOIndex&, output: mutable darray[u64]& @r) -> MachOIndexStatus can[Abort.Panic, Memory.Allocate]:
+            output <- []
+            return MachOIndexStatus.Unsupported if not indexed.has_function_starts
+            offset: usize = indexed.function_starts_offset
+            size: usize = indexed.function_starts_size
+            return MachOIndexStatus.Truncated if offset > data.count
+            return MachOIndexStatus.Truncated if size > data.count - offset
+            return MachOIndexStatus.Indexed if size == NATIVE_ZERO.usize()
+            stop: usize = offset + size
+            cursor: mutable usize = offset
+            address: mutable u64 = NATIVE_ZERO.u64()
+            starts: mutable darray[u64] @r = []
+            terminated: mutable bool = false
+            while cursor < stop |cursor, stop, data, address, starts, terminated|:
+                delta: mutable u64 = NATIVE_ZERO.u64()
+                shift: mutable u32 = NATIVE_ZERO.u32()
+                while true |cursor, stop, data, delta, shift|:
+                    return MachOIndexStatus.Malformed if cursor == stop
+                    byte: u8 = data[cursor]
+                    cursor <- cursor + NATIVE_ONE.usize()
+                    payload: u64 = (byte & MACHO_LEB_PAYLOAD_MASK).u64()
+                    return MachOIndexStatus.Malformed if shift == MACHO_LEB_LAST_SHIFT and payload > NATIVE_ONE.u64()
+                    delta <- delta | (payload << shift)
+                    break if (byte & MACHO_LEB_CONTINUATION) == NATIVE_ZERO.u8()
+                    return MachOIndexStatus.Malformed if shift == MACHO_LEB_LAST_SHIFT
+                    shift <- shift + MACHO_LEB_PAYLOAD_BITS
+                if delta == NATIVE_ZERO.u64():
+                    terminated <- true
+                    break
+                return MachOIndexStatus.Malformed if delta > MACHO_MAX_ADDRESS - address
+                address <- address + delta
+                starts.push(address)
+            return MachOIndexStatus.Malformed if not terminated
+            # Linkedit alignment padding is zero, not another hidden sequence.
+            while cursor < stop |cursor, stop, data|:
+                return MachOIndexStatus.Malformed if data[cursor] != NATIVE_ZERO.u8()
+                cursor <- cursor + NATIVE_ONE.usize()
+            output <- starts
+            return MachOIndexStatus.Indexed

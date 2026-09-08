@@ -56,6 +56,15 @@ results instead of guessed symbols. Object files and high-VM layouts are not
 supported by this mapper. Capturing and verifying runtime image identity and
 load generations, resolving function ranges, and CLI integration remain pending.
 
+The function-start reader decodes bounded `LC_FUNCTION_STARTS` payloads into
+caller-owned, increasing cumulative offsets. It rejects truncated commands,
+duplicate commands, oversized ULEB128 values, cumulative overflow, missing
+terminators, and nonzero trailing padding. Missing and empty tables remain
+distinct. The delta encoding follows LLVM's
+[Mach-O reader](https://llvm.org/doxygen/MachOObjectFile_8cpp_source.html).
+Starts alone do not establish exact function extents: padding, data-in-code,
+section limits, and symbol association still need handling before PC attribution.
+
 The native collector's low-level signal and descriptor policy is currently a
 POSIX implementation detail. Porting another host requires an audited FFI
 adapter, an explicit capability entry, and focused ABI/cleanup tests before
