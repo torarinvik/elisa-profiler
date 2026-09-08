@@ -13,7 +13,7 @@ COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.js
 STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke collector-strict-smoke collector-content-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke legacy-fixture-smoke collector-strict-smoke collector-content-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -191,6 +191,9 @@ metamorphic-smoke: profiler-native
 protocol-property-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/protocol_property_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
+legacy-fixture-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/legacy_fixture_smoke.py" "$(NATIVE_PROFILER_BIN)"
+
 sampling-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/sampling_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
@@ -210,7 +213,7 @@ native-regression-smoke: profiler-native
 recovery-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/recovery_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
-test: native-regression-smoke metamorphic-smoke
+test: native-regression-smoke metamorphic-smoke legacy-fixture-smoke
 
 .PHONY: collector-regression-smoke
 collector-regression-smoke:

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "compiler": {
+    "source": "frozen-v1-fixture",
+    "branch": "legacy-fixture",
+    "commit": "frozen-v1-commit"
+  },
+  "source": "frozen/legacy.elisa",
+  "host": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "load_average_1m": 0.5,
+    "load_average_source": "getloadavg",
+    "affinity": {"policy": "inherited", "changed": false},
+    "power_thermal": null
+  },
+  "summary": {
+    "events": 7,
+    "locations": 2,
+    "dropped": 0,
+    "statement_events": 5,
+    "value_events": 0,
+    "function_events": 2,
+    "thread_count": 1,
+    "stack_overflow_entries": 0,
+    "trace_events_omitted": 0,
+    "detail_budget_exceeded": false
+  },
+  "run": {
+    "opt_level": "-O0",
+    "exit_code": 0,
+    "execution_ms_mean": 1.25,
+    "compile_ms": 2.5,
+    "location_timing": true
+  },
+  "functions": [],
+  "call_edges": [],
+  "locations": [],
+  "stacks": [
+    {"stack": "root", "call_events": 1, "completed_calls": 1, "self_ns": 0},
+    {"stack": "root;work", "call_events": 6, "completed_calls": 6, "self_ns": 123}
+  ]
+}
