@@ -58,6 +58,13 @@ through 15 and rejects duplicate v1 records. Unknown future extension versions
 are ignored rather than interpreted using the v1 layout. Missing metadata,
 including a dropped metadata frame, does not imply zero observations.
 
+Live and offline text/HTML reports summarize these observations by measured
+repetition, including the number with unavailable metadata. The category
+counts can overlap; they are not allocation counts and must not be added as
+if they partitioned the workload. Rejected-version evidence includes guidance
+to use matching producer/collector versions. JSON preserves each repetition's
+original flags rather than replacing them with the display summary.
+
 `active` remains observed hook evidence, not an ABI-handshake claim. Do not
 assume compatibility with an arbitrary prebuilt executable merely because
 full mode was selected. Unsuccessful negotiation emits no v1 events.

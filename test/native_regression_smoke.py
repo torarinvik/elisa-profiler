@@ -179,6 +179,26 @@ def main():
         for output_format in ("text", "html"):
             assert b"allocation unconfirmed" in run(*hookless_args, "--mode", "full", "--format", output_format)
             assert b"allocation unconfirmed" in run("report", hookless_capture, "--format", output_format)
+            assert b"measured repetitions: 2; negotiated v1: 0; v1 calls: 0; legacy calls: 0; rejected versions: 0; metadata unavailable: 0" in run(
+                *hookless_args, "--repeat", 2, "--format", output_format)
+        mixed_abi = json.loads(run(*hookless_args, "--repeat", 3))
+        mixed_repetitions = mixed_abi["run"]["repetitions"]
+        mixed_repetitions[0]["allocation_hook_abi"] = {
+            "negotiated_v1": True, "v1_calls": True, "legacy_calls": False, "rejected_version": False,
+        }
+        mixed_repetitions[1]["allocation_hook_abi"] = {
+            "negotiated_v1": False, "v1_calls": True, "legacy_calls": True, "rejected_version": True,
+        }
+        del mixed_repetitions[2]["allocation_hook_abi"]
+        mixed_abi_path = work / "mixed-abi.json"
+        mixed_abi_path.write_text(json.dumps(mixed_abi), encoding="utf-8")
+        validate(mixed_abi, allocation_schema_root, allocation_schema_root, "mixed-abi")
+        for output_format in ("text", "html"):
+            rendered_abi = run("report", mixed_abi_path, "--format", output_format)
+            assert b"measured repetitions: 3; negotiated v1: 1; v1 calls: 2; legacy calls: 1; rejected versions: 1; metadata unavailable: 1" in rendered_abi
+            assert b"Unsupported hook ABI requested" in rendered_abi
+            assert b"Missing metadata is unknown, not zero" in rendered_abi
+        assert json.loads(run("report", mixed_abi_path, "--format", "json")) == mixed_abi
         hookless_disabled = json.loads(run(*hookless_args, "--mode", "functions"))
         assert hookless_disabled["run"]["capabilities"]["allocation"]["status"] == "disabled"
         hookless["summary"]["allocation_events_dropped"] = 1

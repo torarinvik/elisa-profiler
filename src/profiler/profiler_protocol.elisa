@@ -779,6 +779,7 @@ extend ProfilerNative:
         
         def parse_capture(data: darray[u8]&, source: darray[u8]&, path_maps: darray[NativePathMap]&, source_map_data: darray[u8]&, source_map_flat_lines: darray[i64]&, source_map_source_lines: darray[i64]&, allow_partial_tail: bool, repetition: i64, location_timing: bool) -> CaptureSummary:
             summary: mutable CaptureSummary = CaptureSummary{
+                allocation_abi_evidence: [],
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
                 statement_events: NATIVE_ZERO,
@@ -1045,6 +1046,7 @@ extend ProfilerNative:
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_META
                 line_start <- line_stop + NATIVE_ONE.usize()
             summary.location_records <- location_records
+            summary.allocation_abi_evidence.push(summary.allocation_abi_flags)
             summary.function_records <- function_records
             summary.call_edge_records <- call_edge_records
             summary.stack_records <- stack_records

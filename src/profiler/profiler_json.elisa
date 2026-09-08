@@ -1153,15 +1153,22 @@ extend ProfilerNative:
                             for index in event_content_start..<event_content_stop |index, data, profile|:
                                 profile.event_records.push(data[index])
                     abi_start: i64 = json_key_value_start(data, "allocation_hook_abi", repetition_cursor, repetition_record_stop.usize())
+                    abi_flags: mutable i64 = NATIVE_NEGATIVE_ONE
                     if abi_start >= NATIVE_ZERO:
+                        abi_flags <- NATIVE_ZERO
                         return false if data[abi_start.usize()] != NATIVE_BYTE_LEFT_BRACE
                         abi_stop: i64 = json_object_end(data, abi_start.usize(), repetition_record_stop.usize())
                         return false if abi_stop < NATIVE_ZERO
                         abi_flag: mutable bool = false
                         return false if not json_read_bool_field(data, "negotiated_v1", abi_start.usize(), abi_stop.usize(), &abi_flag)
+                        abi_flags <- abi_flags + NATIVE_ALLOCATION_ABI_NEGOTIATED if abi_flag
                         return false if not json_read_bool_field(data, "legacy_calls", abi_start.usize(), abi_stop.usize(), &abi_flag)
+                        abi_flags <- abi_flags + NATIVE_ALLOCATION_ABI_LEGACY if abi_flag
                         return false if not json_read_bool_field(data, "rejected_version", abi_start.usize(), abi_stop.usize(), &abi_flag)
+                        abi_flags <- abi_flags + NATIVE_ALLOCATION_ABI_REJECTED if abi_flag
                         return false if not json_read_bool_field(data, "v1_calls", abi_start.usize(), abi_stop.usize(), &abi_flag)
+                        abi_flags <- abi_flags + NATIVE_ALLOCATION_ABI_VERSIONED_CALL if abi_flag
+                    profile.allocation_abi_evidence.push(abi_flags)
                     allocation_start: i64 = json_key_value_start(data, "allocation_events", repetition_cursor, repetition_record_stop.usize())
                     if allocation_start >= NATIVE_ZERO:
                         return false if data[allocation_start.usize()] != NATIVE_BYTE_LEFT_BRACKET

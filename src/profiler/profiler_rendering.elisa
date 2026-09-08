@@ -457,6 +457,9 @@ extend ProfilerNative:
             append_text(buffer, "<p>")
             append_allocation_capability_description(buffer, profile.collection_mode, profile.allocation_record_count, profile.allocation_dropped)
             append_text(buffer, "</p>")
+            append_text(buffer, "<p>")
+            append_allocation_abi_description(buffer, profile.allocation_abi_evidence)
+            append_text(buffer, "</p>")
             append_html_thread_loss_diagnostics(buffer, profile.thread_loss)
             if profile.source_snapshot.count > NATIVE_ZERO.usize():
                 append_html_source_view(buffer, profile.source, profile.source_snapshot, profile.location_records, true)
@@ -496,6 +499,8 @@ extend ProfilerNative:
             append_i64(buffer, profile.allocation_record_count)
             append_text(buffer, "\n")
             append_allocation_capability_description(buffer, profile.collection_mode, profile.allocation_record_count, profile.allocation_dropped)
+            append_text(buffer, "\n")
+            append_allocation_abi_description(buffer, profile.allocation_abi_evidence)
             append_text(buffer, "\n")
             append_text(buffer, "\nlocations: ")
             append_i64(buffer, profile.locations)

@@ -361,6 +361,7 @@ module ProfilerNative:
         # this normalized model and therefore cannot accidentally implement a
         # second, format-specific parser.
         struct NativeOfflineProfile:
+            allocation_abi_evidence: mutable darray[i64]
             source: mutable darray[u8]
             source_snapshot: mutable darray[u8]
             source_digest: mutable darray[u8]
@@ -415,6 +416,7 @@ module ProfilerNative:
 
         def empty_native_offline_profile() -> NativeOfflineProfile:
             return NativeOfflineProfile{
+                allocation_abi_evidence: [],
                 source: [], source_snapshot: [], source_digest: [], source_digest_available: false,
                 workload: [], collection_mode: [], outcome: [], exit_code: NATIVE_ZERO,
                 events: NATIVE_ZERO, allocation_record_count: NATIVE_ZERO, allocation_dropped: NATIVE_ZERO, locations: NATIVE_ZERO, statement_events: NATIVE_ZERO,
@@ -468,6 +470,7 @@ module ProfilerNative:
             source_lines: mutable darray[i64]
 
         struct CaptureSummary:
+            allocation_abi_evidence: mutable darray[i64]
             events: mutable i64
             locations: mutable i64
             statement_events: mutable i64

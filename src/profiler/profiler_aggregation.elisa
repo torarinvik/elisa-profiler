@@ -7,6 +7,7 @@ extend ProfilerNative:
     private:
         def empty_capture_summary() -> CaptureSummary:
             return CaptureSummary{
+                allocation_abi_evidence: [],
                 events: NATIVE_ZERO,
                 locations: NATIVE_ZERO,
                 statement_events: NATIVE_ZERO,
@@ -73,6 +74,7 @@ extend ProfilerNative:
 
 
         def merge_capture_summary(destination: mutable CaptureSummary&, incoming: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
+            destination.allocation_abi_evidence.extend(incoming.allocation_abi_evidence)
             destination.events <- native_saturating_add(destination.events, incoming.events)
             destination.locations <- native_saturating_add(destination.locations, incoming.locations)
             destination.statement_events <- native_saturating_add(destination.statement_events, incoming.statement_events)

@@ -6,6 +6,38 @@
 # remain responsible for producing the evidence named here.
 extend ProfilerNative:
     private:
+        def allocation_abi_flag_count(evidence: darray[i64]&, mask: i64) -> i64 can[Abort.Panic]:
+            count: mutable i64 = NATIVE_ZERO
+            for flags in evidence |count, mask|:
+                if flags >= NATIVE_ZERO and flags / mask % NATIVE_TWO == NATIVE_ONE:
+                    count <- native_saturating_add(count, NATIVE_ONE)
+            return count
+
+        def append_allocation_abi_description(buffer: mutable darray[u8]&, evidence: darray[i64]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "Allocation hook ABI: ")
+            if evidence.count == NATIVE_ZERO.usize():
+                append_text(buffer, "unknown; no measured repetition metadata is available.")
+                return
+            missing: mutable i64 = NATIVE_ZERO
+            for flags in evidence |missing|:
+                missing <- native_saturating_add(missing, NATIVE_ONE) if flags < NATIVE_ZERO
+            append_text(buffer, "measured repetitions: ")
+            append_i64(buffer, evidence.count.i64())
+            append_text(buffer, "; negotiated v1: ")
+            append_i64(buffer, allocation_abi_flag_count(evidence, NATIVE_ALLOCATION_ABI_NEGOTIATED))
+            append_text(buffer, "; v1 calls: ")
+            append_i64(buffer, allocation_abi_flag_count(evidence, NATIVE_ALLOCATION_ABI_VERSIONED_CALL))
+            append_text(buffer, "; legacy calls: ")
+            append_i64(buffer, allocation_abi_flag_count(evidence, NATIVE_ALLOCATION_ABI_LEGACY))
+            append_text(buffer, "; rejected versions: ")
+            rejected: i64 = allocation_abi_flag_count(evidence, NATIVE_ALLOCATION_ABI_REJECTED)
+            append_i64(buffer, rejected)
+            append_text(buffer, "; metadata unavailable: ")
+            append_i64(buffer, missing)
+            append_text(buffer, ". Counts overlap and describe repetitions, not allocation events. Missing metadata is unknown, not zero; negotiation does not prove complete allocation coverage.")
+            if rejected > NATIVE_ZERO:
+                append_text(buffer, " Unsupported hook ABI requested: use a producer supporting exact ABI v1 or a collector supporting the producer's version.")
+
         def allocation_collection_enabled(mode: darray[u8]&) -> bool:
             return protocol_field_is(mode, "full") or protocol_field_is(mode, "diagnostic")
 
@@ -26,6 +58,8 @@ extend ProfilerNative:
             append_text(buffer, "; tasks unsupported (task_lifecycle_hooks_unavailable); identity ")
             append_text(buffer, "compiler_stable_ids (compiler_issued_function_and_location_ids)" if summary.stable_ids_available else "source_name_fallback (compiler_stable_ids_unavailable)")
             append_text(buffer, "\n")
+            append_allocation_abi_description(buffer, summary.allocation_abi_evidence)
+            append_text(buffer, "\n")
 
 
         def append_capability_html_summary(buffer: mutable darray[u8]&, mode: darray[u8]&, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
@@ -36,6 +70,9 @@ extend ProfilerNative:
             append_text(buffer, "<li><strong>Tasks:</strong> unsupported — task lifecycle hooks are unavailable.</li><li><strong>Identity:</strong> ")
             append_text(buffer, "compiler stable IDs — compiler-issued function and location IDs were observed." if summary.stable_ids_available else "source-name fallback — compiler stable IDs are unavailable.")
             append_text(buffer, "</li></ul></section>")
+            append_text(buffer, "<p>")
+            append_allocation_abi_description(buffer, summary.allocation_abi_evidence)
+            append_text(buffer, "</p>")
 
 
         def append_collection_capabilities(buffer: mutable darray[u8]&, mode: darray[u8]&, event_trace: bool, recent_path: bool, summary: CaptureSummary) -> void can[Abort.Panic, Memory.Allocate]:
