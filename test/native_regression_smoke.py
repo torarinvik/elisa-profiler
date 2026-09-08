@@ -903,6 +903,13 @@ def main():
         assert b"Memory and regions" in allocation_html.read_bytes()
         assert b"Raw allocation lifecycle records" in allocation_html.read_bytes()
         tail_output = work / "arena-tail-growth.json"
+        for collection_fixture in ("collection_stack_reuse_workload.elisa", "collection_growth_workload.elisa"):
+            collection_output = work / (collection_fixture + ".json")
+            run("profile", ROOT / "examples" / collection_fixture, "--mode", "full",
+                "--format", "json", "--output", collection_output)
+            collection_report = json.loads(collection_output.read_text(encoding="utf-8"))
+            validate(collection_report, allocation_schema_root, allocation_schema_root, collection_fixture)
+            assert collection_report["summary"]["capture_complete"] is True
         run("profile", ROOT / "examples" / "arena_tail_growth_workload.elisa", "--mode", "full",
             "--format", "json", "--output", tail_output)
         tail_report = json.loads(tail_output.read_text(encoding="utf-8"))
