@@ -776,6 +776,22 @@ Leading sampled leaves were `emit_object` (513), `arena_realloc` (474),
 not native-PC attribution or exact self times. The single instrumented run is
 hotspot evidence, not a controlled throughput or profiler-overhead comparison.
 
+## Cache template lines during declaration (2026-09-09)
+
+The function declaration pass now collects ordinary generic and errorset-only
+template lines once, excluding bound-only rows and retaining generated-typestate
+exceptions. All 613 selected diagnostic/generic/errorset/typestate/overload/module
+comparisons matched status, diagnostics, and successful LLVM output. A direct
+metadata test verifies duplicates, ordering, errorset inclusion, and bound-row
+and unrelated-row exclusion.
+
+Full O0 baseline/candidate wall times were 56.81/55.55 seconds and, reversing
+order, 56.96/55.57 seconds. User CPU times were 56.25/55.05 and 56.43/55.09.
+All four objects were byte-identical: 2.2–2.4% less wall time than `2a64005f`
+with self-hosted binaries on identical source. Evidence:
+`build/template-lines-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh committed bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
