@@ -619,6 +619,23 @@ self times. A single instrumented run is not a paired throughput benchmark.
 Readonly argument checking is the next candidate: it currently performs its
 parameter lookup before checking whether the argument is a readonly reference.
 
+## Gate readonly parameter lookups (2026-09-08)
+
+Readonly argument checking now scans parameter metadata only for positional
+readonly arguments that could produce its diagnostic. Overload handling stays
+unchanged. All 392 selected diagnostic/readonly/overload/borrow comparisons
+matched status, diagnostic output, and successful LLVM output. A focused direct
+semantic harness additionally checks the exact rejected-call diagnostic and
+the readonly-overload and named-argument exemptions.
+
+Full O0 baseline/candidate wall times were 66.05/65.02 seconds, and 66.48/65.01
+seconds in reverse execution order. User CPU times were 65.41/64.21 and
+65.66/64.33 seconds. All four objects were byte-identical: 1.6–2.2% less wall
+time than `1910e662`, using self-hosted binaries on identical current source.
+Evidence: `build/readonly-lookup-full-{baseline,candidate}.log` and their
+`-reverse.log` variants. Fresh committed bootstrap and profiler regression
+validation remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
