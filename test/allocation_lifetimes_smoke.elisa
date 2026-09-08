@@ -33,6 +33,34 @@ module AllocationLifetimesSmoke:
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             assert state.live_bytes == BYTES
+            ranged: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(THREE_SLOTS)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&ranged, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&ranged, ARENA, ADDRESS + BYTES, ZERO) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&ranged, OTHER_ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_range_release(&ranged, ARENA, ADDRESS, ADDRESS + BYTES)
+            assert ranged.live_bytes == BYTES
+            assert ranged.entries[SECOND_ENTRY].live
+            assert ranged.allocated_bytes == BYTES + BYTES
+            assert ranged.peak_live_bytes == BYTES + BYTES
+            assert ElisaProfilerAllocationLifetimes::observe_range_release(&ranged, ARENA, ADDRESS, ADDRESS + BYTES)
+            assert ranged.live_bytes == BYTES
+            partial_range: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&partial_range, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&partial_range, ARENA, OTHER_ADDRESS, BYTES) != ZERO
+            assert not ElisaProfilerAllocationLifetimes::observe_range_release(&partial_range, ARENA, ADDRESS, OTHER_ADDRESS + ONE)
+            assert partial_range.quality == ElisaProfilerAllocationLifetimes::QUALITY_SIZE_MISMATCH
+            assert partial_range.live_bytes == BYTES + BYTES
+            assert partial_range.entries[FIRST_ENTRY].live
+            empty_range: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&empty_range, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_range_release(&empty_range, ARENA, ADDRESS, ADDRESS)
+            assert empty_range.live_bytes == BYTES
+            invalid_range: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(SINGLE_SLOT)
+            assert not ElisaProfilerAllocationLifetimes::observe_range_release(&invalid_range, ARENA, OTHER_ADDRESS, ADDRESS)
+            assert invalid_range.quality == ElisaProfilerAllocationLifetimes::QUALITY_IDENTITY
+            assert not ElisaProfilerAllocationLifetimes::observe_range_release(&empty_range, ARENA, ADDRESS + ONE, ADDRESS + BYTES)
+            assert empty_range.quality == ElisaProfilerAllocationLifetimes::QUALITY_SIZE_MISMATCH
+            assert empty_range.live_bytes == BYTES
             adopted: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
             assert ElisaProfilerAllocationLifetimes::observe_allocation(&adopted, ARENA, ADDRESS, BYTES) != ZERO
             child_generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&adopted, OTHER_ARENA, OTHER_ADDRESS, BYTES + BYTES)

@@ -172,6 +172,39 @@ module ElisaProfilerAllocationLifetimes:
                     state.entries[index].released <- false
             return true
 
+        # Release a verified half-open region/suffix range. The caller owns
+        # region-layout validation; never derive this range from a header size.
+        # A live allocation crossing either boundary means the evidence cannot
+        # describe whole logical lifetimes. Reject before releasing any entry.
+        def observe_range_release(state: mutable State&, arena: u64, start: u64, stop: u64) -> bool can[Abort.Panic]:
+            return false if state.quality != QUALITY_EXACT
+            if arena == ZERO or stop < start:
+                invalidate(state, QUALITY_IDENTITY)
+                return false
+            return true if start == stop
+            for index in 0..<state.entries.count |state, arena, start, stop|:
+                if state.entries[index].arena == arena and state.entries[index].live:
+                    address: u64 = state.entries[index].address
+                    size: u64 = state.entries[index].size_bytes
+                    if address < start:
+                        if size > start - address:
+                            invalidate(state, QUALITY_SIZE_MISMATCH)
+                            return false
+                    elif address < stop and size > stop - address:
+                        invalidate(state, QUALITY_SIZE_MISMATCH)
+                        return false
+            for index in 0..<state.entries.count |state, arena, start, stop|:
+                if state.entries[index].arena == arena:
+                    address: u64 = state.entries[index].address
+                    if address >= start and address < stop:
+                        if state.entries[index].live:
+                            state.live_bytes <- state.live_bytes - state.entries[index].size_bytes
+                            state.entries[index].live <- false
+                        state.entries[index].released <- false
+                    elif address < start and state.entries[index].size_bytes > start - address:
+                        state.entries[index].released <- false
+            return true
+
         # Empty and repeated resets are valid. This is a logical release, not
         # a claim that the arena returned its backing memory to the OS.
         def observe_arena_reset(state: mutable State&, arena: u64) -> void can[Abort.Panic]:

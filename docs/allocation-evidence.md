@@ -176,6 +176,15 @@ self-adoption are rejected before changing any entry. Empty-child adoption is
 valid. This state operation does not solve raw region-index remapping, and it
 does not preserve pending realloc-release evidence across adoption boundaries.
 
+The state engine also accepts a caller-verified half-open address range for
+bulk logical release. It preflights all live entries, rejects partial overlaps
+before mutation, limits release to the specified arena, and leaves cumulative
+traffic and peak totals unchanged. Empty ranges are no-ops; zero-size entries
+at the exclusive end are outside the range. This convention is not itself a
+rewind interpretation: the reconciler still needs explicit region data-base
+and boundary evidence, including how zero-size allocations relate to marks.
+The current raw header/offset pair must not be treated as that complete map.
+
 This engine is not connected to capture reports yet. Raw-event ordering,
 realloc/adoption/rewind reconciliation, region identity, loss propagation,
 lifetime distributions, and performance validation remain necessary before
