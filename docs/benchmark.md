@@ -664,6 +664,23 @@ regressions also passed. Evidence: `build/preserves-filter-committed-self-host.l
 `build/preserves-filter-native-regression.log`, and
 `build/preserves-filter-sampling-regression.log`.
 
+## Compact frame-law conformance annotations (2026-09-09)
+
+Frame-law conformance now receives only law-field and paired fulfillment
+law/subject rows, preserving their order and duplicates. Sibling law validation
+still sees the full table, and value-position checks still run without fulfills
+clauses. All 390 selected diagnostic/frame/fulfillment/law comparisons matched
+status, diagnostics, and successful LLVM output. A focused semantic harness
+checks subject selection, changes/preserves fields, and a frame-law value test
+in a function without a fulfillment clause.
+
+Full O0 baseline/candidate wall times were 63.09/61.14 seconds and, reversing
+order, 63.41/61.08 seconds. User CPU times were 62.65/60.71 and 62.77/60.61.
+All four objects were byte-identical: 3.1–3.7% less wall time than `520d4572`
+with self-hosted binaries on identical current source. Evidence:
+`build/frame-conformance-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh committed bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
