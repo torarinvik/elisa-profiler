@@ -86,8 +86,12 @@ extend ProfilerNative:
                 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
                 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
             ]
+            # Read complete blocks from the input without copying or modifying it.
+            # Only the final partial block and padding need owned storage.
+            complete_bytes: usize = data.count - data.count % NATIVE_SHA256_BLOCK_BYTES
             padded: mutable darray[u8] = []
-            padded.extend(data)
+            for byte_index in complete_bytes..<data.count |padded, data|:
+                padded.push(data[byte_index])
             padded.push(SHA256_PADDING_BYTE)
             while (padded.count + NATIVE_SHA256_LENGTH_BYTES) % NATIVE_SHA256_BLOCK_BYTES != NATIVE_ZERO.usize() |padded|:
                 padded.push(NATIVE_BYTE_NUL)
@@ -106,10 +110,12 @@ extend ProfilerNative:
             schedule: mutable darray[u32] = []
             for word_index in 0..<NATIVE_SHA256_ROUNDS |schedule|:
                 schedule.push(NATIVE_ZERO.u32())
-            while block_start < padded.count |block_start, padded, state, round_constants, schedule|:
-                for word_index in 0..<SHA256_MESSAGE_WORDS |schedule, padded, block_start|:
-                    byte_index: usize = block_start + word_index * NATIVE_SHA256_WORD_BYTES
-                    word: u32 = (padded[byte_index].u32() << SHA256_WORD_SHIFT_24) | (padded[byte_index + NATIVE_ONE.usize()].u32() << SHA256_WORD_SHIFT_16) | (padded[byte_index + NATIVE_TWO.usize()].u32() << SHA256_WORD_SHIFT_8) | padded[byte_index + NATIVE_THREE.usize()].u32()
+            while block_start < complete_bytes + padded.count |block_start, padded, data, complete_bytes, state, round_constants, schedule|:
+                block_data: darray[u8] = data if block_start < complete_bytes else padded
+                block_offset: usize = block_start if block_start < complete_bytes else block_start - complete_bytes
+                for word_index in 0..<SHA256_MESSAGE_WORDS |schedule, block_data, block_offset|:
+                    byte_index: usize = block_offset + word_index * NATIVE_SHA256_WORD_BYTES
+                    word: u32 = (block_data[byte_index].u32() << SHA256_WORD_SHIFT_24) | (block_data[byte_index + NATIVE_ONE.usize()].u32() << SHA256_WORD_SHIFT_16) | (block_data[byte_index + NATIVE_TWO.usize()].u32() << SHA256_WORD_SHIFT_8) | block_data[byte_index + NATIVE_THREE.usize()].u32()
                     schedule[word_index] <- word
                 for word_index in SHA256_SCHEDULE_START..<NATIVE_SHA256_ROUNDS |schedule|:
                     schedule[word_index] <- sha256_small_sigma_one(schedule[word_index - SHA256_SCHEDULE_OFFSET_TWO]) + schedule[word_index - SHA256_SCHEDULE_OFFSET_SEVEN] + sha256_small_sigma_zero(schedule[word_index - SHA256_SCHEDULE_OFFSET_FIFTEEN]) + schedule[word_index - SHA256_SCHEDULE_OFFSET_SIXTEEN]

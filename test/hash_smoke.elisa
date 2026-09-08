@@ -34,6 +34,9 @@ extend ProfilerNative:
             for index in 0..<HASH_SMOKE_LONG_LENGTH |long_input|:
                 long_input.push(HASH_SMOKE_A)
             check_hash(long_input, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
+            assert long_input.count == HASH_SMOKE_LONG_LENGTH
+            for index in 0..<long_input.count |long_input|:
+                assert long_input[index] == HASH_SMOKE_A
             return NATIVE_ZERO
 
 def main() -> i64:
