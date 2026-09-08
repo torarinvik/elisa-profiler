@@ -687,6 +687,20 @@ passed. Evidence: `build/frame-conformance-committed-self-host.log`,
 `build/frame-conformance-native-regression.log`, and
 `build/frame-conformance-sampling-regression.log`.
 
+## Post-frame-conformance compiler profile (2026-09-09)
+
+A freshly instrumented `b22adad5` completed the full compiler workload in
+67.361 seconds. The 5 ms capture contained 10,899 samples, zero missed samples,
+zero dropped frames, and reported complete capture. Evidence:
+`build/post-frame-full-profile.json` and `build/post-frame-full-profile.log`.
+
+Leading sampled leaves were `new_region_with_owner` (514), `emit_object` (501),
+`arena_realloc` (489), `packed_dynamic_row_load_value` (382),
+`region_fact_parameter_has_region` (367), `ae_effect_declared` (292), and
+`note_local_type` (290). These are callback-stack CPU samples, not native-PC
+attribution or exact self times. This single instrumented run does not establish
+a paired throughput gain; use the preceding controlled benchmarks for that.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
