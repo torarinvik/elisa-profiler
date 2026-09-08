@@ -7,6 +7,14 @@ experiments can repair compiler defects without modifying their owners.
 
 ## Latest verified refresh — 2026-09-08
 
+Freshness rechecked after optimization commit `90462733`: main remains at
+`a313a619`, with zero commits missing from the dedicated branch. All ten pending
+main source files and its untracked chained-index fixture match our committed
+copies byte for byte. The local audit includes all 11 local branch tips across
+12 worktrees; nine dirty worktrees remain preserved. Compiler manifest, identity,
+and frame-pointer smoke checks passed again. This checks local worktrees and
+branches, not newly published remote changes (fetch was disabled).
+
 Compiler integration commit `5e03c579` includes all 11 audited local branch tips,
 including main's committed `a313a619`, plus an exact reviewed snapshot of main's
 ten pending parser/diagnostic source changes and chained-index regression fixture.
