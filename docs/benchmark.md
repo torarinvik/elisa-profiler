@@ -641,6 +641,24 @@ passed. Evidence: `build/readonly-lookup-committed-self-host.log` and
 passed (`build/readonly-lookup-native-regression.log` and
 `build/readonly-lookup-sampling-regression.log`).
 
+## Compact preserves annotations (2026-09-09)
+
+The preserves checker now retains only its paired root/field rows and the three
+row kinds used by its shared frame-change lookup. Original order and duplicates
+remain intact, including fields contributed through frame-law fulfillment.
+All 389 selected diagnostic/frame/fulfillment comparisons matched status,
+diagnostics, and successful LLVM output. A direct semantic harness verifies
+exact direct-write and inherited-write diagnostics inside a module, with no
+diagnostic for an unrelated preserved field.
+
+Full O0 baseline/candidate wall times were 64.71/63.28 seconds and, reversing
+execution order, 64.76/63.22 seconds. User CPU times were 64.23/62.81 and
+64.30/62.76 seconds. All four emitted objects were byte-identical: 2.2–2.4%
+less wall time than `2eef943b` using self-hosted binaries on identical current
+source. Evidence: `build/preserves-filter-full-{baseline,candidate}.log` and
+their `-reverse.log` variants. Fresh committed bootstrap and profiler regression
+checks remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
