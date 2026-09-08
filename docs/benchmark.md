@@ -492,6 +492,23 @@ Evidence: `build/effect-ref-committed-self-host.log`. The rebuilt profiler also
 passed native and sampling regression checks (`build/effect-ref-native-regression.log`
 and `build/effect-ref-sampling-regression.log`). This is not a complete test-suite claim.
 
+## Compact interprocedural frame annotations (2026-09-08)
+
+The frame checker now constructs one ordered table of direct changes, frame-law
+fields, and fulfillment rows, using private named constants. It retains duplicates
+and inherited-law fields; unconstrained-callee diagnostics remain unchanged.
+All 388 selected diagnostic/frame/fulfillment fixture comparisons matched exit
+status, diagnostics, and successful LLVM output. Focused coverage checks direct
+and inherited contracts plus forbidden-field and unconstrained calls. The accepted
+fixture returns 42 at runtime.
+
+Full O0 baseline/candidate wall times were 77.03/74.42 seconds and, reversing
+order, 77.20/74.44 seconds; user CPU times were 76.49/73.90 and 76.65/73.89.
+All four objects were byte-identical. This is 3.4–3.6% less wall time against
+`d4451281` on the same current compiler source and host, using self-hosted
+binaries. Logs: `build/frame-filter-full-{baseline,candidate}.log` and their
+`-reverse.log` variants. Fresh bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
