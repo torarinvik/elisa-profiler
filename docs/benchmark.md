@@ -572,8 +572,9 @@ All four emitted objects were byte-identical: 3.9–4.2% less wall time against
 `build/refinement-lookup-full-{baseline,candidate}.log` and their `-reverse.log`
 variants. Fresh bootstrap on `51abe116` passed five probes, full compiler emission
 (19,110,168 bytes), byte-identical gen3/gen4 objects, and all 40 repeat emissions
-(`build/refinement-lookup-committed-self-host.log`). Profiler rebuild and
-native/sampling regression checks remain pending.
+(`build/refinement-lookup-committed-self-host.log`). The rebuilt profiler also
+passed native and sampling regressions (`build/refinement-lookup-native-regression.log`
+and `build/refinement-lookup-sampling-regression.log`).
 
 ## Promote a local baseline
 
