@@ -161,6 +161,10 @@ def main():
         work = Path(directory)
         forwarded_help = json.loads(run("profile", ROOT / "examples" / "hot_loop.elisa", "--", "--help"))
         assert forwarded_help["workload"]["arguments"] == ["--help"]
+        assert forwarded_help["quality"]["capture"] == "complete"
+        assert forwarded_help["run"]["outcome"] == "success"
+        assert all(repetition["capture_started"] and repetition["capture_complete"]
+                   for repetition in forwarded_help["run"]["repetitions"])
         assert forwarded_help["build_cache"]["enabled"] is False
         assert forwarded_help["build_cache"]["status"] == "disabled"
         assert forwarded_help["build_cache"]["explanation"] == "disabled; pass --cache-dir PATH to enable"
