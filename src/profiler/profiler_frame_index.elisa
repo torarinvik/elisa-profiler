@@ -1,0 +1,58 @@
+# Private first-seen frame interning for Speedscope exports. Offsets borrow the
+# immutable folded-record buffer for the duration of one render only.
+extend ProfilerNative:
+    private:
+        const FRAME_INDEX_INITIAL_CAPACITY: usize = 256
+        const FRAME_INDEX_GROWTH: usize = 2
+        const FRAME_INDEX_LOAD_DIVISOR: usize = 2
+        const FRAME_INDEX_HASH_BASE: i64 = 33
+        const FRAME_INDEX_HASH_MODULUS: i64 = 2147483647
+
+        struct SpeedscopeFrameIndex:
+            slots: mutable darray[i64]
+            starts: mutable darray[usize]
+            stops: mutable darray[usize]
+            hashes: mutable darray[i64]
+
+        def frame_index_hash(records: darray[u8]&, start: usize, stop: usize) -> i64:
+            hash: mutable i64 = NATIVE_ZERO
+            for cursor in start..<stop |hash, records|:
+                hash <- (hash * FRAME_INDEX_HASH_BASE + records[cursor].i64()) % FRAME_INDEX_HASH_MODULUS
+            return hash
+
+        def frame_index_equal(records: darray[u8]&, start: usize, stop: usize, other_start: usize, other_stop: usize) -> bool:
+            return false if stop - start != other_stop - other_start
+            for offset in NATIVE_ZERO.usize()..<stop - start |records, start, other_start|:
+                return false if records[start + offset] != records[other_start + offset]
+            return true
+
+        @inline(never)
+        def frame_index_grow(index: mutable SpeedscopeFrameIndex&) -> void can[Abort.Panic, Memory.Allocate]:
+            capacity: usize = FRAME_INDEX_INITIAL_CAPACITY if index.slots.count == NATIVE_ZERO.usize() else index.slots.count * FRAME_INDEX_GROWTH
+            index.slots <- []
+            for unused in NATIVE_ZERO.usize()..<capacity |index|:
+                index.slots.push(NATIVE_NEGATIVE_ONE)
+            for entry in NATIVE_ZERO.usize()..<index.starts.count |index, capacity|:
+                slot: mutable usize = index.hashes[entry].usize() % capacity
+                while index.slots[slot] != NATIVE_NEGATIVE_ONE |slot, index, capacity|:
+                    slot <- (slot + NATIVE_ONE.usize()) % capacity
+                index.slots[slot] <- entry.i64()
+
+        # Hashes choose a probe sequence, never identity: collisions are resolved
+        # by exact byte comparison. Names are the complete current frame schema.
+        @inline(never)
+        def frame_index_intern(index: mutable SpeedscopeFrameIndex&, records: darray[u8]&, start: usize, stop: usize) -> i64 can[Abort.Panic, Memory.Allocate]:
+            frame_index_grow(index) if index.starts.count >= index.slots.count / FRAME_INDEX_LOAD_DIVISOR
+            hash: i64 = frame_index_hash(records, start, stop)
+            slot: mutable usize = hash.usize() % index.slots.count
+            while index.slots[slot] != NATIVE_NEGATIVE_ONE |slot, index, records, start, stop, hash|:
+                entry: usize = index.slots[slot].usize()
+                if index.hashes[entry] == hash and frame_index_equal(records, start, stop, index.starts[entry], index.stops[entry]):
+                    return entry.i64()
+                slot <- (slot + NATIVE_ONE.usize()) % index.slots.count
+            entry: i64 = index.starts.count.i64()
+            index.starts.push(start)
+            index.stops.push(stop)
+            index.hashes.push(hash)
+            index.slots[slot] <- entry
+            return entry

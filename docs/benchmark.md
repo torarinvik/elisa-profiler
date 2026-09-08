@@ -164,7 +164,18 @@ expanded stack, sample weight, total weight, and sampling unit was checked
 against the original capture. That check also exposed and fixed an existing
 trailing-space error in leaf frame names. Native regression coverage includes
 524,288 frame occurrences and verifies all expanded names and weights.
-Frame deduplication remains a separate performance opportunity.
+The subsequent private Elisa frame index deduplicates exact names in first-seen
+order. On that same capture it reduces frame entries from 679,751 to 1,713 and
+file size from 26,687,469 to 3,078,782 bytes (88.5% smaller). Expanded stacks,
+weights, and profile metadata match the pre-index export exactly. Peak resident
+memory in the first measured pair falls from 196,820,992 to 153,370,624 bytes
+(22.1%). Regression coverage checks repeated names, deliberate hash collisions,
+multiple table growths, and JSON-escaped names. These export measurements do not
+change the target sampling-overhead measurements above.
+Three subsequent sequential baseline/candidate pairs, without concurrent test
+runs, have median wall times of 3.76/3.79 seconds and identical 3.63-second
+median user CPU time. Thus the demonstrated gains are export size and memory,
+not rendering speed; no speedup is claimed from this change.
 
 ## Promote a local baseline
 

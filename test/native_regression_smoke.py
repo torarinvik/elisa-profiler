@@ -19,6 +19,7 @@ TIMEOUT_SECONDS = 120
 FILE_READ_CHUNK_BYTES = 8192
 LARGE_EXPORT_STACK_COUNT = 16384
 LARGE_EXPORT_STACK_DEPTH = 32
+FRAME_INDEX_GROWTH_NAMES = 1024
 ERROR_STATUS = 2
 INCONCLUSIVE_STATUS = 4
 RECURSIVE_CALLS = 7
@@ -512,10 +513,27 @@ def main():
         assert exported_profile["endValue"] == LARGE_EXPORT_STACK_COUNT
         assert len(exported_profile["samples"]) == LARGE_EXPORT_STACK_COUNT
         shared_frames = large_export_result["shared"]["frames"]
+        assert shared_frames == [{"name": "root"}, {"name": "leaf"}]
         assert all(
             [shared_frames[index]["name"] for index in sample] == frame_names
             for sample in exported_profile["samples"]
         )
+        # Aa and B@ collide under the index's base-33 hash. Revisit both
+        # after several growth operations, with JSON-escaped names as well.
+        distinct_names = ["Aa", "B@", 'quote"slash\\', "white space"] + [
+            f"frame_{index}" for index in range(FRAME_INDEX_GROWTH_NAMES)
+        ]
+        index_names = distinct_names + list(reversed(distinct_names))
+        large_export["stacks"] = [
+            {"stack": name, "call_events": 1, "completed_calls": 1, "self_ns": 1}
+            for name in index_names
+        ]
+        large_export_path.write_text(json.dumps(large_export), encoding="utf-8")
+        index_result = json.loads(run("report", large_export_path, "--format", "speedscope"))
+        index_frames = index_result["shared"]["frames"]
+        assert index_frames == [{"name": name} for name in distinct_names]
+        assert [index_frames[row[0]]["name"] for row in index_result["profiles"][0]["samples"]] == index_names
+        assert index_result["profiles"][0]["weights"] == [1] * len(index_names)
         report["run"]["location_timing"] = False
         capture.write_text(json.dumps(report), encoding="utf-8")
         speedscope = json.loads(run("report", capture, "--format", "speedscope"))
