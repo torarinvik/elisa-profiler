@@ -202,7 +202,7 @@ def main() -> int:
                 name: bool(flags & mask) for name, mask in ALLOCATION_ABI_FLAGS.items()
             }
         for index, fields in enumerate(((1,), (1, -1), (1, ALLOCATION_ABI_MAX_FLAGS + 1),
-                                        (1, "01"), (1, 0, 0), (0, 0))):
+                                        (1, "01"), (1, 0, 0), (1, 0, ""), (0, 0))):
             payload = protocol_record("extension", "allocation_hook_abi", *fields)
             expect_rejected(native, work / f"abi-invalid-{index}",
                             baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload), "invalid ABI evidence")
@@ -210,6 +210,11 @@ def main() -> int:
         expect_rejected(native, work / "abi-duplicate",
                         baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload) + frame(VALUE_FRAME_SEQUENCE + 1, payload),
                         "duplicate ABI evidence")
+        future_payload = protocol_record("extension", "allocation_hook_abi", 2, "future-layout")
+        process, report = recover(native, work / "abi-future",
+                                  baseline_capture + frame(VALUE_FRAME_SEQUENCE, future_payload))
+        assert process.returncode == 0, process.stderr
+        assert "allocation_hook_abi" not in report["run"]["repetitions"][0]
 
         # Keep framing valid so failures exercise numeric validation, not checksums.
         for signed, boundary_values in ((False, (0, MAX_I64 + 1, MAX_U64)),

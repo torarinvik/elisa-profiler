@@ -1029,7 +1029,7 @@ extend ProfilerNative:
                             summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                         elif version == NATIVE_ONE:
                             flags: i64 = parse_protocol_number(data, &cursor, line_stop)
-                            if summary.allocation_abi_flags != NATIVE_NEGATIVE_ONE or flags < NATIVE_ZERO or flags > NATIVE_ALLOCATION_ABI_MAX_FLAGS or cursor != line_stop:
+                            if summary.allocation_abi_flags != NATIVE_NEGATIVE_ONE or flags < NATIVE_ZERO or flags > NATIVE_ALLOCATION_ABI_MAX_FLAGS or cursor != line_stop or data[line_stop - NATIVE_ONE.usize()] == NATIVE_BYTE_TAB:
                                 summary.malformed <- true
                                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                             else:
