@@ -261,3 +261,12 @@ fixes all four affected status paths. The native regression now checks the
 disabled-cache status and explanation explicitly. This is not sufficient to
 enable `-O2`: the optimized build subsequently fails in offline text reporting,
 which still needs investigation.
+
+The offline-report failure was later localized to `append_text` allocating
+while called from `append_offline_text_profile`. Passing `NativeOfflineProfile`
+by read-only reference instead of copying the large aggregate eliminates this
+crash. All offline renderers and baseline metadata now use that reference
+signature; native regression and baseline tests pass. This avoids the failing
+argument-passing shape but does not establish the underlying compiler cause.
+The optimized regression then advances to live HTML, where a capture is
+incorrectly marked incomplete. Optimized builds remain experimental.

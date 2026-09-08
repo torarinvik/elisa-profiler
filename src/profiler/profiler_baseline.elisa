@@ -38,7 +38,7 @@ extend ProfilerNative:
             _ = profiler_ffi_unlink((&path_copy[0]).cast[cstr] can Unsafe.PointerCast)
 
 
-        def baseline_append_metadata(buffer: mutable darray[u8]&, name: darray[u8]&, relative_capture: darray[u8]&, capture_digest: darray[u8]&, profile: NativeOfflineProfile, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, mode: darray[u8]&, reason: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+        def baseline_append_metadata(buffer: mutable darray[u8]&, name: darray[u8]&, relative_capture: darray[u8]&, capture_digest: darray[u8]&, profile: NativeOfflineProfile&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, mode: darray[u8]&, reason: darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
             append_text(buffer, "{\"kind\":\"elisa_profiler_baseline\",\"schema_version\":")
             append_i64(buffer, NATIVE_BASELINE_SCHEMA_VERSION)
             append_text(buffer, ",\"name\":")
