@@ -107,6 +107,18 @@ compiler CPU time: only instrumented Elisa stacks are represented, and callback
 overhead remains. A same-revision uninstrumented comparison is required before
 claiming an absolute sampling-overhead factor.
 
+The subsequent same-source, same-generation comparison at compiler `bd25a22a`
+used the self-host generation-2 executable as baseline and a function-traced
+compiler built by that same seed. Three alternating baseline/sample wall times
+were 1.60/2.04s, 1.59/1.73s, and 1.45/1.72s; median overhead was approximately
+9%. User CPU medians were 1.49s and 1.68s (approximately 13% overhead).
+Workload output objects matched byte-for-byte in every pair. These timings
+exclude report transport and CLI preparation, with sampling sent to `/dev/null`.
+A separate normal CLI run completed successfully with 1,031 retained samples,
+zero reported misses, and complete capture/detail quality. Comparisons against
+the stage-0-built seed are not an instrumentation-overhead baseline: that is a
+different compiler generation with different generated code.
+
 The checked-in example gates aggregate wall time only. It deliberately does not
 gate every function's self time: very short functions can quantize to zero in
 one capture and a microsecond in the other, which is useful evidence but makes
