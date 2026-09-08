@@ -160,6 +160,12 @@ records. A future protocol revision can add the missing span and scheduler
 semantics; renderers must label this stream as event evidence rather than
 claiming a complete wall-clock timeline.
 
+The HTML event-evidence table builds a bounded index of the first 10,000
+records and renders at most 200 rows per filter result. The escaped raw record
+payload remains available below the table, so a large trace is never silently
+equated with the visible page; the UI explicitly directs readers to the raw
+records for entries beyond the index limit.
+
 HTML diagnostics present each retained thread-loss record as a bounded table
 with repetition, capture-local thread, event-sequence range, and each loss
 counter. The table deliberately calls the range “collector order” and never

@@ -83,6 +83,7 @@ module ProfilerNative:
         const NATIVE_COMPARISON_HTML_DETAIL_LIMIT: i64 = 200
         const NATIVE_FLAME_METRIC_DETAIL_LIMIT: i64 = 200
         const NATIVE_EVENT_TIMELINE_DETAIL_LIMIT: i64 = 200
+        const NATIVE_EVENT_TIMELINE_INDEX_LIMIT: i64 = 10000
         # These labels are part of the comparison JSON contract. Centralizing
         # them prevents the four detail families from drifting apart.
         const NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID: i64 = 1

@@ -377,6 +377,7 @@ def main():
         assert b"Diagnostic event evidence" in offline_html
         assert b"event-timeline-filter" in offline_html
         assert b"MAX_EVENT_TIMELINE_ROWS=200" in offline_html
+        assert b"MAX_EVENT_TIMELINE_INDEX=10000" in offline_html
         assert b"timestamp_ns" in offline_html
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
         assert b"Source view unavailable" in offline_html
