@@ -940,6 +940,7 @@ extend ProfilerNative:
             profile.thread_loss <- []
             profile.folded_records <- []
             profile.sample_records <- []
+            profile.event_records <- []
             profile.source_digest_available <- false
             profile.crash_signal_available <- false
             profile.capture_complete_available <- false
@@ -1041,6 +1042,26 @@ extend ProfilerNative:
             return false if not json_read_location_timing(data, &profile.location_timing)
             return false if not json_read_stacks_to_folded(data, &profile.folded_records, profile.location_timing)
             return false if not json_read_samples_to_folded(data, &profile.folded_records)
+
+            repetitions_start: i64 = json_key_value_start(data, "repetitions", run_start.usize(), run_stop.usize())
+            if repetitions_start >= NATIVE_ZERO and data[repetitions_start.usize()] == NATIVE_BYTE_LEFT_BRACKET:
+                repetitions_stop: i64 = json_array_end(data, repetitions_start.usize(), run_stop.usize())
+                return false if repetitions_stop < NATIVE_ZERO
+                repetition_cursor: usize = json_skip_whitespace(data, repetitions_start.usize() + NATIVE_ONE.usize(), (repetitions_stop.usize() - NATIVE_ONE.usize()))
+                if repetition_cursor < repetitions_stop.usize() - NATIVE_ONE.usize() and data[repetition_cursor] == NATIVE_BYTE_LEFT_BRACE:
+                    repetition_stop: i64 = json_object_end(data, repetition_cursor, repetitions_stop.usize())
+                    return false if repetition_stop < NATIVE_ZERO
+                    event_start: mutable i64 = json_key_value_start(data, "event_trace", repetition_cursor, repetition_stop.usize())
+                    if event_start < NATIVE_ZERO:
+                        event_start <- json_key_value_start(data, "recent_events", repetition_cursor, repetition_stop.usize())
+                    if event_start >= NATIVE_ZERO and data[event_start.usize()] == NATIVE_BYTE_LEFT_BRACKET:
+                        event_stop: i64 = json_array_end(data, event_start.usize(), repetition_stop.usize())
+                        return false if event_stop < NATIVE_ZERO
+                        event_content_start: usize = event_start.usize() + NATIVE_ONE.usize()
+                        event_content_stop: usize = event_stop.usize() - NATIVE_ONE.usize()
+                        if event_content_start < event_content_stop:
+                            for index in event_content_start..<event_content_stop |index, data, profile|:
+                                profile.event_records.push(data[index])
 
             functions_start: i64 = json_key_value_start(data, "functions", NATIVE_ZERO.usize(), data.count)
             return false if functions_start < NATIVE_ZERO or data[functions_start.usize()] != NATIVE_BYTE_LEFT_BRACKET

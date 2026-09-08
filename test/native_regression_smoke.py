@@ -75,6 +75,17 @@ def main():
         "run": {
             "opt_level": "-O0", "exit_code": 0, "execution_ms_mean": 1.25,
             "compile_ms": 2.5, "location_timing": True,
+            "repetitions": [{
+                "repetition": 1,
+                "event_trace": [
+                    {"sequence": 0, "kind": "function", "function": "root", "line": 1,
+                     "variable": None, "signed": False, "value": 0, "thread_id": 0,
+                     "timestamp_ns": 100},
+                    {"sequence": 1, "kind": "statement", "function": "work", "line": 2,
+                     "variable": "value", "signed": False, "value": 7, "thread_id": 0,
+                     "timestamp_ns": 200},
+                ],
+            }],
         },
         "functions": [],
         "call_edges": [],
@@ -363,6 +374,10 @@ def main():
         assert b"INPUT_IDS=['function-filter'" in offline_html
         assert b"thread-loss-filter']" in offline_html
         assert b"Sequence ranges are collector order only" in offline_html
+        assert b"Diagnostic event evidence" in offline_html
+        assert b"event-timeline-filter" in offline_html
+        assert b"MAX_EVENT_TIMELINE_ROWS=200" in offline_html
+        assert b"timestamp_ns" in offline_html
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
         assert b"Source view unavailable" in offline_html
         assert b"--embed-source" in offline_html
@@ -862,6 +877,12 @@ def main():
         diagnostic_report = json.loads(output.read_text())
         assert diagnostic_report["run"]["collection_mode"] == "diagnostic"
         assert diagnostic_report["run"]["event_trace_enabled"] is True
+        diagnostic_events = diagnostic_report["run"]["repetitions"][0]["event_trace"]
+        assert diagnostic_events
+        assert all("thread_id" in event and "timestamp_ns" in event for event in diagnostic_events)
+        diagnostic_html = run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "diagnostic", "--format", "html")
+        assert b"Diagnostic event evidence" in diagnostic_html
+        assert b"event-timeline-filter" in diagnostic_html
         mode_comparison = json.loads(run("compare", functions_capture, values_capture, "--format", "json"))
         assert mode_comparison["collection_mode_match"] is False
         assert any("different collection modes" in warning for warning in mode_comparison["warnings"])

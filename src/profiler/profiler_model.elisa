@@ -82,6 +82,7 @@ module ProfilerNative:
         const NATIVE_COMPARISON_MAX_PERCENT: i64 = 1000000
         const NATIVE_COMPARISON_HTML_DETAIL_LIMIT: i64 = 200
         const NATIVE_FLAME_METRIC_DETAIL_LIMIT: i64 = 200
+        const NATIVE_EVENT_TIMELINE_DETAIL_LIMIT: i64 = 200
         # These labels are part of the comparison JSON contract. Centralizing
         # them prevents the four detail families from drifting apart.
         const NATIVE_COMPARISON_MATCH_KIND_COMPILER_ID: i64 = 1
@@ -387,6 +388,7 @@ module ProfilerNative:
             thread_loss: mutable darray[u8]
             folded_records: mutable darray[u8]
             sample_records: mutable darray[u8]
+            event_records: mutable darray[u8]
 
         def empty_native_offline_profile() -> NativeOfflineProfile:
             return NativeOfflineProfile{
@@ -408,7 +410,7 @@ module ProfilerNative:
                 completed_repetitions: NATIVE_ZERO, successful_repetitions: NATIVE_ZERO,
                 host: NativeHostMetadata{available: false, os: [], architecture: [], load_average_1m: NATIVE_ZERO_F64, load_average_available: false},
                 location_timing: false, functions: [], call_edges: [], stacks: [],
-                location_records: [], thread_loss: [], folded_records: [], sample_records: [],
+                location_records: [], thread_loss: [], folded_records: [], sample_records: [], event_records: [],
             }
 
         struct NativePathMap:
