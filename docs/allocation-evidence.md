@@ -179,12 +179,19 @@ Real native fixtures verify that emitted layouts precede and contain their
 allocations, and that adoption preserves backing geometry. Unused regions and
 other lifecycle paths are not yet comprehensively mapped. Map reconciliation
 remains unfinished; these records do not establish complete lifetime metrics.
-In particular, `collection_stack_acquire` claims fresh or pooled backing for
-dictionary/set tables without passing through the ordinary allocation hook.
-Its pooling and ping-pong ownership transitions also need explicit evidence.
-A layout observed later during adoption cannot reconstruct those earlier
-logical allocation lifetimes. Collection-heavy captures must not be treated
-as complete allocation accounting until those paths are instrumented.
+`collection_stack_acquire` now emits a layout and logical allocation for each
+fresh or reused table stack. Dictionary/set reserve helpers emit `reclaim`
+only after rehash has finished reading the old stack. This is logical table
+retirement, not an OS free: backing remains available for ping-pong reuse.
+Sizes describe claimed uintptr slots in bytes. Direct stack callers must
+report retirement after their own last read through the same helper.
+
+The focused reuse capture observes three claims and two retirements; the real
+dictionary/set workload also produces claim, retirement, and layout records.
+The retirement helper recognizes collection-stack table bases only. Initial
+tables from other allocation paths and foreign/static tables are not retired
+by that helper. Thus this closes stack-claim visibility, not complete collection
+allocation accounting or the remaining lifetime reconciliation requirements.
 
 ### Lifetime-state engine
 

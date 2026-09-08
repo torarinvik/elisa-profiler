@@ -19,7 +19,9 @@ module CollectionStackReuseWorkload:
             first_table: mutable heap void& = collection_stack_table(first)
             second: mutable heap Region& = collection_stack_acquire(&arena, first_table, SECOND_SLOTS)
             second_table: mutable heap void& = collection_stack_table(second)
+            collection_stack_profile_release(&arena, first_table)
             third: mutable heap Region& = collection_stack_acquire(&arena, second_table, THIRD_SLOTS)
+            collection_stack_profile_release(&arena, second_table)
             correct: bool = first != second and third == first and third.count == THIRD_SLOTS and third.owner_next == second and first.global_index != second.global_index
             arena_free(&arena)
             return SUCCESS if correct else FAILURE

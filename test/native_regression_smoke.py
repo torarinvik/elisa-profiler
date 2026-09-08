@@ -910,6 +910,25 @@ def main():
             collection_report = json.loads(collection_output.read_text(encoding="utf-8"))
             validate(collection_report, allocation_schema_root, allocation_schema_root, collection_fixture)
             assert collection_report["summary"]["capture_complete"] is True
+            collection_repetition = collection_report["run"]["repetitions"][0]
+            collection_events = sorted(collection_repetition["allocation_events"], key=lambda event: event["sequence"])
+            claims = [event for event in collection_events if event["kind"] == "alloc"]
+            releases = [event for event in collection_events if event["kind"] == "reclaim"]
+            assert claims and releases and collection_repetition["region_layouts"]
+            for release in releases:
+                earlier = [claim for claim in claims if claim["arena"] == release["arena"]
+                           and claim["address"] == release["old_address"] and claim["sequence"] < release["sequence"]]
+                assert earlier
+                latest = max(earlier, key=lambda event: event["sequence"])
+                assert latest["size_bytes"] == release["old_size_bytes"]
+                assert latest["region"] == release["region"]
+            if collection_fixture == "collection_stack_reuse_workload.elisa":
+                first_claim, second_claim, reused_claim = claims
+                first_release, second_release = releases
+                assert first_claim["address"] == reused_claim["address"] != second_claim["address"]
+                assert first_claim["sequence"] < second_claim["sequence"] < first_release["sequence"] < reused_claim["sequence"] < second_release["sequence"]
+                assert first_release["old_address"] == first_claim["address"]
+                assert second_release["old_address"] == second_claim["address"]
         run("profile", ROOT / "examples" / "arena_tail_growth_workload.elisa", "--mode", "full",
             "--format", "json", "--output", tail_output)
         tail_report = json.loads(tail_output.read_text(encoding="utf-8"))
