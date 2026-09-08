@@ -182,6 +182,20 @@ conditions changed during the sequence, these runs do not isolate the layout's
 effect. A fresh sequential unified/old-layout pair under the quieter conditions
 is needed before deciding whether to retain the optimization.
 
+That sequential pair completed with target wall/user CPU of 318.154/310.140
+seconds for unified TLS and 319.366/312.107 seconds for the old layout. Both
+objects matched the baseline; 46,499/46,457 samples were fully retained with
+zero reported misses or stack overflow. Total CLI wall was 321.88/323.01 seconds.
+This does not reproduce the earlier regression, but the difference is too small
+for a meaningful whole-build speedup claim from one pair. The TLS layout is
+retained for its measured callback-loop gain and passing correctness checks.
+
+Despite the `quiet-` artifact names, four other CPU-heavy jobs were discovered
+still running throughout this pair (three debugger compiler jobs and an `epq`
+workload). None was stopped by the profiler agent. The pair is same-session
+evidence under background load, not an isolated-machine benchmark. A fresh
+uninstrumented control is still needed to quantify current capture overhead.
+
 ## Large Speedscope export validation
 
 The 58,399-sample self-build capture exposed stack exhaustion in the previous
