@@ -383,8 +383,12 @@ def main():
         assert b"Sequence ranges are collector order only" in offline_html
         assert b"Diagnostic event evidence" in offline_html
         assert b"event-timeline-filter" in offline_html
+        assert b"event-timeline-repetition" in offline_html
+        assert b"event-timeline-thread" in offline_html
+        assert b"event-timeline-selection" in offline_html
         assert b"MAX_EVENT_TIMELINE_ROWS=200" in offline_html
         assert b"MAX_EVENT_TIMELINE_INDEX=10000" in offline_html
+        assert b"MAX_EVENT_TIMELINE_FILTER_OPTIONS=128" in offline_html
         assert b"timestamp_ns" in offline_html
         assert b"<th scope='col'>Repetition</th>" in offline_html
         assert offline_html.count(b'&quot;repetition&quot;: 2') >= 1
