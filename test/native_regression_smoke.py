@@ -797,6 +797,13 @@ def main():
             assert any(event["kind"] == "region_free" and event["arena"] == arena
                        and event["sequence"] > transfer["sequence"] for event in adoption_events)
         assert b"arena_adopt" in run("report", adoption_output, "--format", "html")
+        runtime_trace_output = work / "runtime-trace.json"
+        run("profile", ROOT / "examples" / "runtime_trace_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", runtime_trace_output)
+        runtime_trace_report = json.loads(runtime_trace_output.read_text(encoding="utf-8"))
+        assert runtime_trace_report["summary"]["capture_complete"] is True
+        assert runtime_trace_report["summary"]["function_events"] > 0
+        assert any(function["function"] == "compute" for function in runtime_trace_report["functions"])
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True
         assert measured["source_mapping"]["mapped_locations"] == len(measured["locations"])

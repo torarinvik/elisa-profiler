@@ -182,7 +182,7 @@ make compiler-smoke
 make profiler-native-smoke
 ```
 
-For the current `85be462e` integration, the audit, ledger, manifest, compiler,
+For the recorded `85be462e` integration, the audit, ledger, manifest, compiler,
 focused native profiler gates, and repository-wide full gate pass with the
 loader workaround above.
 Keep the self-host gate in the
@@ -205,3 +205,31 @@ instead of surfacing only as process status 137. This target is intentionally
 separate from the ordinary native-profiler smoke because it is a high-memory
 compiler validation and may be skipped or retried when the macOS loader is
 unhealthy.
+
+## Runtime build freshness
+
+The compiler's runtime-object builder fingerprints the standard-library source
+tree (including interfaces), build script, compiler/wrapper, and linker. Its
+sidecar also records the output object's hash. Backdated include edits, deleted
+inputs, or a corrupted object therefore require rebuilding even when the small
+runtime entrypoint's timestamp is unchanged. Inputs that change during a build
+cause publication to fail; compiler/link failures preserve the previous object.
+
+`make compiler-runtime-freshness-smoke` checks these decisions with isolated fake
+tools and is included in `make test`. It is a bootstrap-helper test, not profiler
+implementation code. An unchanged real build should preserve the runtime object
+instead of recompiling it. The ignored `.inputs.sha256` sidecar is generated
+beside that object and must not be treated as a portable prebuilt manifest.
+
+## Trace callback boundaries
+
+Compiler-generated tracing must never instrument the trace callbacks themselves.
+For a traced program that explicitly includes the default runtime, the callback
+definitions remain external so the linked collector can receive the events;
+private runtime copies must not intercept them. A custom callback outside the
+default runtime keeps its body, without recursive entry/exit instrumentation.
+
+The native regression suite includes `examples/runtime_trace_workload.elisa` to
+check complete captures and observed user-function events with a full runtime
+include. The compiler's `trace_callback_no_recursion.elisa` reproducer checks the
+custom-callback case when compiled with `-ftrace`.
