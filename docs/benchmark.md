@@ -656,8 +656,13 @@ execution order, 64.76/63.22 seconds. User CPU times were 64.23/62.81 and
 64.30/62.76 seconds. All four emitted objects were byte-identical: 2.2–2.4%
 less wall time than `2eef943b` using self-hosted binaries on identical current
 source. Evidence: `build/preserves-filter-full-{baseline,candidate}.log` and
-their `-reverse.log` variants. Fresh committed bootstrap and profiler regression
-checks remain pending.
+their `-reverse.log` variants. Fresh bootstrap of committed `520d4572` passed:
+five probes, full compiler emission (19,111,904 bytes), byte-identical generation
+3/4 objects, and all 40 repeat emissions. Profiler rebuild and native/sampling
+regressions also passed. Evidence: `build/preserves-filter-committed-self-host.log`,
+`build/preserves-filter-profiler-build.log`,
+`build/preserves-filter-native-regression.log`, and
+`build/preserves-filter-sampling-regression.log`.
 
 ## Promote a local baseline
 
