@@ -554,6 +554,24 @@ variants. Fresh bootstrap on `bcb3d87b` passed five probes, full compiler emissi
 passed native and sampling regressions (`build/backend-variadic-native-regression.log`
 and `build/backend-variadic-sampling-regression.log`).
 
+## Guard refinement mutation lookups (2026-09-08)
+
+Mutation-position collection now queries declared changes only for contracted
+mutable borrows. Nonmutable parameters never enter that table; uncontracted
+mutable borrows invalidate without consulting annotations. All 394 selected
+diagnostic/refinement/borrow/contract comparisons matched statuses, messages,
+and successful LLVM output. A direct semantic harness additionally verified
+exact invalidation diagnostics at the declared-change and unconstrained-call
+sites, with none at the preserving call. It runs the public invalidation pass
+on parsed source, independently of backend law-expression limitations.
+
+Full O0 baseline/candidate wall times were 71.54/68.75 seconds and, reversing
+order, 71.61/68.60 seconds. User CPU times were 70.98/68.24 and 71.03/67.99.
+All four emitted objects were byte-identical: 3.9–4.2% less wall time against
+`bcb3d87b` on identical current source with self-hosted binaries. Logs:
+`build/refinement-lookup-full-{baseline,candidate}.log` and their `-reverse.log`
+variants. Fresh bootstrap and profiler regressions remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
