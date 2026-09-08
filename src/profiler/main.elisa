@@ -609,13 +609,44 @@ extend ProfilerNative:
                 buffer.push(chunk[index])
         
         
-        def report_error(message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+        def report_error_bytes(message: darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
             buffer: mutable darray[u8] = []
             append_text(buffer, "elisa-profiler: ")
-            append_text(buffer, message)
+            buffer.extend(message)
             buffer.push(NATIVE_BYTE_NEWLINE)
             write_stderr(buffer)
             return NATIVE_TWO
+
+
+        def report_error(message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            message_bytes: mutable darray[u8] = []
+            append_text(message_bytes, message)
+            return report_error_bytes(message_bytes)
+
+
+        def report_json_error_bytes(code: sview, message_bytes: darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            code_bytes: mutable darray[u8] = []
+            append_text(code_bytes, code)
+            report: mutable darray[u8] = []
+            append_text(report, "{\"schema_version\":")
+            append_i64(report, NATIVE_ERROR_SCHEMA_VERSION)
+            append_text(report, ",\"envelope\":{\"major\":")
+            append_i64(report, NATIVE_ERROR_ENVELOPE_MAJOR)
+            append_text(report, ",\"minor\":")
+            append_i64(report, NATIVE_ERROR_ENVELOPE_MINOR)
+            append_text(report, ",\"kind\":\"error\",\"compatibility\":\"stable-v1\"},\"error\":{\"code\":")
+            append_json_string(report, code_bytes)
+            append_text(report, ",\"message\":")
+            append_json_string(report, message_bytes)
+            append_text(report, "}}\n")
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, report) can Console
+            return report_error_bytes(message_bytes)
+
+
+        def report_json_error(code: sview, message: sview) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            message_bytes: mutable darray[u8] = []
+            append_text(message_bytes, message)
+            return report_json_error_bytes(code, message_bytes)
 
 
         def report_protocol_error(summary: CaptureSummary) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
@@ -625,6 +656,13 @@ extend ProfilerNative:
             buffer.push(NATIVE_BYTE_NEWLINE)
             write_stderr(buffer)
             return NATIVE_TWO
+
+
+        def report_protocol_json_error(summary: CaptureSummary) -> i64 can[Abort.Panic, Memory.Allocate, Console]:
+            detail: mutable darray[u8] = []
+            append_text(detail, "malformed native protocol code=")
+            append_i64(detail, summary.malformed_code)
+            return report_json_error_bytes("malformed_native_protocol", detail)
 
 
         def write_file(path: darray[u8]&, data: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
@@ -812,7 +850,8 @@ extend ProfilerNative:
             append_text(buffer, "\"collector_failure\"") if not recovered and summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
             append_text(buffer, "\"profiler_failure\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status < NATIVE_ZERO
             append_text(buffer, "\"timeout\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and timed_out
-            append_text(buffer, "\"target_signal\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "\"target_crash\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO and summary.crash_signal > NATIVE_ZERO
+            append_text(buffer, "\"target_signal\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO and summary.crash_signal <= NATIVE_ZERO
             append_text(buffer, "\"target_exit\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit != NATIVE_ZERO
             append_text(buffer, "\"success\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and summary.capture_complete
             append_text(buffer, "\"incomplete_capture\"") if not recovered and summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and target_exit == NATIVE_ZERO and not summary.capture_complete
@@ -823,7 +862,8 @@ extend ProfilerNative:
             append_text(buffer, "collector failure") if summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
             append_text(buffer, "profiler failure") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status < NATIVE_ZERO
             append_text(buffer, "timeout") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and timed_out
-            append_text(buffer, "target signal") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "target crash") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO and summary.crash_signal > NATIVE_ZERO
+            append_text(buffer, "target signal") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO and summary.crash_signal <= NATIVE_ZERO
             append_text(buffer, "target exit") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
             append_text(buffer, "success") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
             append_text(buffer, "incomplete capture") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
@@ -834,7 +874,8 @@ extend ProfilerNative:
             append_text(buffer, "collector_failure") if summary.collector_status >= NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE
             append_text(buffer, "profiler_failure") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status < NATIVE_ZERO
             append_text(buffer, "timeout") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and timed_out
-            append_text(buffer, "target_signal") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO
+            append_text(buffer, "target_crash") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO and summary.crash_signal > NATIVE_ZERO
+            append_text(buffer, "target_signal") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal >= NATIVE_ZERO and summary.crash_signal <= NATIVE_ZERO
             append_text(buffer, "target_exit") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) != NATIVE_ZERO
             append_text(buffer, "success") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and summary.capture_complete
             append_text(buffer, "incomplete_capture") if summary.collector_status < NATIVE_COLLECTOR_STATUS_SAMPLING_FAILURE and status >= NATIVE_ZERO and not timed_out and signal < NATIVE_ZERO and system_exit_code(status) == NATIVE_ZERO and not summary.capture_complete
@@ -854,6 +895,8 @@ extend ProfilerNative:
                 append_text(buffer, "profiler_failure")
             elif timed_out:
                 append_text(buffer, "timeout")
+            elif signal >= NATIVE_ZERO and summary.crash_signal > NATIVE_ZERO:
+                append_text(buffer, "target_crash")
             elif signal >= NATIVE_ZERO:
                 append_text(buffer, "target_signal")
             elif target_exit != NATIVE_ZERO:
@@ -1802,8 +1845,10 @@ extend ProfilerNative:
             recovery_source_map_data: mutable darray[u8] = []
             recovery_path_maps: mutable darray[NativePathMap] = []
             summary: CaptureSummary = parse_capture(capture, source, recovery_path_maps, recovery_source_map_data, recovery_source_map_flat_lines, recovery_source_map_source_lines, true, NATIVE_ONE, not protocol_field_is(mode, "sample"))
-            return report_protocol_error(summary) if summary.malformed
-            return report_error("capture contains no complete framed records") if summary.valid_frames == NATIVE_ZERO
+            if summary.malformed:
+                return report_protocol_json_error(summary) if format_json else report_protocol_error(summary)
+            if summary.valid_frames == NATIVE_ZERO:
+                return report_json_error("empty_capture", "capture contains no complete framed records") if format_json else report_error("capture contains no complete framed records")
             recovered: mutable darray[u8] = []
             append_recovered_report(&recovered, source, source_bytes, mode, summary, manifest_path, capture_path, manifest_state, source_digest, capture.count.i64())
             rendered: mutable darray[u8] = []
@@ -1901,9 +1946,11 @@ extend ProfilerNative:
             report: darray[u8] = read_file(capture_path)
             return report_error("capture could not be read") if report.count == NATIVE_ZERO.usize()
             capture: mutable darray[u8] = []
-            return report_error("capture artifact is malformed or unsupported") if not unwrap_profile_artifact(report, &capture)
+            if not unwrap_profile_artifact(report, &capture):
+                return report_json_error("malformed_profile_artifact", "capture artifact is malformed or unsupported") if format_json else report_error("capture artifact is malformed or unsupported")
             offline_profile: mutable NativeOfflineProfile = empty_native_offline_profile()
-            return report_error("capture report is malformed or unsupported") if not read_offline_profile(capture, &offline_profile)
+            if not read_offline_profile(capture, &offline_profile):
+                return report_json_error("malformed_profile", "capture report is malformed or unsupported") if format_json else report_error("capture report is malformed or unsupported")
             if source_override_seen:
                 return report_error("capture does not contain workload identity") if offline_profile.workload.count == NATIVE_ZERO.usize()
                 return report_error("capture does not contain a source SHA-256 identity") if not offline_profile.source_digest_available
@@ -2422,7 +2469,7 @@ extend ProfilerNative:
                     current_summary <- parse_capture(capture, display_source, path_maps, source_map_data, source_map.flat_lines, source_map.source_lines, run_result.timed_out, repetition, not protocol_field_is(mode, "sample"))
                     if current_summary.malformed:
                         cleanup_temp(temporary)
-                        return report_protocol_error(current_summary)
+                        return report_protocol_json_error(current_summary) if not format_text and not format_folded and not format_html and not format_speedscope else report_protocol_error(current_summary)
                     if run_result.status == NATIVE_ZERO and run_result.collector_status == NATIVE_COLLECTOR_STATUS_UNKNOWN and (not current_summary.capture_started or not current_summary.capture_complete):
                         cleanup_temp(temporary)
                         return report_error("native collector capture missing a complete frame")

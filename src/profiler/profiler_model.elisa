@@ -22,6 +22,9 @@ module ProfilerNative:
         # command's ability to produce or gate a comparison report.
         const NATIVE_EXIT_COMPARISON_INCONCLUSIVE: i64 = 4
         const NATIVE_EXIT_COMPARISON_REGRESSION: i64 = 5
+        const NATIVE_ERROR_SCHEMA_VERSION: i64 = 1
+        const NATIVE_ERROR_ENVELOPE_MAJOR: i64 = 1
+        const NATIVE_ERROR_ENVELOPE_MINOR: i64 = 0
         const NATIVE_WAIT_NO_OPTIONS: i64 = 0
         const NATIVE_WAIT_NO_HANG: i64 = 1
         const NATIVE_WAIT_POLL_MICROSECONDS: u32 = 1000

@@ -173,13 +173,22 @@ tail after the last validated frame.
 
 `run.outcome` is the stable machine-readable termination classification. It is
 `success` for a complete zero-exit target, `target_exit` for a non-zero target
-exit, `target_signal` for an observed signal, `timeout` for deadline
-termination, `profiler_failure` for launcher/wait failure, and
+exit, `target_signal` for an observed signal without a crash marker,
+`target_crash` for an observed signal with a crash marker, `timeout` for
+deadline termination, `profiler_failure` for launcher/wait failure, and
 `incomplete_artifact` for a report reconstructed by `recover`. The
 `incomplete_capture` value is reserved for a structurally incomplete capture
 that can still be serialized; normal live capture rejects that condition before
 emitting a report. The observed numeric exit/signal fields remain alongside the
 classification.
+
+JSON-producing `report` and `recover` commands use the versioned error
+envelope in `docs/cli-error.schema.json` when malformed artifacts, malformed
+native frames, or empty captures prevent a profile from being produced. The
+error is written to stdout, the command still exits with the stable validation
+status, and a human-readable copy remains on stderr. Consumers must branch on
+`envelope.kind` before treating stdout as a profile; malformed input is never
+serialized as a misleading partial profile.
 
 The native text and HTML renderers preserve this distinction when a JSON report
 is regenerated offline: they show the outcome and whether capture completeness
@@ -417,9 +426,13 @@ The top-level `quality` object is orthogonal to the target's exit code:
 - `timeout` means the launcher reached the requested deadline and terminated
   the target. `run.signal` still records the termination signal, and the
   timeout reason remains additive.
-- `target_signal` means `waitpid` reported signal termination. `run.signal` is
-  the signal number, including when the wait status also contains a core-dump
-  flag.
+- `target_signal` means `waitpid` reported signal termination without a
+  collector crash marker. `run.signal` is the signal number, including when
+  the wait status also contains a core-dump flag.
+- `target_crash` means signal termination was accompanied by the collector's
+  crash marker. It is deliberately separate from signal-only termination;
+  `summary.crash_signal` and the additive `crash_marker` reason preserve the
+  observed signal evidence.
 - `profiler_failure` means the launcher could not wait or otherwise could not
   establish a valid child result.
 - `quality.detail = degraded` means bounded detail was lost or stack recovery

@@ -28,7 +28,7 @@ def main() -> int:
         "compatibility": "backward-compatible-v1",
     }
     assert capture["quality"]["capture"] in {
-        "complete", "target_exit", "target_signal", "timeout", "profiler_failure", "recovered"
+        "complete", "target_exit", "target_signal", "target_crash", "timeout", "profiler_failure", "recovered"
     }
     compiler = capture["compiler"]
     assert compiler["manifest"]

@@ -163,6 +163,12 @@ with source snippets, function call-event counts, aggregate caller-to-callee
 edges, folded call stacks, and scalar value statistics
 (minimum, maximum, sum, and last). Signed scalar values retain their signed
 interpretation instead of being reported as raw u64 bit patterns.
+Signal termination is classified as `target_signal` or `target_crash` when the
+collector observed a crash marker. JSON-producing `report` and `recover`
+commands emit the versioned error envelope in
+[`docs/cli-error.schema.json`](docs/cli-error.schema.json) on stdout for
+malformed input, while retaining the validation exit status and readable
+stderr diagnostic.
 The summary includes the number of distinct threads that emitted trace events,
 which makes worker activity visible in threaded targets.
 Native JSON also includes per-capture `thread_loss` records with repetition

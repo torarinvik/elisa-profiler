@@ -220,7 +220,7 @@
       "properties": {
         "capture": {
           "type": "string",
-          "enum": ["complete", "target_exit", "target_signal", "timeout", "collector_failure", "profiler_failure", "recovered"]
+          "enum": ["complete", "target_exit", "target_signal", "target_crash", "timeout", "collector_failure", "profiler_failure", "recovered"]
         },
         "detail": { "type": "string", "enum": ["complete", "degraded"] },
         "event_counts": { "type": "string", "enum": ["exact", "partial"] },
@@ -288,7 +288,7 @@
       ],
       "properties": {
         "collection_mode": { "type": "string", "enum": ["full", "functions", "statements", "values", "sample", "diagnostic"] },
-        "outcome": { "type": "string", "enum": ["success", "target_exit", "target_signal", "timeout", "collector_failure", "profiler_failure", "incomplete_capture", "incomplete_artifact"] },
+        "outcome": { "type": "string", "enum": ["success", "target_exit", "target_signal", "target_crash", "timeout", "collector_failure", "profiler_failure", "incomplete_capture", "incomplete_artifact"] },
         "capabilities": {
           "type": "object",
           "required": ["event_classes", "trace", "recent_path", "timing", "sampling", "detail_limits"],

@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://elisa-lang.org/schemas/profiler-cli-error-v1.json",
+  "title": "Elisa profiler structured CLI error",
+  "description": "Machine-readable error emitted on stdout when a JSON-producing profiler command cannot produce its requested artifact.",
+  "type": "object",
+  "required": ["schema_version", "envelope", "error"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "envelope": {
+      "type": "object",
+      "required": ["major", "minor", "kind", "compatibility"],
+      "properties": {
+        "major": { "const": 1 },
+        "minor": { "const": 0 },
+        "kind": { "const": "error" },
+        "compatibility": { "const": "stable-v1" }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "malformed_native_protocol",
+            "empty_capture",
+            "malformed_profile_artifact",
+            "malformed_profile"
+          ]
+        },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

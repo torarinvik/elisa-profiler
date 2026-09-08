@@ -135,7 +135,11 @@ def recover(native: Path, work: Path, capture: bytes, chunks: list[bytes] | None
         stderr=subprocess.PIPE,
         check=False,
     )
-    return process, json.loads(output.read_text(encoding="utf-8")) if output.exists() else None
+    if output.exists():
+        return process, json.loads(output.read_text(encoding="utf-8"))
+    if process.stdout:
+        return process, json.loads(process.stdout.decode("utf-8"))
+    return process, None
 
 
 def report_projection(report: dict) -> dict:
@@ -156,7 +160,18 @@ def report_projection(report: dict) -> dict:
 def expect_rejected(native: Path, work: Path, capture: bytes, label: str) -> None:
     process, report = recover(native, work, capture)
     assert process.returncode != 0, f"{label} was accepted"
-    assert report is None, f"{label} unexpectedly emitted a report"
+    assert report is not None, f"{label} did not emit a structured error"
+    assert report["envelope"]["kind"] == "error", (label, report)
+    assert report["error"]["code"] == "malformed_native_protocol", (label, report)
+    error_path = work / "structured-error.json"
+    error_path.write_text(json.dumps(report), encoding="utf-8")
+    schema_check = subprocess.run(
+        [sys.executable, str(ROOT / "test" / "profile_schema_smoke.py"), str(ROOT / "docs" / "cli-error.schema.json"), str(error_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert schema_check.returncode == 0, (label, schema_check.stdout, schema_check.stderr)
     assert b"malformed native protocol" in process.stderr, (label, process.stderr)
 
 

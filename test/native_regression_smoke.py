@@ -430,6 +430,9 @@ def main():
         capture.write_text(valid_report_json + " trailing", encoding="utf-8")
         run("report", capture, "--format", "folded", ok=False)
         capture.write_text("[]", encoding="utf-8")
+        malformed_profile_error = json.loads(run("report", capture, "--format", "json", ok=False))
+        assert malformed_profile_error["envelope"]["kind"] == "error", malformed_profile_error
+        assert malformed_profile_error["error"]["code"] == "malformed_profile_artifact", malformed_profile_error
         run("report", capture, "--format", "folded", ok=False)
         invalid_escape_json = valid_report_json.replace('"run": {', r'"run": {"unknown":"\q",', 1)
         capture.write_text(invalid_escape_json, encoding="utf-8")
@@ -530,10 +533,10 @@ def main():
         run("profile", target, "--format", "json", "--output", output, ok=False)
         run("profile", ROOT / "examples/crash.elisa", "--format", "json", "--output", output, expected=134)
         crash_report = json.loads(output.read_text())
-        assert crash_report["run"]["outcome"] == "target_signal"
+        assert crash_report["run"]["outcome"] == "target_crash"
         assert crash_report["run"]["signal"] == 6
         assert crash_report["summary"]["crash_signal"] == 6
-        assert crash_report["quality"]["capture"] == "target_signal"
+        assert crash_report["quality"]["capture"] == "target_crash"
         assert crash_report["quality"]["detail"] == "degraded"
         assert "crash_marker" in crash_report["quality"]["reasons"]
         assert crash_report["active_stack"]["tracked_depth"] >= 1
@@ -543,10 +546,10 @@ def main():
         interrupted_output = work / "interrupted-stack.json"
         run("profile", ROOT / "examples/interrupted_stack.elisa", "--format", "json", "--output", interrupted_output, expected=134)
         interrupted = json.loads(interrupted_output.read_text(encoding="utf-8"))
-        assert interrupted["run"]["outcome"] == "target_signal"
+        assert interrupted["run"]["outcome"] == "target_crash"
         assert interrupted["run"]["signal"] == 6
         assert interrupted["summary"]["capture_complete"] is False
-        assert interrupted["quality"]["capture"] == "target_signal"
+        assert interrupted["quality"]["capture"] == "target_crash"
         assert interrupted["quality"]["detail"] == "degraded"
         assert "crash_marker" in interrupted["quality"]["reasons"]
         assert interrupted["active_stack"]["tracked_depth"] >= 1
