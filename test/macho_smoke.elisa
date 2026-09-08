@@ -1,6 +1,8 @@
 include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
 include "../src/profiler/profiler_model.elisa"
 include "../src/profiler/profiler_macho.elisa"
+include "../src/profiler/profiler_macho_map.elisa"
+include "macho_map_cases.elisa"
 
 @link_name("read")
 extern macho_test_read(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
@@ -98,6 +100,14 @@ extend ProfilerNative:
                 symbol: mutable MachOSymbol = zeroed
                 for ordinal in NATIVE_ZERO.usize()..<indexed.symbol_count |data, indexed, symbol|:
                     assert macho_symbol(data, indexed, ordinal, &symbol)
+                mappings: mutable darray[MachOMapping] = []
+                assert build_macho_map(data, MACHO_TEST_RUNTIME_HEADER, &mappings) == MachOIndexStatus.Indexed
+                assert mappings.count > NATIVE_ZERO.usize()
+                resolved: mutable u64 = NATIVE_ZERO.u64()
+                for entry in NATIVE_ZERO.usize()..<mappings.count |mappings, resolved|:
+                    if (mappings[entry].protection & MACHO_EXECUTE_PROTECTION) != NATIVE_ZERO.u32():
+                        assert lookup_macho_address(mappings, mappings[entry].runtime_address, &resolved) == MachOAddressStatus.Mapped
+                        assert resolved == mappings[entry].image_address
             return NATIVE_ZERO
 
         def macho_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
@@ -171,4 +181,5 @@ extend ProfilerNative:
 def main() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
     assert ProfilerNative::macho_smoke() == 0
     assert ProfilerNative::macho_segment_smoke() == 0
+    assert ProfilerNative::macho_map_smoke() == 0
     return ProfilerNative::macho_stdin_smoke()

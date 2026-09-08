@@ -1,0 +1,100 @@
+# Offline mapping for one exact Mach-O image. The caller must verify image
+# identity and supply its captured runtime header address, not a guessed slide.
+# Build once per loaded-image generation; lookups never read the image file.
+extend ProfilerNative:
+    private:
+        const MACHO_EXECUTABLE_FILE: u32 = 2
+        const MACHO_DYLIB_FILE: u32 = 6
+        const MACHO_BUNDLE_FILE: u32 = 8
+        const MACHO_HIGH_VM_FLAG: u32 = 1
+
+        struct MachOMapping:
+            runtime_address: mutable u64
+            image_address: mutable u64
+            size: mutable u64
+            protection: mutable u32
+            command_offset: mutable usize
+
+        enum MachOAddressStatus:
+            Mapped
+            Unknown
+            Ambiguous
+            NonExecutable
+
+        # Avoid narrowing slides or high addresses to signed integers.
+        def macho_rebase(address: u64, preferred_header: u64, runtime_header: u64, output: mutable u64&) -> bool:
+            output <- NATIVE_ZERO.u64()
+            if runtime_header >= preferred_header:
+                delta: u64 = runtime_header - preferred_header
+                return false if address > MACHO_MAX_ADDRESS - delta
+                output <- address + delta
+            else:
+                delta: u64 = preferred_header - runtime_header
+                return false if address < delta
+                output <- address - delta
+            return true
+
+        def build_macho_map[@r](data: darray[u8]&, runtime_header: u64, output: mutable darray[MachOMapping]& @r) -> MachOIndexStatus can[Abort.Panic, Memory.Allocate]:
+            output <- []
+            indexed: mutable MachOIndex = zeroed
+            status: MachOIndexStatus = index_macho(data, &indexed)
+            return status if status != MachOIndexStatus.Indexed
+            file_type: u32 = macho_word(data, MACHO_FILE_TYPE_OFFSET)
+            return MachOIndexStatus.Unsupported if file_type != MACHO_EXECUTABLE_FILE and file_type != MACHO_DYLIB_FILE and file_type != MACHO_BUNDLE_FILE
+            stop: usize = MACHO_HEADER_BYTES + macho_word(data, MACHO_COMMAND_BYTES_OFFSET).usize()
+            cursor: mutable usize = MACHO_HEADER_BYTES
+            preferred_header: mutable u64 = NATIVE_ZERO.u64()
+            found_header: mutable bool = false
+            # This published array must live in the caller's region, not the
+            # temporary arena that is released when this function returns.
+            mappings: mutable darray[MachOMapping] @r = []
+            while cursor < stop |cursor, stop, data, mappings, preferred_header, found_header|:
+                if macho_word(data, cursor) == MACHO_SEGMENT_COMMAND:
+                    segment: mutable MachOSegment = zeroed
+                    return MachOIndexStatus.Malformed if not macho_segment(data, cursor, &segment)
+                    flags: u32 = macho_word(data, cursor + MACHO_SEGMENT_FLAGS_OFFSET)
+                    return MachOIndexStatus.Unsupported if (flags & MACHO_HIGH_VM_FLAG) != NATIVE_ZERO.u32()
+                    if segment.file_offset == NATIVE_ZERO.u64() and segment.file_size >= stop.u64():
+                        return MachOIndexStatus.Malformed if found_header
+                        preferred_header <- segment.vm_address
+                        found_header <- true
+                    # Skip guard/reserved ranges such as __PAGEZERO and empty
+                    # segments. Keep non-executable mapped data to distinguish
+                    # it from an address outside this image.
+                    if segment.protection != NATIVE_ZERO.u32() and segment.vm_size != NATIVE_ZERO.u64():
+                        mapping: mutable MachOMapping = zeroed
+                        mapping.image_address <- segment.vm_address
+                        mapping.size <- segment.vm_size
+                        mapping.protection <- segment.protection
+                        mapping.command_offset <- cursor
+                        mappings.push(mapping)
+                cursor <- cursor + macho_word(data, cursor + MACHO_WORD_BYTES).usize()
+            return MachOIndexStatus.Malformed if not found_header
+            for index in NATIVE_ZERO.usize()..<mappings.count |mappings, preferred_header, runtime_header|:
+                relocated: mutable u64 = NATIVE_ZERO.u64()
+                return MachOIndexStatus.Malformed if not macho_rebase(mappings[index].image_address, preferred_header, runtime_header, &relocated)
+                return MachOIndexStatus.Malformed if mappings[index].size > MACHO_MAX_ADDRESS - relocated
+                mappings[index].runtime_address <- relocated
+            output <- mappings
+            return MachOIndexStatus.Indexed
+
+        # Do not pick the first match when malformed/ambiguous segments overlap.
+        # The lookup scans only the prebuilt segment map, with no allocation.
+        def lookup_macho_address(mappings: darray[MachOMapping]&, address: u64, output: mutable u64&) -> MachOAddressStatus:
+            output <- NATIVE_ZERO.u64()
+            found: mutable bool = false
+            executable: mutable bool = false
+            image_address: mutable u64 = NATIVE_ZERO.u64()
+            for index in NATIVE_ZERO.usize()..<mappings.count |mappings, address, found, executable, image_address|:
+                if address >= mappings[index].runtime_address:
+                    delta: u64 = address - mappings[index].runtime_address
+                    if delta < mappings[index].size:
+                        return MachOAddressStatus.Ambiguous if found
+                        return MachOAddressStatus.Unknown if delta > MACHO_MAX_ADDRESS - mappings[index].image_address
+                        found <- true
+                        image_address <- mappings[index].image_address + delta
+                        executable <- (mappings[index].protection & MACHO_EXECUTE_PROTECTION) != NATIVE_ZERO.u32()
+            return MachOAddressStatus.Unknown if not found
+            return MachOAddressStatus.NonExecutable if not executable
+            output <- image_address
+            return MachOAddressStatus.Mapped

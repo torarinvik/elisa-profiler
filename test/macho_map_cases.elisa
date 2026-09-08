@@ -1,0 +1,85 @@
+extend ProfilerNative:
+    private:
+        const MACHO_TEST_RUNTIME_HEADER: u64 = 0x200000000
+        const MACHO_TEST_MAP_BASE: u32 = 4096
+        const MACHO_TEST_MAP_SIZE: u32 = 4096
+        const MACHO_TEST_MAP_SECOND: u32 = 16384
+        const MACHO_TEST_READ_PROTECTION: u32 = 1
+        const MACHO_TEST_OBJECT_FILE: u32 = 1
+
+    public:
+        def macho_map_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
+            data: mutable darray[u8] = [NATIVE_ZERO.u8() for _ in NATIVE_ZERO.usize()..<(MACHO_HEADER_BYTES + NATIVE_TWO.usize() * MACHO_SEGMENT_BYTES)]
+            first: usize = MACHO_HEADER_BYTES
+            second: usize = first + MACHO_SEGMENT_BYTES
+            macho_test_word(&data, NATIVE_ZERO.usize(), MACHO_MAGIC_64)
+            macho_test_word(&data, MACHO_FILE_TYPE_OFFSET, MACHO_EXECUTABLE_FILE)
+            macho_test_word(&data, MACHO_COMMAND_COUNT_OFFSET, NATIVE_TWO.u32())
+            macho_test_word(&data, MACHO_COMMAND_BYTES_OFFSET, (NATIVE_TWO.usize() * MACHO_SEGMENT_BYTES).u32())
+            for entry in NATIVE_ZERO.usize()..<NATIVE_TWO.usize() |data, first|:
+                command: usize = first + entry * MACHO_SEGMENT_BYTES
+                macho_test_word(&data, command, MACHO_SEGMENT_COMMAND)
+                macho_test_word(&data, command + MACHO_WORD_BYTES, MACHO_SEGMENT_BYTES.u32())
+                macho_test_word(&data, command + MACHO_SEGMENT_SIZE_OFFSET, MACHO_TEST_MAP_SIZE)
+                macho_test_word(&data, command + MACHO_SEGMENT_PROTECTION_OFFSET, MACHO_EXECUTE_PROTECTION)
+            macho_test_word(&data, first + MACHO_SEGMENT_VM_OFFSET, MACHO_TEST_MAP_BASE)
+            macho_test_word(&data, first + MACHO_SEGMENT_FILE_SIZE_OFFSET, data.count.u32())
+            macho_test_word(&data, second + MACHO_SEGMENT_VM_OFFSET, MACHO_TEST_MAP_SECOND)
+            macho_test_word(&data, second + MACHO_SEGMENT_FILE_OFFSET, data.count.u32())
+            mappings: mutable darray[MachOMapping] = []
+            resolved: mutable u64 = NATIVE_ZERO.u64()
+            assert build_macho_map(data, MACHO_TEST_RUNTIME_HEADER, &mappings) == MachOIndexStatus.Indexed
+            assert mappings.count == NATIVE_TWO.usize()
+            assert lookup_macho_address(mappings, MACHO_TEST_RUNTIME_HEADER, &resolved) == MachOAddressStatus.Mapped
+            assert resolved == MACHO_TEST_MAP_BASE.u64()
+            last: u64 = MACHO_TEST_RUNTIME_HEADER + MACHO_TEST_MAP_SIZE.u64() - NATIVE_ONE.u64()
+            assert lookup_macho_address(mappings, last, &resolved) == MachOAddressStatus.Mapped
+            assert resolved == (MACHO_TEST_MAP_BASE + MACHO_TEST_MAP_SIZE - NATIVE_ONE.u32()).u64()
+            assert lookup_macho_address(mappings, last + NATIVE_ONE.u64(), &resolved) == MachOAddressStatus.Unknown
+            assert resolved == NATIVE_ZERO.u64()
+            assert lookup_macho_address(mappings, MACHO_TEST_RUNTIME_HEADER - NATIVE_ONE.u64(), &resolved) == MachOAddressStatus.Unknown
+            second_runtime: u64 = MACHO_TEST_RUNTIME_HEADER + (MACHO_TEST_MAP_SECOND - MACHO_TEST_MAP_BASE).u64()
+            assert lookup_macho_address(mappings, second_runtime, &resolved) == MachOAddressStatus.Mapped
+            assert resolved == MACHO_TEST_MAP_SECOND.u64()
+            mappings[NATIVE_ONE.usize()].protection <- MACHO_TEST_READ_PROTECTION
+            assert lookup_macho_address(mappings, second_runtime, &resolved) == MachOAddressStatus.NonExecutable
+            assert resolved == NATIVE_ZERO.u64()
+            mappings[NATIVE_ONE.usize()].runtime_address <- MACHO_TEST_RUNTIME_HEADER
+            assert lookup_macho_address(mappings, MACHO_TEST_RUNTIME_HEADER, &resolved) == MachOAddressStatus.Ambiguous
+            assert resolved == NATIVE_ZERO.u64()
+            # Negative slide, including a loaded header at address zero.
+            assert build_macho_map(data, NATIVE_ZERO.u64(), &mappings) == MachOIndexStatus.Indexed
+            assert lookup_macho_address(mappings, NATIVE_ZERO.u64(), &resolved) == MachOAddressStatus.Mapped
+            assert resolved == MACHO_TEST_MAP_BASE.u64()
+            # Guard segments are not rebased as mapped memory. In particular,
+            # a negative slide must not underflow a __PAGEZERO-like range.
+            macho_test_word(&data, second + MACHO_SEGMENT_PROTECTION_OFFSET, NATIVE_ZERO.u32())
+            macho_test_word(&data, second + MACHO_SEGMENT_VM_OFFSET, NATIVE_ZERO.u32())
+            assert build_macho_map(data, NATIVE_ZERO.u64(), &mappings) == MachOIndexStatus.Indexed
+            assert mappings.count == NATIVE_ONE.usize()
+            macho_test_word(&data, second + MACHO_SEGMENT_PROTECTION_OFFSET, MACHO_EXECUTE_PROTECTION)
+            assert build_macho_map(data, NATIVE_ZERO.u64(), &mappings) == MachOIndexStatus.Malformed
+            assert mappings.count == NATIVE_ZERO.usize()
+            macho_test_word(&data, second + MACHO_SEGMENT_VM_OFFSET, MACHO_TEST_MAP_SECOND)
+            assert build_macho_map(data, MACHO_MAX_ADDRESS, &mappings) == MachOIndexStatus.Malformed
+            assert mappings.count == NATIVE_ZERO.usize()
+            macho_test_word(&data, MACHO_FILE_TYPE_OFFSET, MACHO_TEST_OBJECT_FILE)
+            assert build_macho_map(data, MACHO_TEST_RUNTIME_HEADER, &mappings) == MachOIndexStatus.Unsupported
+            macho_test_word(&data, MACHO_FILE_TYPE_OFFSET, MACHO_EXECUTABLE_FILE)
+            macho_test_word(&data, first + MACHO_SEGMENT_FLAGS_OFFSET, MACHO_HIGH_VM_FLAG)
+            assert build_macho_map(data, MACHO_TEST_RUNTIME_HEADER, &mappings) == MachOIndexStatus.Unsupported
+            macho_test_word(&data, first + MACHO_SEGMENT_FLAGS_OFFSET, NATIVE_ZERO.u32())
+            macho_test_word(&data, first + MACHO_SEGMENT_FILE_SIZE_OFFSET, NATIVE_ZERO.u32())
+            assert build_macho_map(data, MACHO_TEST_RUNTIME_HEADER, &mappings) == MachOIndexStatus.Malformed
+            macho_test_word(&data, first + MACHO_SEGMENT_FILE_SIZE_OFFSET, data.count.u32())
+            macho_test_word(&data, second + MACHO_SEGMENT_FILE_OFFSET, NATIVE_ZERO.u32())
+            macho_test_word(&data, second + MACHO_SEGMENT_FILE_SIZE_OFFSET, data.count.u32())
+            assert build_macho_map(data, MACHO_TEST_RUNTIME_HEADER, &mappings) == MachOIndexStatus.Malformed
+            assert mappings.count == NATIVE_ZERO.usize()
+            # Unsigned rebase must neither wrap nor narrow the top address bit.
+            assert macho_rebase(MACHO_MAX_ADDRESS, NATIVE_ONE.u64(), NATIVE_ZERO.u64(), &resolved)
+            assert resolved == MACHO_MAX_ADDRESS - NATIVE_ONE.u64()
+            assert not macho_rebase(MACHO_MAX_ADDRESS, NATIVE_ZERO.u64(), NATIVE_ONE.u64(), &resolved)
+            assert resolved == NATIVE_ZERO.u64()
+            assert not macho_rebase(NATIVE_ZERO.u64(), NATIVE_ONE.u64(), NATIVE_ZERO.u64(), &resolved)
+            return NATIVE_ZERO

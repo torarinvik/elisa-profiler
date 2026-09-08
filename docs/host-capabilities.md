@@ -46,7 +46,15 @@ are not yet resolved to runtime addresses or interpreted as function ranges.
 Segment commands are also bounds-checked, including section-array sizing,
 file ranges, and virtual-address overflow. The decoder exposes initial memory
 protection and unslid virtual ranges with exclusive ends, including zero-fill
-segments. Section contents and runtime image slides remain unimplemented.
+segments. Section contents remain unimplemented.
+
+The private offline image mapper builds caller-region-owned segment maps once
+from an exact image and a supplied runtime header address. Lookups allocate
+nothing and do not reparse the image. Unsigned checked rebasing supports either
+slide direction; overlaps, gaps, and non-executable ranges produce distinct
+results instead of guessed symbols. Object files and high-VM layouts are not
+supported by this mapper. Capturing and verifying runtime image identity and
+load generations, resolving function ranges, and CLI integration remain pending.
 
 The native collector's low-level signal and descriptor policy is currently a
 POSIX implementation detail. Porting another host requires an audited FFI

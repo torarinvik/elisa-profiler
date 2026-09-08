@@ -8,6 +8,7 @@ extend ProfilerNative:
         const MACHO_BYTE_BITS: u32 = 8
         const MACHO_CPU_OFFSET: usize = 4
         const MACHO_SUBTYPE_OFFSET: usize = 8
+        const MACHO_FILE_TYPE_OFFSET: usize = 12
         const MACHO_COMMAND_COUNT_OFFSET: usize = 16
         const MACHO_COMMAND_BYTES_OFFSET: usize = 20
         const MACHO_COMMAND_HEADER_BYTES: usize = 8
@@ -34,6 +35,7 @@ extend ProfilerNative:
         const MACHO_SEGMENT_FILE_SIZE_OFFSET: usize = 48
         const MACHO_SEGMENT_PROTECTION_OFFSET: usize = 60
         const MACHO_SEGMENT_SECTIONS_OFFSET: usize = 64
+        const MACHO_SEGMENT_FLAGS_OFFSET: usize = 68
         const MACHO_MAX_ADDRESS: u64 = 0xffffffffffffffff
         const MACHO_EXECUTE_PROTECTION: u32 = 4
 
