@@ -528,7 +528,10 @@ order, 74.60/72.88 seconds. User CPU times were 73.67/72.48 and 74.12/72.36.
 All four emitted objects were byte-identical: 1.7–2.3% less wall time against
 `a5a1442b` on identical current source, with self-hosted binaries. Logs:
 `build/variadic-filter-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh committed bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap on `43aeeb98` passed five initial probes, full compiler
+emission (19,109,464 bytes), byte-identical gen3/gen4 objects, and all 40 repeat
+emissions (`build/variadic-filter-committed-self-host.log`). Profiler rebuild and
+native/sampling regression checks remain pending.
 
 ## Promote a local baseline
 
