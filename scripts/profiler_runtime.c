@@ -1333,6 +1333,13 @@ void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,
     }
     profile_allocation_callback_busy = 1;
     pthread_mutex_lock(&profile_lock);
+    /* Freeze evidence at dump completion, including callbacks from later
+     * shutdown handlers. Check under the same lock used by profile_dump. */
+    if (profile_dumped) {
+        pthread_mutex_unlock(&profile_lock);
+        profile_allocation_callback_busy = 0;
+        return;
+    }
     profile_thread_state *thread = profile_get_thread_locked();
     if (thread == NULL ||
         (thread->allocation_size >= thread->allocation_capacity &&

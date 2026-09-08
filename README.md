@@ -2,6 +2,10 @@
 
 This repository contains a profiler for programs written in Elisa.
 
+Full and diagnostic modes include bounded arena lifecycle evidence. See
+[allocation evidence](docs/allocation-evidence.md) for event semantics, loss
+accounting, and the remaining requirements before live-byte/lifetime analysis.
+
 The profiler uses a dedicated local worktree of the self-hosted compiler so
 compiler changes stay isolated from the main compiler checkout and can be
 committed independently when profiling exposes a compiler bug.

@@ -1,0 +1,82 @@
+# Allocation evidence and its current limits
+
+Full and diagnostic captures collect bounded Elisa arena lifecycle records.
+Other modes do not enable this collector. Records appear in each measured
+`run.repetitions[].allocation_events` array; warmups are excluded. Offline
+reports validate the records before displaying them.
+
+This is runtime hook evidence, not a heap census. The current implementation
+does not compute logical live bytes, allocation lifetimes, or leaks. Peak RSS
+remains an independent operating-system observation and must not be compared
+with a sum of these event sizes as though they measured the same thing.
+
+## Record contract
+
+`kind` and `kind_code` identify the operation. `address`, `size_bytes`,
+`old_address`, `old_size_bytes`, `arena`, `region`, `sequence`, `thread_id`,
+and `timestamp_ns` are nonnegative uint64 values. `repetition` is positive and
+must match the containing repetition. JSON readers must retain integer
+precision; JavaScript `Number` cannot represent all these values exactly.
+
+The wire records use the existing version-1 capture framing. The hook symbol
+itself does not yet negotiate an ABI version. Its current signature is
+`elisa_profile_allocation_event(uint32_t, uintptr_t, size_t, uintptr_t,
+size_t, uintptr_t, size_t)`; the compiler runtime supplies a weak no-op and
+the collector supplies the strong definition. Do not assume compatibility
+with an arbitrary prebuilt executable merely because full mode was selected.
+
+| Code | Kind | Current emitted meaning |
+| --- | --- | --- |
+| 1 | `alloc` | An arena allocation returned `address` with the requested `size_bytes`. This also occurs inside a moved realloc. |
+| 2 | `realloc_in_place` | Growth succeeded at the same address; old and new requested sizes are included. |
+| 3 | `realloc_move` | Growth returned a different address. This follows the new `alloc` and any successful old-span `reclaim`; it is not another independent allocation. |
+| 4 | `reclaim` | The old span entered the arena's reusable free list. The released address and requested size use the `old_*` fields. |
+| 5 | `region_create` | A hooked allocation path created a backing region. Its capacity is recorded in bytes, not logical allocated bytes or RSS. |
+| 6 | `region_reset` | The arena's block counts/free lists were reset. This affects the whole arena, not only the region index in the record. |
+| 7 | `region_trim` | Blocks after the arena's current end were released. The record identifies the retained end index, not a list of freed allocations. |
+| 8 | `region_free` | Arena cleanup detached its block chain. Repeated cleanup can emit this operation even when the chain was already empty. |
+| 9 | `arena_adopt` | A child's nonempty block chain was transferred into a parent. The current record identifies only the parent; it does not identify the child. |
+
+The sequence is collector-assigned across allocation callbacks in one process
+and is separate from diagnostic trace sequence numbers. Buffers are per thread,
+so serialized record order is not necessarily sequence order. Sequence numbers
+and addresses are not identities across repetitions or separate processes.
+Timestamps are monotonic nanoseconds, not wall-clock or CPU time.
+
+## Loss and collection boundaries
+
+The collector uses fixed-width records, a shared capture-byte budget, and a
+thread-local recursion guard. Formatting happens during the final dump, not
+inside allocation callbacks. Independent callbacks still take a shared lock;
+this is not yet a lock-free allocation profiler.
+
+`allocation_events_dropped` reports collector allocation-buffer refusals.
+General capture completeness and transport/budget diagnostics still apply:
+a zero allocation-drop count does not prove that every runtime operation had
+a hook or that the complete artifact survived. Recursive collector callbacks
+are intentionally suppressed. Allocation callbacks after the final dump are
+ignored, so late shutdown operations are outside that capture boundary.
+
+## Prerequisites for lifetime accounting
+
+Before enabling live-byte or lifetime claims, the following gaps need code and
+independent allocator-oracle coverage:
+
+- Allocation generations must distinguish reused addresses and arena headers.
+- A moved realloc must reconcile its component events without double counting.
+  An old span that cannot enter the free list can remain physically retained.
+- Current `arena_realloc` returns immediately when the requested size does not
+  grow, including zero-size requests. It emits no resize/free event in that path.
+  Failed growth does not emit a success record and can terminate the target.
+- Rewind-to-mark has no dedicated hook. Region creation through paths outside
+  the hooked allocator must be inventoried before claiming complete backing
+  capacity accounting.
+- Adoption needs child identity and a region-identity remapping contract.
+  Free-list reuse must report the actual owning region, not just the active end.
+- Region-wide destruction, reset, and trim need explicit reconciliation rules
+  for a bounded live-state table, with visible quality degradation after loss.
+- Allocation sites, stacks, tasks, foreign allocators, and allocation sampling
+  are not currently represented.
+
+Live-at-end allocations, once implemented, will be retention evidence. Calling
+them leaks requires separate ownership/lifetime proof.

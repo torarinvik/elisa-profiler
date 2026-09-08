@@ -152,6 +152,16 @@ int main(void) {
                                     0, 0, (uintptr_t)0x2000, 3);
     assert(profile_allocation_event_count == allocation_events_before + 1);
     profile_mode = PROFILE_MODE_FULL;
+    profile_dumped = 1;
+    const uint64_t allocation_dropped_before = profile_allocation_dropped_count;
+    elisa_profile_allocation_event(PROFILE_ALLOCATION_ALLOC,
+                                    (uintptr_t)0x1001, 8,
+                                    0, 0, (uintptr_t)0x2000, 3);
+    assert(profile_allocation_event_count == allocation_events_before + 1);
+    assert(profile_current_thread->allocation_size == allocation_records_before + 1);
+    assert(profile_allocation_dropped_count == allocation_dropped_before);
+    assert(profile_allocation_callback_busy == 0);
+    profile_dumped = 0;
     elisa_trace_record(NULL, repeat_line);
     elisa_trace_record(NULL, repeat_line);
     assert(profile_find_locked("<unknown>", NULL, repeat_line,
