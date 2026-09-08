@@ -22,6 +22,8 @@ exit_status=$?
 timing_exit_status=$?
 ELISA_PROFILE_FRAMED=1 "$WORK/collector" 2>"$WORK/framed-profile.txt"
 framed_exit_status=$?
+ELISA_PROFILE_EVENT_TRACE=1 "$WORK/collector" 2>"$WORK/trace-profile.txt"
+trace_exit_status=$?
 exec 9>"$WORK/status.txt"
 ELISA_PROFILE_STATUS_FD=9 ELISA_PROFILE_MODE=sample ELISA_PROFILE_SAMPLE_PERIOD_US=50 "$WORK/collector" 2>"$WORK/sample-failure-profile.txt"
 sample_failure_exit_status=$?
@@ -30,12 +32,16 @@ set -e
 test "$exit_status" -eq 0
 test "$timing_exit_status" -eq 0
 test "$framed_exit_status" -eq 0
+test "$trace_exit_status" -eq 0
 test "$sample_failure_exit_status" -eq 0
 test "$(cat "$WORK/status.txt")" = $'ELISA_PROFILE_STATUS\t1\tfailure\t2'
 
-python3 - "$WORK/profile.txt" "$WORK/timing-profile.txt" "$WORK/framed-profile.txt" <<'PY'
+python3 - "$WORK/profile.txt" "$WORK/timing-profile.txt" "$WORK/framed-profile.txt" "$WORK/trace-profile.txt" <<'PY'
 import sys
 MASK = (1 << 64) - 1
+EXPECTED_TRACE_RECORD_COUNT = 7
+EXPECTED_TRACE_KINDS = ["3", "1", "1", "2", "2", "2", "3"]
+EXPECTED_TRACE_FUNCTIONS = ["main", "main", "main", "main", "main", "main", "worker"]
 
 def read_lines(path: str, framed: bool = False):
     result = []
@@ -84,8 +90,17 @@ def check_report(path: str, framed: bool = False) -> None:
     assert len(edges) == 1
     assert edges[0][3:7] == ["main", "worker", "1", "1"]
 
+def check_deferred_trace(path: str) -> None:
+    lines = [line.split("\t") for line in read_lines(path) if line.startswith("ELISA_PROFILE\t")]
+    paths = [line for line in lines if line[2] == "path"]
+    assert len(paths) == EXPECTED_TRACE_RECORD_COUNT, paths
+    assert [int(line[3]) for line in paths] == list(range(EXPECTED_TRACE_RECORD_COUNT)), paths
+    assert [line[4] for line in paths] == EXPECTED_TRACE_KINDS, paths
+    assert [line[5] for line in paths] == EXPECTED_TRACE_FUNCTIONS, paths
+
 check_report(sys.argv[1])
 check_report(sys.argv[2])
 check_report(sys.argv[3], framed=True)
+check_deferred_trace(sys.argv[4])
 print("collector content smoke OK")
 PY

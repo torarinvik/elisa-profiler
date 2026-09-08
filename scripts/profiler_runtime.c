@@ -88,6 +88,7 @@ enum {
     PROFILE_DEFAULT_CALL_PATH_LIMIT = 32768,
     PROFILE_DEFAULT_CAPTURE_BYTE_LIMIT = 64 * 1024 * 1024,
     PROFILE_EVENT_TRACE_FIXED_BYTES = 64,
+    PROFILE_INITIAL_THREAD_TRACE_CAPACITY = 64,
     PROFILE_FRAME_BUFFER_BYTES = 1024 * 1024,
     PROFILE_FRAME_HEADER_BYTES = 128,
     PROFILE_INITIAL_LOCATION_CAPACITY = 256,
@@ -164,6 +165,17 @@ typedef struct {
     uint64_t identity_id;
     uint64_t value;
 } profile_recent_entry;
+
+typedef struct {
+    const char *function_name;
+    const char *variable_name;
+    uint32_t line;
+    uint8_t kind;
+    uint8_t is_signed;
+    uint64_t identity_id;
+    uint64_t value;
+    uint64_t sequence;
+} profile_trace_event;
 
 static profile_entry *profile_table;
 static size_t profile_capacity;
@@ -585,6 +597,9 @@ struct profile_thread_state {
     uint64_t stack_dropped;
     uint64_t trace_dropped;
     uint64_t bytes_dropped;
+    profile_trace_event *trace_events;
+    size_t trace_capacity;
+    size_t trace_size;
 #if ELISA_PROFILE_TIMING
     const char *timing_function_name;
     const char *timing_variable_name;
@@ -603,6 +618,8 @@ static uint64_t profile_thread_count;
 static uint64_t profile_saturating_add_u64(uint64_t left, uint64_t right) {
     return UINT64_MAX - left < right ? UINT64_MAX : left + right;
 }
+
+static int profile_thread_trace_buffer_grow_locked(profile_thread_state *thread);
 
 static int profile_reserve_bytes_locked(uint64_t bytes) {
     if (bytes > UINT64_MAX - profile_capture_bytes_used ||
@@ -1210,6 +1227,9 @@ static profile_thread_state *profile_get_thread_locked(void) {
     thread->thread_id = profile_thread_count;
     profile_threads = thread;
     profile_current_thread = thread;
+    if (profile_event_trace_enabled) {
+        (void)profile_thread_trace_buffer_grow_locked(thread);
+    }
     if (profile_thread_key_available) {
         (void)pthread_setspecific(profile_thread_key, thread);
     }
@@ -1369,6 +1389,68 @@ static uint64_t profile_event_trace_bytes(const char *function_name,
     return bytes;
 }
 
+static int profile_thread_trace_buffer_grow_locked(profile_thread_state *thread) {
+    if (thread == NULL) {
+        return 0;
+    }
+    size_t new_capacity;
+    uint64_t new_bytes;
+    if (!profile_next_capacity(thread->trace_capacity,
+                               PROFILE_INITIAL_THREAD_TRACE_CAPACITY,
+                               &new_capacity) ||
+        !profile_allocation_bytes(new_capacity, sizeof(*thread->trace_events),
+                                   &new_bytes)) {
+        return 0;
+    }
+    if (!profile_reserve_bytes_locked(new_bytes)) {
+        return 0;
+    }
+    profile_trace_event *new_events = calloc(new_capacity, sizeof(*new_events));
+    if (new_events == NULL) {
+        profile_release_bytes_locked(new_bytes);
+        profile_capture_bytes_dropped = profile_saturating_add_u64(
+            profile_capture_bytes_dropped, new_bytes);
+        profile_budget_exceeded = 1;
+        return 0;
+    }
+    if (thread->trace_events != NULL && thread->trace_size > 0) {
+        memcpy(new_events, thread->trace_events,
+               thread->trace_size * sizeof(*new_events));
+    }
+    uint64_t old_bytes = 0;
+    (void)profile_allocation_bytes(thread->trace_capacity,
+                                   sizeof(*thread->trace_events), &old_bytes);
+    free(thread->trace_events);
+    profile_release_bytes_locked(old_bytes);
+    thread->trace_events = new_events;
+    thread->trace_capacity = new_capacity;
+    return 1;
+}
+
+static int profile_thread_trace_append_locked(profile_thread_state *thread,
+                                               const profile_trace_event *event) {
+    if (thread == NULL || event == NULL) {
+        return 0;
+    }
+    if (thread->trace_size >= thread->trace_capacity &&
+        !profile_thread_trace_buffer_grow_locked(thread)) {
+        return 0;
+    }
+    thread->trace_events[thread->trace_size++] = *event;
+    return 1;
+}
+
+static void profile_note_trace_drop_locked(profile_thread_state *thread) {
+    profile_event_trace_omitted =
+        profile_saturating_increment_u64(profile_event_trace_omitted);
+    if (thread != NULL) {
+        thread->bytes_dropped =
+            profile_saturating_increment_u64(thread->bytes_dropped);
+        thread->trace_dropped =
+            profile_saturating_increment_u64(thread->trace_dropped);
+    }
+}
+
 static int profile_mode_allows_kind(uint8_t kind) {
     switch (profile_mode) {
     case PROFILE_MODE_SAMPLES:
@@ -1436,39 +1518,34 @@ static void profile_record(const char *function_name, uint32_t line,
     int trace_allowed = profile_event_trace_enabled &&
                         (profile_event_trace_limit == 0 ||
                          profile_event_trace_captured < profile_event_trace_limit);
-    if (trace_allowed &&
-        profile_reserve_bytes_locked(profile_event_trace_bytes(function_name, variable_name))) {
-        profile_record_begin();
-        profile_record_append_text("path\t");
-        profile_record_append_uint64(profile_event_count - 1);
-        profile_record_append_char('\t');
-        profile_record_append_uint64(kind);
-        profile_record_append_char('\t');
-        profile_record_append_field(function_name);
-        profile_record_append_char('\t');
-        profile_record_append_uint64(line);
-        profile_record_append_char('\t');
-        profile_record_append_field(variable_name);
-        profile_record_append_char('\t');
-        profile_record_append_uint64(is_signed);
-        profile_record_append_char('\t');
-        if (is_signed) {
-            profile_record_append_int64((int64_t)value);
+    if (trace_allowed) {
+        uint64_t trace_bytes = profile_event_trace_bytes(function_name, variable_name);
+        if (profile_reserve_bytes_locked(trace_bytes)) {
+            profile_trace_event event = {
+                .function_name = function_name,
+                .variable_name = variable_name,
+                .line = line,
+                .kind = kind,
+                .is_signed = is_signed,
+                .identity_id = identity_id,
+                .value = value,
+                .sequence = profile_event_count - 1,
+            };
+            if (profile_thread_trace_append_locked(thread, &event)) {
+                profile_event_trace_captured =
+                    profile_saturating_increment_u64(profile_event_trace_captured);
+            } else {
+                profile_release_bytes_locked(trace_bytes);
+                profile_capture_bytes_dropped = profile_saturating_add_u64(
+                    profile_capture_bytes_dropped, trace_bytes);
+                profile_budget_exceeded = 1;
+                profile_note_trace_drop_locked(thread);
+            }
         } else {
-            profile_record_append_uint64(value);
+            profile_note_trace_drop_locked(thread);
         }
-        profile_record_emit();
-        profile_event_trace_captured =
-            profile_saturating_increment_u64(profile_event_trace_captured);
     } else if (profile_event_trace_enabled) {
-        profile_event_trace_omitted =
-            profile_saturating_increment_u64(profile_event_trace_omitted);
-        if (thread != NULL) {
-            thread->bytes_dropped =
-                profile_saturating_increment_u64(thread->bytes_dropped);
-            thread->trace_dropped =
-                profile_saturating_increment_u64(thread->trace_dropped);
-        }
+        profile_note_trace_drop_locked(thread);
     }
 
     profile_entry *existing = profile_find_locked(
@@ -2006,6 +2083,100 @@ static void profile_dump_trace_status(void) {
     profile_record_emit();
 }
 
+static int profile_trace_event_compare(const void *left_pointer,
+                                       const void *right_pointer) {
+    const profile_trace_event *left = *(const profile_trace_event *const *)left_pointer;
+    const profile_trace_event *right = *(const profile_trace_event *const *)right_pointer;
+    if (left->sequence < right->sequence) {
+        return -1;
+    }
+    if (left->sequence > right->sequence) {
+        return 1;
+    }
+    return 0;
+}
+
+static void profile_dump_trace_event(const profile_trace_event *event) {
+    profile_record_begin();
+    profile_record_append_text("path\t");
+    profile_record_append_uint64(event->sequence);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(event->kind);
+    profile_record_append_char('\t');
+    profile_record_append_field(event->function_name);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(event->line);
+    profile_record_append_char('\t');
+    profile_record_append_field(event->variable_name);
+    profile_record_append_char('\t');
+    profile_record_append_uint64(event->is_signed);
+    profile_record_append_char('\t');
+    if (event->is_signed) {
+        profile_record_append_int64((int64_t)event->value);
+    } else {
+        profile_record_append_uint64(event->value);
+    }
+    if (event->identity_id != PROFILE_ID_UNSET) {
+        profile_record_append_char('\t');
+        profile_record_append_uint64(event->identity_id);
+    }
+    profile_record_emit();
+}
+
+static void profile_dump_trace_records_per_thread(void) {
+    for (const profile_thread_state *thread = profile_threads;
+         thread != NULL;
+         thread = thread->next) {
+        for (size_t index = 0; index < thread->trace_size; ++index) {
+            profile_dump_trace_event(&thread->trace_events[index]);
+        }
+    }
+}
+
+static void profile_dump_trace_records(void) {
+    if (!profile_event_trace_enabled) {
+        return;
+    }
+    size_t total = 0;
+    int total_overflowed = 0;
+    for (const profile_thread_state *thread = profile_threads;
+         thread != NULL;
+         thread = thread->next) {
+        if (thread->trace_size > SIZE_MAX - total) {
+            total_overflowed = 1;
+            break;
+        }
+        total += thread->trace_size;
+    }
+    if (total == 0) {
+        return;
+    }
+    if (total_overflowed) {
+        profile_budget_exceeded = 1;
+        profile_dump_trace_records_per_thread();
+        return;
+    }
+    profile_trace_event **events = calloc(total, sizeof(*events));
+    if (events == NULL) {
+        profile_budget_exceeded = 1;
+        profile_dump_trace_records_per_thread();
+        return;
+    }
+    size_t event_index = 0;
+    for (profile_thread_state *thread = profile_threads;
+         thread != NULL;
+         thread = thread->next) {
+        for (size_t index = 0; index < thread->trace_size; ++index) {
+            events[event_index++] = &thread->trace_events[index];
+        }
+    }
+    qsort(events, event_index, sizeof(*events), profile_trace_event_compare);
+    for (size_t index = 0; index < event_index; ++index) {
+        profile_dump_trace_event(events[index]);
+    }
+    free(events);
+}
+
 static void profile_dump_thread_records(void) {
     if (!profile_thread_records_enabled) {
         return;
@@ -2499,6 +2670,7 @@ static void profile_dump_body(void) {
             profile_saturating_increment_u64(profile_dropped_count);
         profile_dump_metadata(0);
         profile_dump_trace_status();
+        profile_dump_trace_records();
         profile_dump_thread_records();
         if (!profile_event_trace_enabled &&
             (profile_crash_dumped || profile_recent_path_enabled)) {
@@ -2526,6 +2698,7 @@ static void profile_dump_body(void) {
     qsort(entries, output_count, sizeof(*entries), profile_entry_compare);
     profile_dump_metadata(output_count);
     profile_dump_trace_status();
+    profile_dump_trace_records();
     profile_dump_thread_records();
     for (size_t index = 0; index < output_count; ++index) {
         const profile_entry *entry = entries[index];

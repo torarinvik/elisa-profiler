@@ -102,6 +102,16 @@ measurements are machine- and scheduler-sensitive. Repetitions are raw
 observations, not independent statistical samples of a workload, and should be
 compared on the same host with the same compiler and build options.
 
+Diagnostic event tracing uses a typed per-thread buffer. Callback code records
+the event fields and reserves its bounded payload budget, but does not format a
+line or write to the profile descriptor. Buffer growth is synchronized by the
+collector mutex and is charged to the same capture byte budget; allocation or
+capacity failure drops the detailed trace event with the existing per-thread
+and global loss counters. At dump time the native collector sorts retained
+records by their process-local sequence before formatting and writing them, so
+the deferred transport preserves the event-stream ordering contract without
+making the target pay for output formatting on every callback.
+
 Every report also carries an explicit capability matrix. In the current build,
 `sampling_detail` is active only for `sample` captures and declares the
 `instrumented_call_stack` scope; it is disabled for event modes. Allocation and
