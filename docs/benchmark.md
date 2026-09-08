@@ -354,6 +354,27 @@ also passed native and sampling regressions. Logs:
 `build/segment-committed-self-host.log`, `build/segment-native-regression.log`,
 and `build/segment-sampling-regression.log`.
 
+## Aggregate-state call annotation filter (2026-09-08)
+
+Compiler commit `37a988dd` restricts the aggregate-state call checker's repeated
+arity lookups to `__aggregate_state` rows. It preserves order and duplicates:
+each repeated row represents another state slot. The shared lookup helper and
+standalone arity checker are unchanged.
+
+Two full O0 compiler-build pairs measured baseline/candidate wall times of
+103.05/96.74 and 102.60/96.78 seconds, reversing order in the second pair.
+User CPU times were 102.34/96.11 and 102.02/96.14 seconds. All four objects
+were byte-identical. This is 5.7–6.1% less wall time against `b707efec` on this
+host, not an additive claim with previous gains. Both binaries were self-hosted
+and compiled identical sources to the same output path. Logs:
+`build/aggregate-full-{baseline,candidate}.log` and their `-reverse.log` variants.
+
+All 385 diagnostic fixtures plus two new multi-slot fixtures matched baseline
+exit statuses, diagnostics, and successful LLVM output; this includes existing
+refusals. The accepted two-slot fixture also executed and returned 42, while
+the rejected fixture retained the expected `[?, &]` versus actual `[?, ?]`
+diagnostic. The committed revision's fresh bootstrap validation is pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
