@@ -16,7 +16,7 @@ module ElisaProfilerAllocationLifetimes:
         const DEFAULT_CAPACITY: usize = 4096
 
         struct Entry:
-            arena: u64
+            arena: mutable u64
             address: u64
             generation: u64
             size_bytes: mutable u64
@@ -149,6 +149,28 @@ module ElisaProfilerAllocationLifetimes:
                     return true
             invalidate(state, QUALITY_MISSING_EVENT)
             return false
+
+        # Ownership transfer does not allocate or release logical bytes. Check
+        # all collisions before mutation so a rejected transfer is transactional.
+        # Region-index remapping is the raw-event reconciler's responsibility.
+        def observe_adoption(state: mutable State&, parent: u64, child: u64) -> bool can[Abort.Panic]:
+            return false if state.quality != QUALITY_EXACT
+            if parent == ZERO or child == ZERO or parent == child:
+                invalidate(state, QUALITY_IDENTITY)
+                return false
+            for source_index in 0..<state.entries.count |state, parent, child|:
+                if state.entries[source_index].arena == child and state.entries[source_index].live:
+                    for destination_index in 0..<state.entries.count |state, parent, source_index|:
+                        if state.entries[destination_index].arena == parent and state.entries[destination_index].live and state.entries[destination_index].address == state.entries[source_index].address:
+                            invalidate(state, QUALITY_IDENTITY)
+                            return false
+            for index in 0..<state.entries.count |state, parent, child|:
+                if state.entries[index].arena == child:
+                    state.entries[index].arena <- parent
+                    # A retired source cannot be consumed as a pending realloc
+                    # after crossing an ownership boundary without more evidence.
+                    state.entries[index].released <- false
+            return true
 
         # Empty and repeated resets are valid. This is a logical release, not
         # a claim that the arena returned its backing memory to the OS.

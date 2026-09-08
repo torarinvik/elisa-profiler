@@ -16,6 +16,7 @@ module AllocationLifetimesSmoke:
         const ZERO: u64 = 0
         const ONE: u64 = 1
         const FIRST_ENTRY: usize = 0
+        const SECOND_ENTRY: usize = 1
         const U64_MAX: u64 = 18446744073709551615
 
     public:
@@ -32,6 +33,37 @@ module AllocationLifetimesSmoke:
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             ElisaProfilerAllocationLifetimes::observe_arena_reset(&state, ARENA)
             assert state.live_bytes == BYTES
+            adopted: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&adopted, ARENA, ADDRESS, BYTES) != ZERO
+            child_generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&adopted, OTHER_ARENA, OTHER_ADDRESS, BYTES + BYTES)
+            assert child_generation != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_adoption(&adopted, ARENA, OTHER_ARENA)
+            assert adopted.live_bytes == BYTES + BYTES + BYTES
+            assert adopted.allocated_bytes == adopted.live_bytes
+            assert adopted.allocation_count == CAPACITY.u64()
+            assert adopted.entries[SECOND_ENTRY].generation == child_generation
+            assert adopted.entries[SECOND_ENTRY].arena == ARENA
+            ElisaProfilerAllocationLifetimes::observe_arena_reset(&adopted, OTHER_ARENA)
+            assert adopted.live_bytes == BYTES + BYTES + BYTES
+            assert ElisaProfilerAllocationLifetimes::observe_release(&adopted, ARENA, OTHER_ADDRESS)
+            assert adopted.live_bytes == BYTES
+            ElisaProfilerAllocationLifetimes::observe_arena_reset(&adopted, ARENA)
+            assert adopted.live_bytes == ZERO
+            assert adopted.quality == ElisaProfilerAllocationLifetimes::QUALITY_EXACT
+            collision: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(THREE_SLOTS)
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&collision, ARENA, ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&collision, OTHER_ARENA, OTHER_ADDRESS, BYTES) != ZERO
+            assert ElisaProfilerAllocationLifetimes::observe_allocation(&collision, OTHER_ARENA, ADDRESS, BYTES) != ZERO
+            assert not ElisaProfilerAllocationLifetimes::observe_adoption(&collision, ARENA, OTHER_ARENA)
+            assert collision.quality == ElisaProfilerAllocationLifetimes::QUALITY_IDENTITY
+            assert collision.entries[SECOND_ENTRY].arena == OTHER_ARENA
+            assert collision.live_bytes == BYTES + BYTES + BYTES
+            empty_adoption: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
+            assert ElisaProfilerAllocationLifetimes::observe_adoption(&empty_adoption, ARENA, OTHER_ARENA)
+            assert empty_adoption.live_bytes == ZERO
+            assert empty_adoption.quality == ElisaProfilerAllocationLifetimes::QUALITY_EXACT
+            assert not ElisaProfilerAllocationLifetimes::observe_adoption(&empty_adoption, ARENA, ARENA)
+            assert empty_adoption.quality == ElisaProfilerAllocationLifetimes::QUALITY_IDENTITY
             moved: mutable ElisaProfilerAllocationLifetimes::State = ElisaProfilerAllocationLifetimes::create(CAPACITY)
             assert ElisaProfilerAllocationLifetimes::observe_allocation(&moved, ARENA, ADDRESS, BYTES) != ZERO
             destination_generation: u64 = ElisaProfilerAllocationLifetimes::observe_allocation(&moved, ARENA, OTHER_ADDRESS, BYTES + BYTES)

@@ -161,6 +161,13 @@ size mismatch, erased source history, and moves across reset boundaries
 invalidate state. Retired slots may hold older instances of the same address,
 so source selection uses generation order rather than table position.
 
+Logical adoption transfers child ownership without changing generations,
+allocation counts, or byte totals. A later child reset cannot release the
+transferred allocations; parent release/reset can. Destination collisions and
+self-adoption are rejected before changing any entry. Empty-child adoption is
+valid. This state operation does not solve raw region-index remapping, and it
+does not preserve pending realloc-release evidence across adoption boundaries.
+
 This engine is not connected to capture reports yet. Raw-event ordering,
 realloc/adoption/rewind reconciliation, region identity, loss propagation,
 lifetime distributions, and performance validation remain necessary before
