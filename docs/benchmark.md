@@ -592,8 +592,16 @@ All four emitted objects were byte-identical: 3.9–4.1% less wall time against
 `build/rebind-filter-full-{baseline,candidate}.log` and their `-reverse.log`
 variants. Fresh bootstrap on `1910e662` passed five probes, full compiler emission
 (19,110,912 bytes), byte-identical gen3/gen4 objects, and all 40 repeat emissions
-(`build/rebind-filter-committed-self-host.log`). Profiler rebuild and
-native/sampling regression checks remain pending.
+(`build/rebind-filter-committed-self-host.log`). Profiler rebuild and both native
+and sampling regression checks passed (`build/rebind-filter-profiler-build.log`,
+`build/rebind-filter-native-regression.log`, and
+`build/rebind-filter-sampling-regression.log`).
+
+Freshness rechecked on 2026-09-08: main remains at `a313a619`, an ancestor of
+our dedicated compiler's `1910e662`. All ten modified source files and the
+untracked chained-index fixture in main match our worktree byte-for-byte.
+The branch audit includes all 11 local branch tips; other dirty worktrees
+remain preserved, not silently treated as integrated changes.
 
 ## Promote a local baseline
 
