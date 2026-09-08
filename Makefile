@@ -35,6 +35,12 @@ compiler-self-host-smoke: compiler-manifest-smoke
 	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
 		"$(COMPILER_WORKTREE)/test/parity/self_host_gen3_smoke.sh"
 
+.PHONY: compiler-runtime-freshness-smoke
+compiler-runtime-freshness-smoke:
+	@bash "$(COMPILER_WORKTREE)/test/parity/runtime_object_freshness_smoke.sh"
+
+test: compiler-runtime-freshness-smoke
+
 compiler-seed:
 	ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE0_CORE="$(STAGE0_CORE)" \
 	ELISACORE_BIN="$${ELISACORE_BIN:-$(STAGE0_BIN)}" \
