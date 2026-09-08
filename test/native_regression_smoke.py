@@ -697,6 +697,16 @@ def main():
         assert allocation_events[0]["kind"] == "region_create"
         assert allocation_events[0]["size_bytes"] > 0
         assert any(event["kind"] == "realloc_in_place" for event in allocation_events)
+        assert b"Raw allocation lifecycle records" in run("report", allocation_output, "--format", "html")
+        malformed_allocation = copy.deepcopy(allocation_report)
+        malformed_allocation["run"]["repetitions"][0]["allocation_events"] = {}
+        malformed_allocation_output = work / "malformed-allocation.json"
+        malformed_allocation_output.write_text(json.dumps(malformed_allocation), encoding="utf-8")
+        run("report", malformed_allocation_output, "--format", "html", ok=False)
+        malformed_allocation_output.write_text(
+            json.dumps(allocation_report).replace(
+                json.dumps(allocation_events), json.dumps(allocation_events)[:-1] + ',]'), encoding="utf-8")
+        run("report", malformed_allocation_output, "--format", "html", ok=False)
         allocation_html = work / "allocation.html"
         run("profile", ROOT / "examples" / "allocation_workload.elisa", "--mode", "diagnostic",
             "--format", "html", "--output", allocation_html)

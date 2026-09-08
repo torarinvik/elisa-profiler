@@ -123,22 +123,30 @@ extend ProfilerNative:
                 destination.active_stack_path <- incoming.active_stack_path
             destination.capture_started <- true if incoming.capture_started
             destination.capture_complete <- false if incoming.capture_started and not incoming.capture_complete
-            append_record_separator(destination.location_records)
-            destination.location_records.extend(incoming.location_records)
-            append_record_separator(destination.function_records)
-            destination.function_records.extend(incoming.function_records)
-            append_record_separator(destination.call_edge_records)
-            destination.call_edge_records.extend(incoming.call_edge_records)
-            append_record_separator(destination.stack_records)
-            destination.stack_records.extend(incoming.stack_records)
-            append_folded_separator(destination.folded_records)
-            destination.folded_records.extend(incoming.folded_records)
-            append_record_separator(destination.sample_records)
-            destination.sample_records.extend(incoming.sample_records)
-            append_record_separator(destination.event_records)
-            destination.event_records.extend(incoming.event_records)
-            append_record_separator(destination.allocation_records)
-            destination.allocation_records.extend(incoming.allocation_records)
+            if incoming.location_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.location_records)
+                destination.location_records.extend(incoming.location_records)
+            if incoming.function_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.function_records)
+                destination.function_records.extend(incoming.function_records)
+            if incoming.call_edge_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.call_edge_records)
+                destination.call_edge_records.extend(incoming.call_edge_records)
+            if incoming.stack_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.stack_records)
+                destination.stack_records.extend(incoming.stack_records)
+            if incoming.folded_records.count > NATIVE_ZERO.usize():
+                append_folded_separator(destination.folded_records)
+                destination.folded_records.extend(incoming.folded_records)
+            if incoming.sample_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.sample_records)
+                destination.sample_records.extend(incoming.sample_records)
+            if incoming.event_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.event_records)
+                destination.event_records.extend(incoming.event_records)
+            if incoming.allocation_records.count > NATIVE_ZERO.usize():
+                append_record_separator(destination.allocation_records)
+                destination.allocation_records.extend(incoming.allocation_records)
             if incoming.thread_loss_records.count > NATIVE_ZERO.usize():
                 append_record_separator(destination.thread_loss_records)
                 destination.thread_loss_records.extend(incoming.thread_loss_records)

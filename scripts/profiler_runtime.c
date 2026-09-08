@@ -1320,7 +1320,7 @@ static int profile_allocation_buffer_grow_locked(profile_thread_state *thread) {
     return 1;
 }
 
-/* Strongly overridden by the compiler runtime's weak no-op hook. The callback
+/* Strong override of the compiler runtime's weak no-op hook. The callback
  * records only fixed-width data; formatting, sorting, and protocol I/O wait
  * until profile_dump_body holds the collector lock. */
 void elisa_profile_allocation_event(uint32_t kind, uintptr_t address,

@@ -128,6 +128,7 @@ extend ProfilerNative:
                 if cursor < content_stop:
                     return NATIVE_NEGATIVE_ONE if data[cursor] != NATIVE_BYTE_COMMA
                     cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
+                    return NATIVE_NEGATIVE_ONE if cursor >= content_stop
             return record_count
 
 
@@ -1094,7 +1095,8 @@ extend ProfilerNative:
                             for index in event_content_start..<event_content_stop |index, data, profile|:
                                 profile.event_records.push(data[index])
                     allocation_start: i64 = json_key_value_start(data, "allocation_events", repetition_cursor, repetition_record_stop.usize())
-                    if allocation_start >= NATIVE_ZERO and data[allocation_start.usize()] == NATIVE_BYTE_LEFT_BRACKET:
+                    if allocation_start >= NATIVE_ZERO:
+                        return false if data[allocation_start.usize()] != NATIVE_BYTE_LEFT_BRACKET
                         allocation_stop: i64 = json_array_end(data, allocation_start.usize(), repetition_record_stop.usize())
                         return false if allocation_stop < NATIVE_ZERO
                         allocation_count: i64 = json_allocation_array_count(data, allocation_start.usize(), allocation_stop.usize())
@@ -1102,7 +1104,7 @@ extend ProfilerNative:
                         profile.allocation_record_count <- native_saturating_add(profile.allocation_record_count, allocation_count)
                         allocation_content_start: usize = allocation_start.usize() + NATIVE_ONE.usize()
                         allocation_content_stop: usize = allocation_stop.usize() - NATIVE_ONE.usize()
-                        if allocation_content_start < allocation_content_stop:
+                        if allocation_count > NATIVE_ZERO:
                             append_record_separator(profile.allocation_records)
                             for index in allocation_content_start..<allocation_content_stop |index, data, profile|:
                                 profile.allocation_records.push(data[index])
