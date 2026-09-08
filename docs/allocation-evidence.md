@@ -67,6 +67,12 @@ free-block reference explicitly and preserves the reusable-span count while a
 remainder exists. Region indices after adoption
 still need a separate identity/remapping contract.
 
+The reset fixture records allocation, reset, replacement allocation, and cleanup
+in sequence. The replacement can reuse the same backing address and size, but
+it is a new logical lifetime: a future live-allocation table must not identify
+allocations by address alone across reset boundaries. This fixture checks raw
+event coverage; it does not establish live-byte accounting.
+
 ## Loss and collection boundaries
 
 The collector uses fixed-width records, a shared capture-byte budget, and a
@@ -96,7 +102,8 @@ independent allocator-oracle coverage:
   the hooked allocator must be inventoried before claiming complete backing
   capacity accounting.
 - Adoption now carries child identity but still needs a region-identity remapping contract.
-  Free-list reuse must report the actual owning region, not just the active end.
+  Reclaim and free-list reuse report the owning block index; adoption still needs
+  to reconcile indices transferred from a different arena.
 - Region-wide destruction, reset, and trim need explicit reconciliation rules
   for a bounded live-state table, with visible quality degradation after loss.
 - Allocation sites, stacks, tasks, foreign allocators, and allocation sampling

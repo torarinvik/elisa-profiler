@@ -842,6 +842,26 @@ def main():
         assert second_half["address"] == first_half["address"] + first_half["size_bytes"]
         assert second_half["arena"] == original["arena"] and second_half["region"] == original["region"]
         assert original["size_bytes"] == move["old_size_bytes"] == sum(event["size_bytes"] for event in replacements)
+        reset_output = work / "arena-reset.json"
+        run("profile", ROOT / "examples" / "arena_reset_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", reset_output)
+        reset_report = json.loads(reset_output.read_text(encoding="utf-8"))
+        assert reset_report["summary"]["capture_complete"] is True
+        reset_events = reset_report["run"]["repetitions"][0]["allocation_events"]
+        resets = [event for event in reset_events if event["kind"] == "region_reset"]
+        assert len(resets) == 1
+        reset = resets[0]
+        reset_allocations = sorted((event for event in reset_events if event["kind"] == "alloc"),
+                                   key=lambda event: event["sequence"])
+        assert len(reset_allocations) == 2
+        before_reset, after_reset = reset_allocations
+        assert before_reset["sequence"] < reset["sequence"] < after_reset["sequence"]
+        assert before_reset["address"] == after_reset["address"] != 0
+        assert before_reset["arena"] == reset["arena"] == after_reset["arena"]
+        assert before_reset["region"] == after_reset["region"]
+        assert before_reset["size_bytes"] == after_reset["size_bytes"]
+        assert any(event["kind"] == "region_free" and event["arena"] == reset["arena"]
+                   and event["sequence"] > after_reset["sequence"] for event in reset_events)
         adoption_output = work / "arena-adoption.json"
         run("profile", ROOT / "examples" / "arena_adoption_workload.elisa", "--mode", "full",
             "--format", "json", "--output", adoption_output)
