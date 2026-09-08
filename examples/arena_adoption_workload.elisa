@@ -1,0 +1,23 @@
+# Explicit arena transfer fixture: the profiler must retain both identities.
+include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+module ArenaAdoptionWorkload:
+    private:
+        const REQUEST_BYTES: usize = 64
+        const EMPTY_INDEX: usize = 0
+        const SUCCESS_STATUS: i64 = 0
+        const FAILURE_STATUS: i64 = 1
+
+    public:
+        def run() -> i64:
+            parent: mutable Arena = Arena{begin: null, end: null, end_index: EMPTY_INDEX, strategy: ARENA_STRATEGY_CHAINED}
+            child: mutable Arena = Arena{}
+            _ = arena_alloc(&parent, REQUEST_BYTES)
+            _ = arena_alloc(&child, REQUEST_BYTES)
+            arena_adopt(&parent, &child)
+            transferred: bool = child.begin == null and parent.begin != null
+            arena_free(&child)
+            arena_free(&parent)
+            return SUCCESS_STATUS if transferred else FAILURE_STATUS
+
+def main() -> i64:
+    return ArenaAdoptionWorkload::run()

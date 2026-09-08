@@ -78,6 +78,19 @@ def main():
         pass
     else:
         raise AssertionError("schema accepted its exclusive maximum")
+    for value, constraint in (
+        ("", {"minLength": 1}), ("ab", {"maxLength": 1}),
+        ("not-a-digest", {"pattern": "^[0-9a-f]{64}$"}),
+        ([0, 1], {"maxItems": 1}),
+    ):
+        try:
+            validate(value, constraint, constraint, "constraint")
+        except SchemaError:
+            pass
+        else:
+            raise AssertionError(f"schema ignored constraint {constraint}")
+    validate("λ", {"minLength": 1, "maxLength": 1}, {}, "unicode")
+    validate(None, {"type": ["string", "null"], "pattern": "^[0-9]+$"}, {}, "nullable")
     report = {
         "schema_version": 1,
         "compiler": {"source": "nested decoy", "branch": "test", "commit": "abc"},
@@ -768,6 +781,22 @@ def main():
             "--format", "html", "--output", allocation_html)
         assert b"Memory and regions" in allocation_html.read_bytes()
         assert b"Raw allocation lifecycle records" in allocation_html.read_bytes()
+        adoption_output = work / "arena-adoption.json"
+        run("profile", ROOT / "examples" / "arena_adoption_workload.elisa", "--mode", "full",
+            "--format", "json", "--output", adoption_output)
+        adoption_report = json.loads(adoption_output.read_text(encoding="utf-8"))
+        adoption_events = adoption_report["run"]["repetitions"][0]["allocation_events"]
+        transfers = [event for event in adoption_events if event["kind"] == "arena_adopt"]
+        assert len(transfers) == 1
+        transfer = transfers[0]
+        parent_arena, child_arena = transfer["arena"], transfer["old_address"]
+        assert parent_arena != 0 and child_arena != 0 and parent_arena != child_arena
+        for arena in (parent_arena, child_arena):
+            assert any(event["kind"] == "alloc" and event["arena"] == arena
+                       and event["sequence"] < transfer["sequence"] for event in adoption_events)
+            assert any(event["kind"] == "region_free" and event["arena"] == arena
+                       and event["sequence"] > transfer["sequence"] for event in adoption_events)
+        assert b"arena_adopt" in run("report", adoption_output, "--format", "html")
         assert measured["summary"]["capture_started"] is True
         assert measured["summary"]["capture_complete"] is True
         assert measured["source_mapping"]["mapped_locations"] == len(measured["locations"])

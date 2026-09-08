@@ -559,7 +559,7 @@
         "kind_code": { "type": "integer", "minimum": 1, "maximum": 9 },
         "address": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
         "size_bytes": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
-        "old_address": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "old_address": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615, "description": "Previous allocation address, or the source child arena identity for arena_adopt. Zero on legacy adoption hooks means unknown source identity." },
         "old_size_bytes": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
         "arena": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
         "region": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },

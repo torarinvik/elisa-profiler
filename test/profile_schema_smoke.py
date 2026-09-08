@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -63,6 +64,13 @@ def validate(value: Any, schema: dict[str, Any], root: dict[str, Any], path: str
             raise SchemaError(f"{path}: value is above maximum")
         if "exclusiveMaximum" in schema and value >= schema["exclusiveMaximum"]:
             raise SchemaError(f"{path}: value is not below exclusive maximum")
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            raise SchemaError(f"{path}: string is too short")
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            raise SchemaError(f"{path}: string is too long")
+        if "pattern" in schema and re.search(schema["pattern"], value) is None:
+            raise SchemaError(f"{path}: string does not match pattern")
     if isinstance(value, dict):
         for required in schema.get("required", []):
             if required not in value:
@@ -80,6 +88,8 @@ def validate(value: Any, schema: dict[str, Any], root: dict[str, Any], path: str
     if isinstance(value, list):
         if "minItems" in schema and len(value) < schema["minItems"]:
             raise SchemaError(f"{path}: too few items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            raise SchemaError(f"{path}: too many items")
         item_schema = schema.get("items")
         if item_schema is not None:
             for index, item in enumerate(value):

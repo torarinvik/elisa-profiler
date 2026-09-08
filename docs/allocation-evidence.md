@@ -35,13 +35,19 @@ with an arbitrary prebuilt executable merely because full mode was selected.
 | 6 | `region_reset` | The arena's block counts/free lists were reset. This affects the whole arena, not only the region index in the record. |
 | 7 | `region_trim` | Blocks after the arena's current end were released. The record identifies the retained end index, not a list of freed allocations. |
 | 8 | `region_free` | Arena cleanup detached its block chain. Repeated cleanup can emit this operation even when the chain was already empty. |
-| 9 | `arena_adopt` | A child's nonempty block chain was transferred into a parent. The current record identifies only the parent; it does not identify the child. |
+| 9 | `arena_adopt` | A child's nonempty block chain was transferred into a parent. `arena` identifies the destination parent; `old_address` identifies the consumed child arena, not an allocation. Older hooks emitted zero for the child, which means unavailable identity. |
 
 The sequence is collector-assigned across allocation callbacks in one process
 and is separate from diagnostic trace sequence numbers. Buffers are per thread,
 so serialized record order is not necessarily sequence order. Sequence numbers
 and addresses are not identities across repetitions or separate processes.
 Timestamps are monotonic nanoseconds, not wall-clock or CPU time.
+
+Arena identity must be the reference value itself, not the address of the
+callee's reference-parameter slot. Early hook builds used the latter spelling;
+their cross-operation arena identities can be inconsistent and must not be used
+to reconstruct lifetimes. The arena adoption regression checks allocation,
+transfer, and cleanup identity agreement in current builds.
 
 ## Loss and collection boundaries
 
@@ -71,7 +77,7 @@ independent allocator-oracle coverage:
 - Rewind-to-mark has no dedicated hook. Region creation through paths outside
   the hooked allocator must be inventoried before claiming complete backing
   capacity accounting.
-- Adoption needs child identity and a region-identity remapping contract.
+- Adoption now carries child identity but still needs a region-identity remapping contract.
   Free-list reuse must report the actual owning region, not just the active end.
 - Region-wide destruction, reset, and trim need explicit reconciliation rules
   for a bounded live-state table, with visible quality degradation after loss.
