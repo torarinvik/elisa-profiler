@@ -274,6 +274,29 @@ Local evidence: `build/effects-full-{baseline,candidate}.log`, the corresponding
 results logs, and `effects-candidate-smoke.log`. These build artifacts are
 ignored; this section preserves the measured result and its scope.
 
+Compiler commit `8ff99380` adds an early filter in the fallibility checker:
+only `__try_without_else` rows with a known-call marker proceed to scope
+resolution. Previously those lookups ran even for unrelated annotations.
+Existing diagnostic guards are unchanged.
+
+| Pair | Effects-optimized baseline wall/user seconds | Try-filter candidate wall/user seconds |
+| --- | --- | --- |
+| Baseline then candidate | 137.50 / 136.18 | 122.58 / 121.20 |
+| Candidate then baseline | 135.71 / 134.99 | 121.31 / 120.57 |
+
+This is another 10–11% reduction on the full-compiler workload relative to
+`ffbb5865`, not an additive percentage claim. Each pair used the same current
+source and output path; all four objects were byte-identical. Logs are
+`build/try-full-{baseline,candidate}.log` and their `-reverse.log` counterparts.
+
+The candidate exactly matched all 390 baseline diagnostic/try fixture results:
+194 compiled, 176 exited 1, 19 exited 2, and one retained a pre-existing trap.
+Successful LLVM IR and diagnostics matched byte-for-byte. Module-local
+error-family parity also passed. These are equivalence checks, **not 390
+passing fixtures**: `try_void_else_void.elisa` still traps in LLVM because a
+fallback path attempts `alloca void`; the installed pre-filter compiler also
+reproduces it. That code-generation defect remains separate from this speedup.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
