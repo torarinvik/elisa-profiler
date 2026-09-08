@@ -1047,21 +1047,31 @@ extend ProfilerNative:
             if repetitions_start >= NATIVE_ZERO and data[repetitions_start.usize()] == NATIVE_BYTE_LEFT_BRACKET:
                 repetitions_stop: i64 = json_array_end(data, repetitions_start.usize(), run_stop.usize())
                 return false if repetitions_stop < NATIVE_ZERO
-                repetition_cursor: usize = json_skip_whitespace(data, repetitions_start.usize() + NATIVE_ONE.usize(), (repetitions_stop.usize() - NATIVE_ONE.usize()))
-                if repetition_cursor < repetitions_stop.usize() - NATIVE_ONE.usize() and data[repetition_cursor] == NATIVE_BYTE_LEFT_BRACE:
-                    repetition_stop: i64 = json_object_end(data, repetition_cursor, repetitions_stop.usize())
-                    return false if repetition_stop < NATIVE_ZERO
-                    event_start: mutable i64 = json_key_value_start(data, "event_trace", repetition_cursor, repetition_stop.usize())
+                repetition_limit: usize = repetitions_stop.usize() - NATIVE_ONE.usize()
+                repetition_cursor: mutable usize = json_skip_whitespace(data, repetitions_start.usize() + NATIVE_ONE.usize(), repetition_limit)
+                while repetition_cursor < repetition_limit |repetition_cursor, repetition_limit, repetitions_stop, data, profile|:
+                    break if data[repetition_cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                    return false if data[repetition_cursor] != NATIVE_BYTE_LEFT_BRACE
+                    repetition_record_stop: i64 = json_object_end(data, repetition_cursor, repetitions_stop.usize())
+                    return false if repetition_record_stop < NATIVE_ZERO
+                    event_start: mutable i64 = json_key_value_start(data, "event_trace", repetition_cursor, repetition_record_stop.usize())
                     if event_start < NATIVE_ZERO:
-                        event_start <- json_key_value_start(data, "recent_events", repetition_cursor, repetition_stop.usize())
+                        event_start <- json_key_value_start(data, "recent_events", repetition_cursor, repetition_record_stop.usize())
                     if event_start >= NATIVE_ZERO and data[event_start.usize()] == NATIVE_BYTE_LEFT_BRACKET:
-                        event_stop: i64 = json_array_end(data, event_start.usize(), repetition_stop.usize())
+                        event_stop: i64 = json_array_end(data, event_start.usize(), repetition_record_stop.usize())
                         return false if event_stop < NATIVE_ZERO
                         event_content_start: usize = event_start.usize() + NATIVE_ONE.usize()
                         event_content_stop: usize = event_stop.usize() - NATIVE_ONE.usize()
                         if event_content_start < event_content_stop:
+                            append_record_separator(profile.event_records)
                             for index in event_content_start..<event_content_stop |index, data, profile|:
                                 profile.event_records.push(data[index])
+                    repetition_cursor <- repetition_record_stop.usize()
+                    repetition_cursor <- json_skip_whitespace(data, repetition_cursor, repetition_limit)
+                    if repetition_cursor < repetition_limit and data[repetition_cursor] == NATIVE_BYTE_COMMA:
+                        repetition_cursor <- json_skip_whitespace(data, repetition_cursor + NATIVE_ONE.usize(), repetition_limit)
+                    else:
+                        break
 
             functions_start: i64 = json_key_value_start(data, "functions", NATIVE_ZERO.usize(), data.count)
             return false if functions_start < NATIVE_ZERO or data[functions_start.usize()] != NATIVE_BYTE_LEFT_BRACKET

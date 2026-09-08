@@ -693,6 +693,7 @@
         "variable": { "type": ["string", "null"] },
         "signed": { "type": "boolean" },
         "value": { "type": "integer" },
+        "repetition": { "type": "integer", "minimum": 1 },
         "compiler_line": { "type": "integer", "minimum": 1 },
         "source": { "type": "string" },
         "source_text": { "type": ["string", "null"] }

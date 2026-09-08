@@ -78,13 +78,20 @@ def main():
             "repetitions": [{
                 "repetition": 1,
                 "event_trace": [
-                    {"sequence": 0, "kind": "function", "function": "root", "line": 1,
+                    {"sequence": 0, "kind": "function", "function": "root", "line": 1, "repetition": 1,
                      "variable": None, "signed": False, "value": 0, "thread_id": 0,
                      "timestamp_ns": 100},
-                    {"sequence": 1, "kind": "statement", "function": "work", "line": 2,
+                    {"sequence": 1, "kind": "statement", "function": "work", "line": 2, "repetition": 1,
                      "variable": "value", "signed": False, "value": 7, "thread_id": 0,
                      "timestamp_ns": 200},
                 ],
+            }, {
+                "repetition": 2,
+                "event_trace": [{
+                    "sequence": 0, "kind": "function", "function": "root", "line": 1, "repetition": 2,
+                    "variable": None, "signed": False, "value": 0, "thread_id": 0,
+                    "timestamp_ns": 300,
+                }],
             }],
         },
         "functions": [],
@@ -379,6 +386,8 @@ def main():
         assert b"MAX_EVENT_TIMELINE_ROWS=200" in offline_html
         assert b"MAX_EVENT_TIMELINE_INDEX=10000" in offline_html
         assert b"timestamp_ns" in offline_html
+        assert b"<th scope='col'>Repetition</th>" in offline_html
+        assert offline_html.count(b'&quot;repetition&quot;: 2') >= 1
         assert b"Stack depth overflow occurred 1 time(s)" in offline_html
         assert b"Source view unavailable" in offline_html
         assert b"--embed-source" in offline_html
@@ -873,17 +882,21 @@ def main():
         assert values_report["summary"]["statement_events"] == 0
         assert values_report["summary"]["value_events"] > 0
 
-        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "diagnostic",
+        run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "diagnostic", "--repeat", "2",
             "--format", "json", "--output", output)
         diagnostic_report = json.loads(output.read_text())
         assert diagnostic_report["run"]["collection_mode"] == "diagnostic"
         assert diagnostic_report["run"]["event_trace_enabled"] is True
-        diagnostic_events = diagnostic_report["run"]["repetitions"][0]["event_trace"]
+        diagnostic_repetitions = diagnostic_report["run"]["repetitions"]
+        assert len(diagnostic_repetitions) == 2
+        diagnostic_events = [event for repetition in diagnostic_repetitions for event in repetition["event_trace"]]
         assert diagnostic_events
         assert all("thread_id" in event and "timestamp_ns" in event for event in diagnostic_events)
-        diagnostic_html = run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "diagnostic", "--format", "html")
+        assert {event["repetition"] for event in diagnostic_events} == {1, 2}
+        diagnostic_html = run("profile", ROOT / "examples/hot_loop.elisa", "--mode", "diagnostic", "--repeat", "2", "--format", "html")
         assert b"Diagnostic event evidence" in diagnostic_html
         assert b"event-timeline-filter" in diagnostic_html
+        assert b"repetition" in diagnostic_html
         mode_comparison = json.loads(run("compare", functions_capture, values_capture, "--format", "json"))
         assert mode_comparison["collection_mode_match"] is False
         assert any("different collection modes" in warning for warning in mode_comparison["warnings"])

@@ -146,8 +146,10 @@ variable/value, and compiler identity. New records also carry `thread_id`, a
 capture-local physical-thread identity, and `timestamp_ns`, a monotonic
 `CLOCK_MONOTONIC` timestamp in nanoseconds. A zero timestamp means that the
 platform clock was unavailable; it is not an epoch measurement. Legacy records
-may omit all three additive fields, and the reader must preserve that
-compatibility.
+may omit these additive fields, and the reader must preserve that
+compatibility. Current records also carry the one-based measured `repetition`
+number, allowing offline views to keep chronology from separate target runs
+distinct even though each collector sequence restarts at zero.
 
 The sequence is the authoritative collector order. Timestamps are retained
 evidence for coarse chronology, not a promise of a complete timeline: the
