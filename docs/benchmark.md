@@ -755,7 +755,12 @@ order, 59.12/57.22 seconds. User CPU times were 58.28/56.72 and 58.24/56.54.
 All four objects were byte-identical: 2.3–3.2% less wall time than `d4178fe7`
 with self-hosted binaries on identical source. Evidence:
 `build/claim-filter-full-{baseline,candidate}.log` and their `-reverse.log`
-variants. Fresh committed bootstrap and profiler regressions remain pending.
+variants. Fresh bootstrap of committed `2a64005f` passed: five probes, full
+compiler emission (19,117,352 bytes), byte-identical generation 3/4 objects, and
+all 40 repeat emissions. Profiler rebuild and native/sampling regressions also
+passed. Evidence: `build/claim-filter-committed-self-host.log`,
+`build/claim-filter-profiler-build.log`, `build/claim-filter-native-regression.log`,
+and `build/claim-filter-sampling-regression.log`.
 
 ## Promote a local baseline
 
