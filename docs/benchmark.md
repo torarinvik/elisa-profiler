@@ -1662,6 +1662,22 @@ source hint. The accepted hints remain the measured string-length mismatch
 fast path and cold arena-cache admission; further hints require symbolized or
 instrumented attribution plus repeated end-to-end throughput measurements.
 
+## Refreshed compiler sampling checkpoint (2026-09-10)
+
+The dedicated compiler was fast-forwarded to main `b34733a1` and rebuilt at
+O3. Its content, artifact, toolchain, ABI, and flag manifest checks passed.
+While this binary compiled its own driver during self-host validation, a
+two-second native sample retained 1,437 main-thread observations, including
+529 in `__munmap` (36.8% of this window). The capture is
+`build/selfhost-refresh-stack-20260910.txt` in the profiler checkout.
+
+This is a partial-window attribution observation, not a whole-compilation
+percentage or a throughput improvement. Other compiler and WASM builds were
+active, and local Elisa frames remain unnamed offsets. The current region
+cache permits 128 entries; cache misses and regions exceeding the cacheable
+size are investigation targets, not yet proven explanations for the unmaps.
+Self-host validation was still running when this checkpoint was recorded.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
