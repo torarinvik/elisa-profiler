@@ -994,6 +994,33 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/disjoint-expr-committed-native-regression.log`, and
 `build/disjoint-expr-committed-sampling-regression.log`.
 
+## Flatten extern declarations for firm checks (2026-09-09)
+
+Firm-argument checking now flattens nested extern declarations once per file
+and supplies that private list to its extern ABI and protocol-state queries.
+Calls no longer rescan unrelated functions and scopes for every argument,
+while duplicate extern declarations remain present so conflicting overloads
+still conservatively suppress the narrow mismatch diagnostic. All 560 Elisa
+fixture comparisons matched statuses, diagnostics, and successful LLVM output
+byte-for-byte.
+
+Self-hosted baseline `f56a0487` and candidate full O0 compilation took
+45.72/44.92 seconds; reversing order, candidate/baseline took 44.87/45.68.
+User CPU times were 45.16/44.38 and 44.35/45.07. The paired means are
+45.70 seconds for baseline and 44.895 seconds for candidate (1.76% less wall
+time and 1.66% less user CPU); retired instructions fell by 1.10% and cycles
+by 1.69%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/extern-declarations-full-*.log`.
+
+Fresh bootstrap of committed `ea8570a7` passed five probes, full compiler
+emission (19,123,800 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/extern-declarations-committed-self-host.log`,
+`build/extern-declarations-committed-profiler-build.log`,
+`build/extern-declarations-committed-native-regression.log`, and
+`build/extern-declarations-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
