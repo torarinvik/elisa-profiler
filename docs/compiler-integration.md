@@ -5,7 +5,36 @@ The profiler is built with the dedicated Elisa compiler worktree at
 worktree is intentionally separate from every source compiler checkout so profiler
 experiments can repair compiler defects without modifying their owners.
 
-## Latest verified refresh — 2026-09-08
+## Main integration — 2026-09-09
+
+At the user's request, the owner checkout's `main` branch was fast-forwarded
+from `7890e0f3` to `df6cf817`, incorporating the dedicated profiler compiler's
+240 commits outside the previous main history. All seven remaining local
+branch tips are ancestors of main. All seven worktrees were clean at the
+integration audit; no uncommitted patches remained to import.
+
+The earlier machine-parser, packed-layout, and scope-harness branch
+reconciliations are described in `benchmark.md`. This integration preserves
+that reviewed combined tree, including its modular implementations.
+
+The owner checkout's O3 compiler and runtime were rebuilt locally and its
+build manifest passed content, artifact, toolchain, ABI, and flag checks.
+Self-hosting passed stages A–D, including byte-identical generation 3/4
+objects and 40 deterministic repeat emissions. Machine-from, struct-layout,
+and scope-binding (80/80) checks passed. Optimization-pipeline checks found
+matching exit statuses for 139 fixtures at O0, O2, and O3, with LLVM IR
+round-tripping successfully. This is an optimization-consistency check, not
+a claim that every fixture exits successfully: the log includes matching
+segmentation-fault outcomes. The profiler sampling smoke also
+passed with compiler and runtime paths explicitly pointing to the owner
+checkout. Compiler logs are under `build/main-integration-*.log`; the profiler
+sampling log is `build/main-integration-sampling.log` in this repository.
+
+The dedicated profiler worktree remains available for subsequent compiler
+experiments. The integration updates local main; it does not publish remote
+branches or replace the global installed compiler snapshot.
+
+## Historical verified refresh — 2026-09-08
 
 Freshness rechecked after optimization commit `90462733`: main remains at
 `a313a619`, with zero commits missing from the dedicated branch. All ten pending
