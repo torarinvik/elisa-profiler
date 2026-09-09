@@ -1331,6 +1331,36 @@ worktree). This result argues against treating duplicated `try` setup queries
 as a substantial full-compiler bottleneck; it does not rule out improving the
 underlying callable-family scan or its data layout.
 
+## Single-pass callable-family fallback (2026-09-09)
+
+Compiler `200de8b0` retains the first unscoped fallback while looking for a
+scope-matched callable error family. It removes the second whole-table pass
+without changing scope preference, metadata exclusions, or first-match order.
+A separate presence flag preserves an empty first matching row.
+
+Four sequential native-object runs in baseline/candidate/candidate/baseline
+order against matching self-hosted `befe4994` measured elapsed seconds
+38.61/39.09/38.34/38.65. Means were 38.630s baseline and 38.715s candidate:
+**no demonstrated elapsed-time improvement**. User CPU means were 38.240s
+versus 38.020s. Retired instructions fell consistently from a mean of 640.026
+billion to 631.500 billion (1.33%). All four objects were byte-identical.
+This is retained as reduced compiler work, not a statistically established
+wall-time speedup. Compiler-worktree evidence:
+`build/callable-fallback-{baseline,candidate}-{a,b}.log`.
+
+All 560 fixture/breadth comparisons passed with identical statuses,
+diagnostics, and successful LLVM output (exit 0;
+`build/.callable-fallback-parity.hv9qsq`). The focused Elisa test
+`test/parity/callable_family_fallback_smoke.elisa` passed scoped/qualified
+selection, fallback order, metadata exclusions, missing names, an empty first
+fallback, and empty input.
+
+Promotion checks passed (captured exit 0): seed and manifest; all 11 local
+branch tips included; self-host stages A (5/5), B (19,131,984 bytes), C
+(byte-identical fixed point), D (40 identical repeats); profiler rebuild;
+native and sampling regressions. Profiler-worktree logs:
+`build/callable-fallback-committed-{seed,self-host,profiler-build,native-regression,sampling-regression}.log`.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
