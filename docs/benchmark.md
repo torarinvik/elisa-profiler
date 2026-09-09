@@ -910,7 +910,15 @@ Self-hosted baseline `8734d199` and candidate full O0 compilation took
 User CPU times were 49.17/46.58 and 46.70/49.21. All four objects were
 byte-identical and the chain exited zero: 5.2–5.4% less wall time on this
 workload. Evidence: `build/contract-filter-full-*.log`.
-Fresh bootstrap and profiler regressions for the committed change are pending.
+
+Fresh bootstrap of committed `a86cc9e4` passed five probes, full compiler
+emission (19,121,848 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/contract-filter-committed-self-host.log`,
+`build/contract-filter-profiler-build.log`,
+`build/contract-filter-native-regression.log`, and
+`build/contract-filter-sampling-regression.log`.
 
 ## Broad regression checkpoint (2026-09-09)
 
