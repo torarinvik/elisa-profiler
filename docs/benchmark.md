@@ -1615,6 +1615,14 @@ that tip is an ancestor of the dedicated `codex/profiler` branch at
 `df6cf817`. The dedicated branch also contains the profiler-loop compiler
 changes `cb333aec`, `13c62cc0`, `4e182d8e`, and `eb63abb1`.
 
+The installed global tools under `~/.elisac` are not the active compiler: its
+`stage1/SNAPSHOT` identifies revision `3c8924aa` from 2026-09-04, and its
+stage1/runtime artifacts were copied on 2026-09-05. They predate the dedicated
+worktree's current fixes and O3 product. `Makefile` now prefers the checked-out
+stage0 sibling explicitly (with `STAGE0_BIN`/`ELISACORE_BIN` still available
+as deliberate overrides), while all stage1 compilation uses the dedicated
+`COMPILER_WORKTREE`.
+
 The all-branch audit initially identified three local branch tips that were
 not represented by the dedicated branch history:
 `ce8bd633` (`codex/structpy-tree`), `81c74901`
