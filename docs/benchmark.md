@@ -1392,6 +1392,38 @@ whole-module removal of helpers required by later links. Candidate fast paths
 must preserve operand evaluation, empty views, pointer identity, inequality,
 and target ABI behavior; changing optimization levels alone is not validated.
 
+## Experimental generated sview fast paths
+
+Following the native-stack evidence, an unpromoted backend candidate emits
+length/empty/pointer checks before calling the existing string comparator.
+Both operands are evaluated once and a function-entry result slot avoids
+per-iteration stack growth. The initial version crashed during self-compilation
+when a legacy operand was not an LLVM view aggregate. A canonical LLVM-type
+guard retains the existing runtime call for those representations. That
+representation mismatch still warrants a focused investigation; the guard
+does not prove all legacy lowering paths correct.
+
+The guarded candidate self-built successfully. Baseline and candidate both
+passed `test/repro/sview_equality_fastpath.elisa`, covering unequal lengths,
+distinct equal views, empty views, inequality, loop comparisons, and once-only
+left-to-right operand evaluation. The simple initial reproducer's emitted IR
+also passed LLVM verification. Broad code-generation regression validation and
+promotion gates have **not** yet run; this candidate is not the installed compiler.
+
+Sequential native-object baseline/candidate/candidate/baseline wall times were
+38.74/37.62/36.95/38.00s (means 38.370s and 37.285s, 2.83% observed reduction).
+Peak RSS increased from approximately 1.194 GB to 1.255 GB (~5.1%); retired
+instructions increased from 631.846 to 647.313 billion (~2.4%). The candidate
+was rebuilt with its own code generation before timing. Each compiler's two
+objects matched; cross-compiler objects intentionally differ. These two pairs
+show a tradeoff, not an established general improvement. Compare a smaller
+length-only fast path and validate behavior before promotion.
+
+Evidence in the compiler worktree:
+`build/sview-fastpath-{baseline,candidate}-{a,b}.log`,
+`build/sview-fastpath-test-{baseline,candidate}.log`, and
+`build/sview-fastpath-debug-backtrace.log`.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
