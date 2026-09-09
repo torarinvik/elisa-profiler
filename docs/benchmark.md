@@ -887,6 +887,15 @@ workload. Evidence: `build/ens-return-bool-full-*.log`.
 Fresh bootstrap and profiler regressions for committed `8734d199` are recorded
 below.
 
+Fresh bootstrap of committed `8734d199` passed five probes, full compiler
+emission (19,121,032 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the chain exited zero. Evidence:
+`build/ens-return-bool-committed-self-host.log`,
+`build/ens-return-bool-profiler-build.log`,
+`build/ens-return-bool-native-regression.log`, and
+`build/ens-return-bool-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
