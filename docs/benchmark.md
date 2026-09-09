@@ -1314,6 +1314,23 @@ profiler rebuild; native and sampling regressions. Profiler-worktree logs:
 Existing uncommitted changes in other worktrees remain preserved and reported
 by the integration ledger.
 
+### Rejected per-try resolution reuse experiment
+
+After `befe4994`, an experiment reused the first fallibility query and passed
+the enclosing function/module/qualifier into propagation checking. Sequential
+native-object baseline/candidate/candidate/baseline elapsed times were
+38.65/39.05/39.30/38.74s (means 38.695s baseline and 39.175s candidate).
+Instruction means were effectively unchanged: 640.056 billion baseline versus
+640.014 billion candidate. All four native objects were byte-identical.
+The two-pair result showed no useful gain, so the source change was reverted;
+it is not part of the active compiler. Evidence in the compiler worktree:
+`build/try-resolution-reuse-{baseline,candidate}-{a,b}.log`.
+The restored source matched Git exactly, and the compiler seed/manifest was
+refreshed successfully (`build/try-resolution-restored-seed.log` in the profiler
+worktree). This result argues against treating duplicated `try` setup queries
+as a substantial full-compiler bottleneck; it does not rule out improving the
+underlying callable-family scan or its data layout.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
