@@ -1691,6 +1691,29 @@ reconstructed. The map and both extracted text sections are retained beside
 the baseline binary. This establishes a path to symbolizing the profiler's
 native evidence; link-map ingestion is not yet implemented in the profiler.
 
+## Oversized cache-search experiment — not promoted (2026-09-10)
+
+An experimental guard skipped the region-cache scan for requests exceeding
+`REGION_CACHE_MAX_SLOTS`, since no retained entry can satisfy them. The
+candidate passed the cache-reuse workload, manifest checks, and self-host
+stages A–D, including a byte-identical fixed point and 40 repeat emissions.
+All 24 baseline/candidate benchmark objects were identical.
+
+Twelve adjacent baseline/candidate pairs across balanced run orders measured
+31.985s baseline versus 27.470s candidate mean wall time. However, the
+approximate paired Student-t 95% interval for baseline minus candidate was
+[-0.347, 9.377] seconds; the apparent 14.1% mean reduction does not establish
+a reliable speedup under the observed variability and concurrent host load.
+The final twelve-run confirmation alone averaged 33.282s versus 27.985s.
+These are exploratory observations, not a release performance guarantee.
+
+The guard was reverted and the preserved baseline compiler, seed object, and
+runtime restored; the refreshed baseline manifest passes. Regression coverage
+remains in `make region-cache-oversize-smoke`. Raw evidence is retained in
+`build/cache-oversize-abba.i28gvI`, `build/cache-oversize-baab.izNnlH`, and
+`build/cache-oversize-confirm.43VgMj`. Revisit only with better-controlled
+measurements; do not treat this candidate as an accepted optimization.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
