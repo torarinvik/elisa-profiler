@@ -968,6 +968,32 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/disjoint-collector-committed-native-regression.log`, and
 `build/disjoint-collector-committed-sampling-regression.log`.
 
+## Consolidate the disjoint expression walk (2026-09-09)
+
+The disjointness expression walker now dispatches through one exhaustive
+expression match instead of repeatedly matching the same expression against
+sequential groups of variants. Call handling keeps its early-return behavior,
+and all child-expression recursion remains in the same traversal order. All
+560 Elisa fixture comparisons matched statuses, diagnostics, and successful
+LLVM output byte-for-byte.
+
+Self-hosted baseline `e34e3af1` and candidate full O0 compilation took
+45.71/45.64 seconds; reversing order, candidate/baseline took 45.60/45.92.
+User CPU times were 45.12/45.04 and 45.00/45.27. The paired means are
+45.815 seconds for baseline and 45.620 seconds for candidate (0.43% less wall
+time and 0.39% less user CPU); retired instructions fell by 0.62% and cycles
+by 0.38%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/disjoint-expr-full-*.log`.
+
+Fresh bootstrap of committed `f56a0487` passed five probes, full compiler
+emission (19,121,712 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/disjoint-expr-committed-self-host.log`,
+`build/disjoint-expr-committed-profiler-build.log`,
+`build/disjoint-expr-committed-native-regression.log`, and
+`build/disjoint-expr-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
