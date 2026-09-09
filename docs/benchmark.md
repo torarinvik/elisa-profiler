@@ -1678,6 +1678,19 @@ cache permits 128 entries; cache misses and regions exceeding the cacheable
 size are investigation targets, not yet proven explanations for the unmaps.
 Self-host validation was still running when this checkpoint was recorded.
 
+A subsequent relink of the preserved baseline object with an ld link map
+recovered local names without instrumentation. The relinked executable's
+`__TEXT,__text` section is byte-identical to the sampled baseline, with the
+same section address (`0x100000680`) and size (`0x5af0d4`). Whole-file hashes
+differ, so this validates text-address attribution, not interchangeable binary
+identity. In `build/cache-oversize-baseline.pr4cj8/link.map`, image-relative
+offset `0x774` lies in `l_new_region_backend` (252 top-of-stack observations),
+and `0x10cc` lies in `l_arena_free`, above the 529 `__munmap` observations.
+These names identify enclosing compiled functions; inlined callees are not
+reconstructed. The map and both extracted text sections are retained beside
+the baseline binary. This establishes a path to symbolizing the profiler's
+native evidence; link-map ingestion is not yet implemented in the profiler.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
