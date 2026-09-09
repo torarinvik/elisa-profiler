@@ -1,0 +1,89 @@
+# Decode one ld symbol row. Names reference the caller-owned immutable bytes.
+# This does not authenticate a map against an executable or resolve inline frames.
+module ElisaProfilerLinkMap:
+    public:
+        struct SymbolRow:
+            address: mutable u64
+            size: mutable u64
+            name_start: mutable usize
+            name_size: mutable usize
+
+    private:
+        const ZERO: usize = 0
+        const ONE: usize = 1
+        const PREFIX_BYTES: usize = 2
+        const HEX_BASE: u64 = 16
+        const MAX_VALUE: u64 = 0xffffffffffffffff
+        const SPACE: u8 = 32
+        const TAB: u8 = 9
+        const DIGIT_ZERO: u8 = 48
+        const DIGIT_NINE: u8 = 57
+        const HEX_A: u8 = 97
+        const HEX_F: u8 = 102
+        const HEX_UPPER_A: u8 = 65
+        const HEX_UPPER_F: u8 = 70
+        const HEX_TEN: u64 = 10
+        const HEX_PREFIX: u8 = 120
+        const OPEN_BRACKET: u8 = 91
+        const CLOSE_BRACKET: u8 = 93
+
+        def skip_space(data: darray[u8]&, cursor: mutable usize&) -> bool can[Abort.Panic]:
+            start: usize = cursor
+            while cursor < data.count |data, cursor|:
+                break if data[cursor] != SPACE and data[cursor] != TAB
+                cursor <- cursor + ONE
+            return cursor != start
+
+        def read_hex(data: darray[u8]&, cursor: mutable usize&, value: mutable u64&) -> bool can[Abort.Panic]:
+            value <- 0
+            return false if cursor > data.count or data.count - cursor < PREFIX_BYTES
+            return false if data[cursor] != DIGIT_ZERO or data[cursor + ONE] != HEX_PREFIX
+            cursor <- cursor + PREFIX_BYTES
+            start: usize = cursor
+            while cursor < data.count |data, cursor, value|:
+                byte: u8 = data[cursor]
+                digit: mutable u64 = 0
+                if byte >= DIGIT_ZERO and byte <= DIGIT_NINE:
+                    digit <- (byte - DIGIT_ZERO).u64()
+                elif byte >= HEX_A and byte <= HEX_F:
+                    digit <- (byte - HEX_A).u64() + HEX_TEN
+                elif byte >= HEX_UPPER_A and byte <= HEX_UPPER_F:
+                    digit <- (byte - HEX_UPPER_A).u64() + HEX_TEN
+                else:
+                    break
+                return false if value > (MAX_VALUE - digit) / HEX_BASE
+                value <- value * HEX_BASE + digit
+                cursor <- cursor + ONE
+            return cursor != start
+
+    public:
+        # Caller strips line endings. Non-symbol rows are rejected, not guessed.
+        def parse_symbol_row(data: darray[u8]&, output: mutable SymbolRow&) -> bool can[Abort.Panic]:
+            output <- zeroed
+            cursor: mutable usize = ZERO
+            address: mutable u64 = 0
+            size: mutable u64 = 0
+            return false if not read_hex(data, &cursor, &address)
+            return false if not skip_space(data, &cursor)
+            return false if not read_hex(data, &cursor, &size)
+            return false if size > MAX_VALUE - address
+            return false if not skip_space(data, &cursor)
+            return false if cursor == data.count or data[cursor] != OPEN_BRACKET
+            cursor <- cursor + ONE
+            _ = skip_space(data, &cursor)
+            digits_start: usize = cursor
+            while cursor < data.count |data, cursor|:
+                break if data[cursor] < DIGIT_ZERO or data[cursor] > DIGIT_NINE
+                cursor <- cursor + ONE
+            return false if cursor == digits_start
+            _ = skip_space(data, &cursor)
+            return false if cursor == data.count or data[cursor] != CLOSE_BRACKET
+            cursor <- cursor + ONE
+            return false if not skip_space(data, &cursor) or cursor == data.count
+            for index in cursor..<data.count |data|:
+                return false if data[index] < SPACE
+            output.address <- address
+            output.size <- size
+            output.name_start <- cursor
+            output.name_size <- data.count - cursor
+            return true

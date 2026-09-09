@@ -65,6 +65,18 @@ region-cache-oversize-smoke:
 
 test: region-cache-oversize-smoke
 
+.PHONY: linkmap-smoke
+linkmap-smoke:
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@set -e; for opt in 0 3; do \
+		ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_STAGE1_BIN)" -emit exe -O$$opt -o "$(PROFILER_ROOT)/build/linkmap-smoke-O$$opt" \
+		"$(PROFILER_ROOT)/test/linkmap_smoke.elisa"; \
+		"$(PROFILER_ROOT)/build/linkmap-smoke-O$$opt"; \
+	done
+
+test: linkmap-smoke
+
 .PHONY: hash-smoke
 hash-smoke: compiler-manifest-smoke
 	@mkdir -p "$(PROFILER_ROOT)/build"
