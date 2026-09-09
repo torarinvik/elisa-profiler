@@ -851,6 +851,22 @@ and the comparison chain exited zero. Mean wall time fell from 163.185 to
 throughput on this workload, not a profiler-overhead measurement or a claim
 about all Elisa programs. Evidence: `build/cumulative-template-full-*.log`.
 
+## Compact effect-row validation annotations (2026-09-09)
+
+Effect declaration/block validation now receives only its lookup dependencies:
+effect and permission declarations, permission parameters and aliases, operation
+and member rows, and effect-reference positions. Alias discovery still scans
+the complete original table; retained row order and duplicates are unchanged.
+All 487 diagnostic/effect/permission/alias comparisons matched statuses, logs,
+and successful LLVM output. A focused lookup regression also passed.
+
+Self-hosted baseline `2ec59777` and candidate full O0 compilation took
+52.80/51.20 seconds; reversing order, candidate/baseline took 51.01/53.03.
+User CPU times were 52.36/50.53 and 50.52/52.32. All four objects were
+byte-identical and the benchmark chain exited zero: 3.0–3.8% less wall time
+on this workload. Evidence: `build/effect-row-full-*.log`.
+Committed-compiler bootstrap and profiler regressions remain pending.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
