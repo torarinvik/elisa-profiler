@@ -934,7 +934,14 @@ User CPU times were 46.67/45.28 and 45.38/46.76. All four objects were
 byte-identical and the chain exited zero: 2.6–3.3% less wall time on this
 workload. Evidence: `build/error-family-full-*.log`.
 
-Fresh bootstrap and profiler regressions for committed `9bf231e6` are pending.
+Fresh bootstrap of committed `9bf231e6` passed five probes, full compiler
+emission (19,122,296 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/error-family-committed-self-host.log`,
+`build/error-family-profiler-build.log`,
+`build/error-family-native-regression.log`, and
+`build/error-family-sampling-regression.log`.
 
 ## Broad regression checkpoint (2026-09-09)
 
