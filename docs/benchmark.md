@@ -1571,9 +1571,10 @@ Evidence is in the compiler worktree under
 ## Optimized stage1 compiler product (2026-09-09)
 
 The compiler seed script already supports optimized products, but the profiler
-Makefile previously requested `-O0`, so normal reseeding built a slower compiler
-than the compiler worktree's default. The Makefile now selects `-O2` for the
-stage1 seed. This changes only the optimization level of the compiler executable;
+Makefile initially requested `-O0`, so normal reseeding built a slower compiler
+than the compiler worktree's default. The first promotion selected `-O2`; the
+follow-up comparison below selects `-O3` for the stage1 seed. This changes only
+the optimization level of the compiler executable;
 the compiler source and emitted target optimization flags remain independent.
 
 Six alternating runs of stage1 products built from compiler commit `4e182d8e`
