@@ -1605,6 +1605,40 @@ user time by 0.43%, and system time by 6.78%, with unchanged peak RSS and
 byte-identical objects. Evidence is in the compiler worktree under
 `build/stage1-o3-bench.KQQ9hl/`.
 
+## Compiler branch reconciliation and full gate (2026-09-09)
+
+The dedicated compiler worktree at
+`../elisa-compiler-worktrees/profiler` was refreshed against the owner
+worktree at `../Elisa-compiler` before the final gate. The owner `work` branch
+is clean at `7890e0f3` (`Improve parser diagnostics and named errors`), and
+that tip is an ancestor of the dedicated `codex/profiler` branch at
+`df6cf817`. The dedicated branch also contains the profiler-loop compiler
+changes `cb333aec`, `13c62cc0`, `4e182d8e`, and `eb63abb1`.
+
+The all-branch audit initially identified three local branch tips that were
+not represented by the dedicated branch history:
+`ce8bd633` (`codex/structpy-tree`), `81c74901`
+(`codex/transpiler-local-stage1`), and `1b3d05bf` (`nw-port`). Inspection
+showed that the later modular parser/backend implementation already contained
+the equivalent source functionality from the first two tips. The stable
+scratch-root safeguard from the third tip was ported into
+`test/parity/scope_binding_smoke.sh`. Merge-history entries now record all
+three tips (`0782fd06`, `fb7ceb9d`, and `df6cf817`), preserving branch
+provenance without regressing the newer modular source layout. A stale removed
+temporary worktree was also pruned after confirming it was no longer a live
+checkout.
+
+The final audit reports 11/11 local branch tips included and 13 live
+worktrees. The O3 stage1 product and manifest were reseeded from the dedicated
+compiler after reconciliation. The complete profiler `make test` gate then
+passed with exit 0, including the compiler manifest and identity checks,
+self-hosting stages A–D (byte-identical fixed point and 40 repeat objects),
+the 139-fixture optimization pipeline at `-O0`, `-O2`, and `-O3`, native and
+sampling regressions, collector/schema/protocol/property checks, runtime ABI,
+timing-failure checks, bootstrap/path/process-group cleanup, and the remaining
+profiler workload and artifact suites. The dedicated compiler and profiler
+source worktrees are clean after the gate.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
