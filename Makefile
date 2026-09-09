@@ -55,6 +55,16 @@ allocation-lifetimes-smoke: compiler-manifest-smoke
 
 test: allocation-lifetimes-smoke
 
+.PHONY: region-cache-oversize-smoke
+region-cache-oversize-smoke:
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_STAGE1_BIN)" -emit exe -O0 -o "$(PROFILER_ROOT)/build/region-cache-oversize-smoke" \
+		"$(PROFILER_ROOT)/examples/region_cache_oversize_workload.elisa"
+	@"$(PROFILER_ROOT)/build/region-cache-oversize-smoke"
+
+test: region-cache-oversize-smoke
+
 .PHONY: hash-smoke
 hash-smoke: compiler-manifest-smoke
 	@mkdir -p "$(PROFILER_ROOT)/build"

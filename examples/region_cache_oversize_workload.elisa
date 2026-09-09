@@ -1,0 +1,27 @@
+# An oversized cache miss must leave a parked small region available for reuse.
+include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+
+module RegionCacheOversizeWorkload:
+    private:
+        const SMALL_CAPACITY_SLOTS: usize = 16
+        const OVERSIZE_CAPACITY_SLOTS: usize = REGION_CACHE_MAX_SLOTS + 1
+        const SUCCESS_STATUS: i64 = 0
+        const FAILURE_STATUS: i64 = 1
+
+    public:
+        def run() -> i64:
+            if ARENA_BACKEND == ARENA_BACKEND_LINUX_MMAP:
+                small: mutable heap Region& = new_region(SMALL_CAPACITY_SLOTS)
+                saved_address: uintptr = small.cast[uintptr]
+                free_region(small)
+                oversized: mutable heap Region& = new_region(OVERSIZE_CAPACITY_SLOTS)
+                reused: mutable heap Region& = new_region(SMALL_CAPACITY_SLOTS)
+                correct: bool = reused.cast[uintptr] == saved_address and oversized.capacity >= OVERSIZE_CAPACITY_SLOTS and reused.capacity >= SMALL_CAPACITY_SLOTS
+                free_region(oversized)
+                free_region(reused)
+                return SUCCESS_STATUS if correct else FAILURE_STATUS
+            else:
+                return SUCCESS_STATUS
+
+def main() -> i64:
+    return RegionCacheOversizeWorkload::run()
