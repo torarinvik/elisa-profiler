@@ -1021,6 +1021,31 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/extern-declarations-committed-native-regression.log`, and
 `build/extern-declarations-committed-sampling-regression.log`.
 
+## Consolidate the disjoint statement walk (2026-09-09)
+
+The disjointness statement walker now dispatches through one exhaustive match
+instead of repeatedly matching the same statement against sequential variant
+groups. It preserves the existing recursive traversal and all fresh/dead/seen
+bookkeeping. All 560 Elisa fixture comparisons matched statuses, diagnostics,
+and successful LLVM output byte-for-byte.
+
+Self-hosted baseline `ea8570a7` and candidate full O0 compilation took
+44.86/44.60 seconds; reversing order, candidate/baseline took 44.80/45.05.
+User CPU times were 44.32/44.08 and 44.26/44.42. The paired means are
+44.955 seconds for baseline and 44.700 seconds for candidate (0.57% less wall
+time and 0.45% less user CPU); retired instructions fell by 0.45% and cycles
+by 0.46%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/disjoint-statements-full-*.log`.
+
+Fresh bootstrap of committed `204138ff` passed five probes, full compiler
+emission (19,123,408 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/disjoint-statements-committed-self-host.log`,
+`build/disjoint-statements-committed-profiler-build.log`,
+`build/disjoint-statements-committed-native-regression.log`, and
+`build/disjoint-statements-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
