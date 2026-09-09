@@ -458,6 +458,10 @@ extend ProfilerNative:
                 append_text(buffer, " μs period</dd></div>")
             append_html_host_summary(buffer, profile.host)
             append_text(buffer, "</dl>")
+            if protocol_field_is(profile.collection_mode, "sample") or profile.sample_count > NATIVE_ZERO:
+                append_text(buffer, "<p class='panel-note' aria-label='Sampling attribution'>")
+                append_sampling_attribution_description(buffer)
+                append_text(buffer, "</p>")
             append_html_workload_object(buffer, profile.workload) if profile.workload.count > NATIVE_ZERO.usize()
             append_html_diagnostics(buffer, profile.capture_complete if profile.capture_complete_available else true, profile.dropped, profile.call_edge_dropped, profile.stack_dropped, profile.frame_dropped, profile.capture_bytes_dropped, profile.stack_overflow_entries, profile.trace_omitted, profile.crash_signal if profile.crash_signal_available else NATIVE_NEGATIVE_ONE)
             append_html_event_timeline(buffer, profile.event_records)
@@ -519,7 +523,7 @@ extend ProfilerNative:
             append_i64(buffer, profile.value_events)
             append_text(buffer, "\nfunction events: ")
             append_i64(buffer, profile.function_events)
-            if profile.sample_count > NATIVE_ZERO:
+            if protocol_field_is(profile.collection_mode, "sample") or profile.sample_count > NATIVE_ZERO:
                 append_text(buffer, "\nsamples: ")
                 append_i64(buffer, profile.sample_count)
                 append_text(buffer, " captured, ")
@@ -527,6 +531,8 @@ extend ProfilerNative:
                 append_text(buffer, " missed at ")
                 append_i64(buffer, profile.sample_period_microseconds)
                 append_text(buffer, " microseconds\n")
+                append_sampling_attribution_description(buffer)
+                append_text(buffer, "\n")
             append_text(buffer, "\nthreads: ")
             append_i64(buffer, profile.thread_count)
             append_text(buffer, "\ncollection mode: ")

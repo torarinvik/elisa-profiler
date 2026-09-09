@@ -1368,6 +1368,20 @@ native and sampling regressions. Profiler-worktree logs:
 
 ## Native-stack cross-check (2026-09-09)
 
+Profiler text and HTML reports now surface this attribution limit directly,
+for both live captures and saved reports (including zero-sample captures):
+uninstrumented runtime/foreign work may be charged to the last instrumented
+caller, so leaf sample counts are not native self-time. Candidate call paths
+must be validated with repeated throughput measurements. This is an Elisa
+renderer change, not a new native-unwinding backend.
+
+Validation: live text/HTML, saved nonempty text/HTML, and saved zero-sample
+text/HTML all contain the notice (`build/sampling-attribution-*`). The empty
+capture has zero samples; its `hello` workload intentionally returns 42, which
+was checked explicitly. Native and sampling regressions passed (exit 0;
+`build/sampling-attribution-native-regression.log` and
+`build/sampling-attribution-sampling-regression.log`).
+
 To corroborate instrumented callback stacks, macOS `/usr/bin/sample` observed
 the uninstrumented self-hosted compiler at `200de8b0` compiling its own driver
 to a native object with `-O0`. The sampler requested a 40-second window at a

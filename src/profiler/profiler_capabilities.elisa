@@ -6,6 +6,9 @@
 # remain responsible for producing the evidence named here.
 extend ProfilerNative:
     private:
+        def append_sampling_attribution_description(buffer: mutable darray[u8]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, "Sampling attribution: instrumented call stacks, not native instruction pointers. Runtime and foreign-code work can be charged to the last instrumented caller. Leaf sample counts are not native self-time. Use these stacks to locate candidate call paths, then validate speedups with repeated throughput measurements.")
+
         def allocation_abi_flag_count(evidence: darray[i64]&, mask: i64) -> i64 can[Abort.Panic]:
             count: mutable i64 = NATIVE_ZERO
             for flags in evidence |count, mask|:
