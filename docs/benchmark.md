@@ -1072,6 +1072,81 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/cpb-index-committed-native-regression.log`, and
 `build/cpb-index-committed-sampling-regression.log`.
 
+## Index changes target annotations (2026-09-09)
+
+The `changes`-target checker now builds a compact owner/name index for root
+annotations once per file. Each function checks only those rows instead of
+rescanning the complete annotation table, while row order and duplicate
+diagnostics remain unchanged. All 560 Elisa fixture comparisons matched
+statuses, diagnostics, and successful LLVM output byte-for-byte.
+
+Self-hosted baseline `bb8c39bb` and candidate full O0 compilation took
+43.62/42.32 seconds; reversing order, candidate/baseline took 42.54/43.63.
+User CPU times were 43.03/41.80 and 41.94/43.01. The paired means are
+43.625 seconds for baseline and 42.430 seconds for candidate (2.74% less wall
+time and 2.67% less user CPU); retired instructions fell by 3.15% and cycles
+by 2.63%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/changes-roots-full-*.log`.
+
+Fresh bootstrap of committed `b1c84fac` passed five probes, full compiler
+emission (19,125,168 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/changes-roots-committed-self-host.log`,
+`build/changes-roots-committed-profiler-build.log`,
+`build/changes-roots-committed-native-regression.log`, and
+`build/changes-roots-committed-sampling-regression.log`.
+
+## Index changes field annotations (2026-09-09)
+
+The frame-write checker now indexes `changes` field rows once per file and
+looks up each function in that compact index. It preserves field order,
+duplicate rows, and the existing conservative field-name semantics. All 560
+Elisa fixture comparisons matched statuses, diagnostics, and successful LLVM
+output byte-for-byte.
+
+Self-hosted baseline `b1c84fac` and candidate full O0 compilation took
+42.65/41.62 seconds; reversing order, candidate/baseline took 41.69/42.70.
+User CPU times were 42.05/41.03 and 41.08/42.09. The paired means are
+42.675 seconds for baseline and 41.655 seconds for candidate (2.39% less wall
+time and 2.41% less user CPU); retired instructions fell by 2.15% and cycles
+by 2.44%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/changes-fields-full-*.log`.
+
+Fresh bootstrap of committed `8c7b7d63` passed five probes, full compiler
+emission (19,125,520 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/changes-fields-committed-self-host.log`,
+`build/changes-fields-committed-profiler-build.log`,
+`build/changes-fields-committed-native-regression.log`, and
+`build/changes-fields-committed-sampling-regression.log`.
+
+## Memoize readonly-reference parameter lookups (2026-09-09)
+
+The readonly-reference semantic pass now memoizes immutable `(callee,
+argument position)` lookups and shares the cache across both readonly checks.
+The cache keeps overload order and the empty-result behavior intact. All 560
+Elisa fixture comparisons matched statuses, diagnostics, and successful LLVM
+output byte-for-byte.
+
+Self-hosted baseline `8c7b7d63` and candidate full O0 compilation took
+41.69/41.45 seconds; reversing order, candidate/baseline took 41.57/41.69.
+User CPU times were 41.18/40.94 and 40.99/41.09. The paired means are
+41.690 seconds for baseline and 41.510 seconds for candidate (0.43% less wall
+time and 0.41% less user CPU); retired instructions fell by 0.91% and cycles
+by 0.41%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/readonly-cache-fixed-full-*.log`.
+
+Fresh bootstrap of committed `458ef52d` passed five probes, full compiler
+emission (19,132,016 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/readonly-cache-fixed-committed-self-host.log`,
+`build/readonly-cache-fixed-committed-profiler-build.log`,
+`build/readonly-cache-fixed-committed-native-regression.log`, and
+`build/readonly-cache-fixed-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
