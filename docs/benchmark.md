@@ -1483,7 +1483,7 @@ and sampling regressions. Profiler-worktree logs:
 
 ## Bounded mmap region cache and keyed reclaim hint (2026-09-09)
 
-The compiler worktree commit `4702bcf9` keeps up to 16 recently freed, small
+The compiler worktree commits `4702bcf9` and `13c62cc0` keep up to 128 recently freed, small
 mmap-backed regions in an intrusive cache instead of retaining only one region
 or calling `munmap` immediately. The cache reuses regions by capacity and resets
 their headers before publication. Reclaimed darray spans also use a separate
@@ -1492,23 +1492,25 @@ free-span walk. Lifecycle handling clears or migrates the hint across reset,
 rewind, trim, free, and adopt. The public `Arena` layout and stage0 interface
 remain unchanged.
 
-Fresh products were seeded at `-O0` from the same compiler commit, with the
-baseline worktree retaining the prior one-region cache. Six alternating native
-object builds of `src/driver/elisac.elisa` measured:
+Fresh products were seeded at `-O0` from the current compiler source, with the
+baseline product retaining the prior 16-entry cache. Six alternating native-object
+builds of `src/driver/elisac.elisa` measured:
 
 | product | mean wall | mean user | mean system | max RSS |
 | --- | ---: | ---: | ---: | ---: |
-| baseline | 23.982 s | 19.378 s | 4.540 s | 1,138,832 KB |
-| candidate | 21.943 s | 18.837 s | 3.057 s | 1,142,608 KB |
+| baseline (16 entries) | 20.615 s | 16.637 s | 3.935 s | 1,142,560 KB |
+| candidate (128 entries) | 19.170 s | 16.660 s | 2.390 s | 1,189,056 KB |
 
-That is an 8.50% wall-time throughput improvement, a 32.7% reduction in system
-time, and a 0.33% peak-RSS increase on this workload. All 12 emitted objects
-were byte-identical. The focused allocator fixtures and self-host stages A–D
-passed; stage C reached a byte-identical fixed point and stage D was deterministic
-across 10 runs. The full optimization pipeline passed 139 fixtures at `-O0`,
-`-O2`, and `-O3`. Evidence is in the compiler worktree under
-`build/arena-cache-hint-fair-*.time`, `build/arena-cache-hint-fair-*.o`, and
-`build/arena-cache-hint-self-host-gen2/`.
+That is a 7.01% wall-time throughput improvement, a 39.26% reduction in system
+time, effectively neutral user time (+0.14%), and a 4.07% peak-RSS increase on
+this workload. All 12 emitted objects were byte-identical. A 256-entry candidate
+was rejected after measuring 1.02% slower wall time and 0.29% slower user time.
+The focused allocator fixtures and self-host stages A–D passed; stage C reached
+a byte-identical fixed point and stage D was deterministic across 10 runs. The
+full optimization pipeline passed 139 fixtures at `-O0`, `-O2`, and `-O3`.
+Evidence is in the compiler worktree under
+`build/cache64-bench-*.time`, `build/cache128-bench-*.time`,
+`build/cache256-bench-*.time`, and `build/arena-cache-hint-self-host-gen2/`.
 
 ## Context string equality bridge and branch prediction hint (2026-09-09)
 
