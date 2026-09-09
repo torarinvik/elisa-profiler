@@ -1147,6 +1147,19 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/readonly-cache-fixed-committed-native-regression.log`, and
 `build/readonly-cache-fixed-committed-sampling-regression.log`.
 
+## Post-semantic-index profile (2026-09-09)
+
+The fresh profile after `458ef52d` completed successfully in 47.319 seconds
+with 8,056 samples, zero missed samples, zero dropped records, 8,062 valid
+frames, and 3,111,324 valid capture bytes. The leading leaf counts were
+`arena_realloc` 550, `emit_object` 522, `new_region_with_owner` 458,
+`packed_dynamic_row_load_value` 315, `note_local_type` 285,
+`disjoint_collect_fresh` 221, `effect_template_row_is_abstract` 164,
+`check_effect_law_fulfillment_decls` 160, `positional_construction_expression`
+157, and `mutable_ref_param_type` 150. This is callback-stack attribution,
+not native-PC self-time; the capture was complete and exact. Evidence:
+`build/post-readonly-cache-full-profile.json`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
