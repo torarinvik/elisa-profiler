@@ -1,5 +1,10 @@
 # Native benchmark manifests
 
+Optimization priority: maximize throughput, not minimize memory. Report peak
+memory as a tradeoff and check for pressure or instability, but higher RSS alone
+does not disqualify a measured throughput improvement. Instruction counts are
+supporting evidence, not a substitute for elapsed-time measurements.
+
 `benchmark` is the reproducible baseline/candidate workflow. The manifest is
 parsed by the Elisa-native executable; it never invokes a shell or the legacy
 Python profiler. The command builds and captures the baseline and candidate
@@ -1423,6 +1428,44 @@ Evidence in the compiler worktree:
 `build/sview-fastpath-{baseline,candidate}-{a,b}.log`,
 `build/sview-fastpath-test-{baseline,candidate}.log`, and
 `build/sview-fastpath-debug-backtrace.log`.
+
+## Length-only sview equality fast path (2026-09-09)
+
+Compiler `2d44a99e` selects a smaller variant of the preceding experiment:
+unequal-length canonical views return false locally; all equal-length views
+use the existing comparator. Noncanonical lowered operands retain the legacy
+call. Both expressions are evaluated before the branch, and the temporary
+result resides in the function entry block. This supersedes the unpromoted
+length/empty/pointer candidate above.
+
+After rebuilding the candidate with its own code generation, native-object
+baseline/candidate/candidate/baseline timings were 37.96/35.88/35.72/38.05s.
+Means were 38.005s and 35.800s (5.80% observed reduction). Retired instructions
+fell from 631.691 to 564.025 billion (10.71%). Mean peak RSS increased from
+1.193 GB to 1.219 GB (2.18%). Each compiler emitted identical objects across
+its two runs; cross-compiler byte identity is intentionally not expected.
+Two pairs are preliminary timing evidence, not a portable speed guarantee.
+Compiler-worktree logs: `build/sview-length-{baseline,candidate}-{a,b}.log`.
+
+Validation completed before promotion:
+
+- All 560 fixture/breadth exit statuses and diagnostics matched baseline;
+  all 320 successful candidate LLVM outputs passed verification, with no
+  existing-invalid outputs (`build/.sview-length-validation.NureZm`, exit 0).
+- Executable differential tests produced identical reports: 88 agreed with
+  stage0, and the same existing `with_block` compilation divergence on both
+  baseline and candidate. Both suites exited 1; their complete reports matched.
+  This is no-new-divergence evidence, not an all-green differential suite.
+  Logs: `build/sview-length-differential-{baseline,candidate}.log`.
+- The focused executable regression passed, including an additional check
+  that an unequal-length comparison evaluates both operands once in order
+  (`build/sview-length-test.log`).
+
+Promotion checks passed with captured exit 0: fresh seed/manifest and all 11
+local branch tips included; self-host stages A (5/5), B (19,776,736 bytes), C
+(byte-identical fixed point), D (40 repeat objects); profiler rebuild; native
+and sampling regressions. Profiler-worktree logs:
+`build/sview-length-committed-{seed,self-host,profiler-build,native-regression,sampling-regression}.log`.
 
 ## Promote a local baseline
 
