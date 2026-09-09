@@ -1568,6 +1568,29 @@ and retained the byte-identical fixed point and 10-repeat determinism.
 Evidence is in the compiler worktree under
 `build/branch-hint-bench.7jf0nF/` and `build/branch-hint-combined-bench.BinYts/`.
 
+## Optimized stage1 compiler product (2026-09-09)
+
+The compiler seed script already supports optimized products, but the profiler
+Makefile previously requested `-O0`, so normal reseeding built a slower compiler
+than the compiler worktree's default. The Makefile now selects `-O2` for the
+stage1 seed. This changes only the optimization level of the compiler executable;
+the compiler source and emitted target optimization flags remain independent.
+
+Six alternating runs of stage1 products built from compiler commit `4e182d8e`
+compiled `src/driver/elisac.elisa` to a native object at `-O0`:
+
+| stage1 product | mean wall | mean user | mean system | max RSS |
+| --- | ---: | ---: | ---: | ---: |
+| `-O0` | 20.060 s | 17.025 s | 2.900 s | 1,189,360 KB |
+| `-O2` | 12.813 s | 9.917 s | 2.800 s | 1,186,976 KB |
+
+The O2 product reduced wall time by 36.13% and user time by 41.78%, with
+effectively unchanged system time and 0.20% lower peak RSS. All 12 emitted
+objects were byte-identical. Self-host stages A–D, the 139-fixture optimization
+pipeline, compiler-manifest freshness, native regression, and sampling smoke
+all pass with the O2 product. Evidence is in the compiler worktree under
+`build/stage1-opt-level-bench.XvYzDM/`.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
