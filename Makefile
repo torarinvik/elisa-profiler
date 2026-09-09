@@ -11,7 +11,10 @@ NATIVE_COMPILER_SCRIPT := $(COMPILER_WORKTREE)/scripts/elisac_stage1.sh
 NATIVE_STAGE1_BIN := $(COMPILER_WORKTREE)/bin/elisac-stage1
 NATIVE_RUNTIME_OBJECT := $(COMPILER_WORKTREE)/build/runtime/elisacore_runtime.o
 COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.json
-STAGE0_BIN ?= $(shell command -v elisac-stage0 2>/dev/null)
+# Prefer the checked-out stage0 source tree. A PATH-installed `~/.elisac`
+# elisac-stage0 is a snapshot and can silently lag the compiler sources being
+# seeded; callers may still override STAGE0_BIN or ELISACORE_BIN explicitly.
+STAGE0_BIN ?= $(shell if test -x "$(STAGE0_CORE)/compiler/bin/elisac"; then printf '%s\n' "$(STAGE0_CORE)/compiler/bin/elisac"; else command -v elisac-stage0 2>/dev/null || true; fi)
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 
 .PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke legacy-fixture-smoke collector-strict-smoke collector-content-smoke collector-trace-buffer-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test

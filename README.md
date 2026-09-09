@@ -39,11 +39,14 @@ make test
 scripts/elisa-compiler -o build/hello.o examples/hello.elisa
 ```
 
-`compiler-seed` uses `ELISACORE_BIN` when it is set, then the local
-`elisac-stage0` on `PATH`, and finally the documented sibling stage0 checkout at
-`../../Go projects/structpy-tree`. Set `STAGE0_CORE` or `ELISA_STAGE0_CORE` when
-using a different local stage0 checkout. The seeded stage1 binary and compiler
-build outputs remain ignored artifacts inside the compiler worktree.
+`compiler-seed` uses `ELISACORE_BIN` when it is set, then the checked-out
+stage0 at `STAGE0_CORE/compiler/bin/elisac` (defaulting to the documented
+sibling checkout at `../../Go projects/structpy-tree`), and only then an
+`elisac-stage0` found on `PATH`. This ordering avoids silently seeding from a
+stale installed snapshot such as `~/.elisac/elisac-stage0`. Set `STAGE0_BIN`,
+`STAGE0_CORE`, or `ELISA_STAGE0_CORE` when using a different explicitly chosen
+stage0. The seeded stage1 binary and compiler build outputs remain ignored
+artifacts inside the compiler worktree.
 
 `compiler-audit` verifies that every local branch tip in the compiler repository is
 already included in the profiler compiler worktree and atomically writes the ignored
