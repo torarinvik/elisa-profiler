@@ -1714,6 +1714,23 @@ remains in `make region-cache-oversize-smoke`. Raw evidence is retained in
 `build/cache-oversize-confirm.43VgMj`. Revisit only with better-controlled
 measurements; do not treat this candidate as an accepted optimization.
 
+## Call-local error-owner reuse — not promoted (2026-09-10)
+
+The verified link map attributed 65 listed top-of-stack observations to
+`Backend.error_callee_owner`. Four error-callee helpers were experimentally
+changed to resolve the owner once per invocation instead of twice. Six focused
+module/generic executable checks passed at O0/O3, as did the manifest and full
+self-host A–D validation. All twelve throughput-run objects matched.
+
+Balanced ordering measured baseline/candidate wall means of 46.297/51.667s
+and user CPU means of 30.553/32.182s. The approximate paired 95% interval for
+baseline minus candidate wall time was [-12.908, 2.168] seconds. This does not
+support a speedup; the candidate was reverted and the validated baseline
+binary/seed object restored, with a passing refreshed manifest. The source
+worktree is clean. Measurements are in `build/error-owner-confirm.D1EPe0`,
+focused checks in `build/error-owner-{baseline-checks.TLEC2M,candidate-checks.bFqIA0}`,
+and self-host results in compiler `build/error-owner-selfhost.log`.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
