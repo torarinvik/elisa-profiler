@@ -1483,6 +1483,22 @@ and sampling regressions. Profiler-worktree logs:
 
 ## Promote a local baseline
 
+### Rejected expansion to string selection paths
+
+Applying the same length guard to four membership/pattern-matching emitter
+paths showed no throughput gain. Sequential baseline/candidate/candidate/baseline
+native-object times were 35.71/35.88/35.74/35.63s (means 35.670s and 35.810s).
+Retired instructions decreased slightly (564.136 to 562.903 billion), but that
+proxy did not translate into throughput. Each compiler's repeated objects
+matched. The candidate self-built and both compilers passed the new executable
+selection regression. The source expansion was reverted; regression coverage
+was retained in compiler commit `09269473`.
+
+Compiler-worktree evidence: `build/sview-shared-{baseline,candidate}-{a,b}.log`
+and `build/sview-selection-{baseline,candidate}.log`. Source was restored exactly
+and seed/manifest refreshed (`build/sview-shared-restored-seed.log` in the profiler
+worktree). The retained binary-equality optimization is unchanged.
+
 Keep release or reference history separate from the build cache with an
 explicit promotion:
 
