@@ -1361,6 +1361,37 @@ branch tips included; self-host stages A (5/5), B (19,131,984 bytes), C
 native and sampling regressions. Profiler-worktree logs:
 `build/callable-fallback-committed-{seed,self-host,profiler-build,native-regression,sampling-regression}.log`.
 
+## Native-stack cross-check (2026-09-09)
+
+To corroborate instrumented callback stacks, macOS `/usr/bin/sample` observed
+the uninstrumented self-hosted compiler at `200de8b0` compiling its own driver
+to a native object with `-O0`. The sampler requested a 40-second window at a
+2-millisecond interval, using `-mayDie -fullPaths`. Both sampler and compiler
+returned exit 0. Evidence: `build/native-stack-compiler-sample.txt`,
+`build/native-stack-sampler.log`, and `build/native-stack-profile-workload.log`.
+The source/runtime were not modified during capture. This external tool is a
+diagnostic cross-check, not an implemented Elisa-profiler collection mode.
+
+The main-thread call graph contains 17,029 sampled stacks. In the report's
+collapsed top-of-stack section, `string_views_eq` has 3,216 observations and
+`ctx_string_views_eq` 1,365 (combined 26.9%); `_platform_memcmp` has only 153
+(0.9%). `arena_take_free_block` has 1,615 (9.5%),
+`ctx_aos_store_record` 399, `Backend.disjoint_scan_expr` 317,
+`Semantic.positional_construction_expression` 280,
+`arena_reclaim_allocation` 277, and `arena_take_free_block_chain` 271.
+These are observed native top-frame counts, not instrumented function counts
+or proof of a CPU-time percentage, and this single sampled run is not a
+performance comparison.
+
+This shifts the next investigation toward string-comparison call overhead
+and free-block probing. Inspection confirms string equality already checks
+length and pointer identity before `memcmp`, while ordinary generated sview
+comparisons unconditionally call `ctx_string_views_eq`, which calls
+`string_views_eq`. The runtime object is intentionally built at `-O0` to avoid
+whole-module removal of helpers required by later links. Candidate fast paths
+must preserve operand evaluation, empty views, pointer identity, inequality,
+and target ABI behavior; changing optimization levels alone is not validated.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
