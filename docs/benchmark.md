@@ -920,6 +920,22 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/contract-filter-native-regression.log`, and
 `build/contract-filter-sampling-regression.log`.
 
+## Filter lambda error-family annotations and remove duplicate disjoint scans (2026-09-09)
+
+Lambda-raise conformance now receives only `__error_set_family` rows. The
+disjointness expression walker also no longer visits parenthesized expressions
+twice. The focused error-family regression and all 560 fixture comparisons
+matched statuses, diagnostics, and successful LLVM output; the broader corpus
+also covers the disjointness cleanup.
+
+Self-hosted baseline `a86cc9e4` and candidate full O0 compilation took
+47.46/46.21 seconds; reversing order, candidate/baseline took 46.16/47.75.
+User CPU times were 46.67/45.28 and 45.38/46.76. All four objects were
+byte-identical and the chain exited zero: 2.6–3.3% less wall time on this
+workload. Evidence: `build/error-family-full-*.log`.
+
+Fresh bootstrap and profiler regressions for committed `9bf231e6` are pending.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
