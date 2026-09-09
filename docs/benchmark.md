@@ -817,6 +817,22 @@ passed. Evidence: `build/template-bodies-committed-self-host.log`,
 `build/template-bodies-profiler-build.log`, `build/template-bodies-native-regression.log`,
 and `build/template-bodies-sampling-regression.log`.
 
+## Compact effect-template filtering (2026-09-09)
+
+Recursive effect-template filtering now receives only template annotations,
+retaining exact name/line matching and module/scoped traversal. All 669 selected
+diagnostic/effect/handler/module/template comparisons matched status, diagnostics,
+and successful LLVM output. A focused test verifies same-name overload retention
+and unchanged member order when annotations are empty.
+
+Full O0 baseline/candidate wall times were 54.09/53.02 seconds and, reversing
+order, 54.58/52.94 seconds. User CPU times were 53.61/52.31 and 53.83/52.29.
+All four objects were byte-identical: 2.0–3.0% less wall time than `78c55f54`
+with self-hosted binaries on identical source. Evidence:
+`build/effect-template-filter-full-{baseline,candidate}.log` and their
+`-reverse.log` variants. Fresh committed bootstrap and profiler regressions
+remain pending.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
