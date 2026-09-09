@@ -839,6 +839,17 @@ regressions also passed. Evidence:
 `build/effect-template-filter-native-regression.log`, and
 `build/effect-template-filter-sampling-regression.log`.
 
+## Broad regression checkpoint (2026-09-09)
+
+After compiler `2ec59777`, the full `make test` log reached its final
+`process-group cleanup OK` check, and the observed make process exited.
+The log includes successful bootstrap fixed-point/repeat checks, native and
+sampling regressions, cache and identity checks, protocol/property tests,
+collector sanitizer checks, recovery, budgets, and process cleanup.
+No failure is reported in `build/post-optimizations-full-test.log`.
+The original process exit-status handle was not recovered, so this records
+the completed test-log evidence rather than an independently captured exit code.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
