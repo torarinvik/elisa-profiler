@@ -1160,6 +1160,32 @@ frames, and 3,111,324 valid capture bytes. The leading leaf counts were
 not native-PC self-time; the capture was complete and exact. Evidence:
 `build/post-readonly-cache-full-profile.json`.
 
+## Reuse the packed-row LLVM index buffer (2026-09-09)
+
+The packed dynamic-row loader now allocates its one-element LLVM index buffer
+once per value instead of once for every payload word. It also reuses the
+already-resolved LLVM value type and word type throughout the loop. This keeps
+the emitted LLVM unchanged while removing repeated compiler-side arena work.
+All 560 Elisa fixture comparisons matched statuses, diagnostics, and successful
+LLVM output byte-for-byte.
+
+Self-hosted baseline `458ef52d` and candidate full O0 compilation took
+38.70/38.54 seconds; reversing order, candidate/baseline took 38.55/38.61.
+User CPU times were 38.17/38.06 and 38.04/38.11. The paired means are
+38.655 seconds for baseline and 38.545 seconds for candidate (0.28% less wall
+time and 0.24% less user CPU); retired instructions fell by 0.02% and cycles
+by 0.25%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/packed-index-*.log`.
+
+Fresh bootstrap of committed `a9bc2f25` passed five probes, full compiler
+emission (19,131,416 bytes), byte-identical generation 3/4 objects, and all 40
+repeat emissions. The profiler rebuild, native regression, and native sampling
+regression also passed; the complete chain exited zero. Evidence:
+`build/packed-index-committed-self-host.log`,
+`build/packed-index-committed-profiler-build.log`,
+`build/packed-index-committed-native-regression.log`, and
+`build/packed-index-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
