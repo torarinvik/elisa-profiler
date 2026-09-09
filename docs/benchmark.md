@@ -896,6 +896,22 @@ sampling regression also passed; the chain exited zero. Evidence:
 `build/ens-return-bool-native-regression.log`, and
 `build/ens-return-bool-sampling-regression.log`.
 
+## Compact contract-marker annotations (2026-09-09)
+
+`collect_contract_requires` and `collect_contract_ensures` now receive one
+shared, order-preserving subset containing only `__contract_decl` rows. This
+removes a full annotation-table scan from both recursive walks while retaining
+contract identity and duplicate rows. The focused filter regression and 485
+contract/effect/diagnostic comparisons matched statuses, diagnostics, and
+successful LLVM output.
+
+Self-hosted baseline `8734d199` and candidate full O0 compilation took
+49.80/47.19 seconds; reversing order, candidate/baseline took 47.40/50.11.
+User CPU times were 49.17/46.58 and 46.70/49.21. All four objects were
+byte-identical and the chain exited zero: 5.2–5.4% less wall time on this
+workload. Evidence: `build/contract-filter-full-*.log`.
+Fresh bootstrap and profiler regressions for the committed change are pending.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
