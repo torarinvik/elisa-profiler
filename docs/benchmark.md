@@ -1510,6 +1510,37 @@ across 10 runs. The full optimization pipeline passed 139 fixtures at `-O0`,
 `build/arena-cache-hint-fair-*.time`, `build/arena-cache-hint-fair-*.o`, and
 `build/arena-cache-hint-self-host-gen2/`.
 
+## Context string equality bridge and branch prediction hint (2026-09-09)
+
+Compiler commit `cb333aec` removes the nested `ctx_string_views_eq` to
+`string_views_eq` call by keeping the proven fast path directly in the context
+runtime wrapper. It also marks the measured unequal-length exit as
+`if likely lhs.len != rhs.len:` in both string-equality implementations. The
+Elisa branch hint lowers to LLVM branch weights and does not alter semantics.
+
+Fresh `-O0` products were compared with six alternating native-object builds of
+`src/driver/elisac.elisa`:
+
+| product | mean wall | mean user | mean system | max RSS |
+| --- | ---: | ---: | ---: | ---: |
+| direct bridge, no hint | 20.793 s | 17.350 s | 3.367 s | 1,142,320 KB |
+| direct bridge + length hint | 20.113 s | 16.570 s | 3.397 s | 1,142,352 KB |
+
+The hint candidate reduced wall time by 3.27% and user time by 4.50% with
+effectively unchanged RSS. The corresponding `-O2` stage1-product check was
+13.318 s versus 13.100 s wall time (1.64% lower), with identical emitted-object
+hashes in all 12 comparisons. The direct bridge itself had already reduced the
+same compile benchmark from 22.955 s to 21.227 s wall time and from 19.072 s to
+17.415 s user time. Self-host stages A–D, the 139-fixture optimization
+pipeline, native regression, and sampling regression all passed after
+promotion.
+
+An additional `while likely` hint on the bounded arena free-list probe was
+rejected: six runs changed user time by only 0.22%, within run noise. The
+allocator source remains unhinted. Evidence is in the compiler worktree under
+`build/string-branch-bench-*.time`, `build/string-branch-o2-bench-*.time`, and
+`build/arena-loop-bench-*.time`.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
