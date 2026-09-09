@@ -1046,6 +1046,32 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/disjoint-statements-committed-native-regression.log`, and
 `build/disjoint-statements-committed-sampling-regression.log`.
 
+## Index errorset parameter annotations (2026-09-09)
+
+The catch-parameter checker now builds a compact parallel index of
+`__errorset_param` annotations once per file. Function checks consult that
+index instead of scanning the complete parser annotation table for every
+function. The source-view ownership and first-match behavior are unchanged.
+All 560 Elisa fixture comparisons matched statuses, diagnostics, and
+successful LLVM output byte-for-byte.
+
+Self-hosted baseline `ea8570a7` and candidate full O0 compilation took
+44.78/43.38 seconds; reversing order, candidate/baseline took 43.52/44.81.
+User CPU times were 44.26/42.89 and 42.91/44.20. The paired means are
+44.795 seconds for baseline and 43.450 seconds for candidate (3.00% less wall
+time and 3.01% less user CPU); retired instructions fell by 3.03% and cycles
+by 3.04%. All four objects were byte-identical and the chain exited zero.
+Evidence: `build/cpb-index-full-*.log`.
+
+Fresh bootstrap of committed `bb8c39bb` passed five probes, full compiler
+emission (19,124,224 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/cpb-index-committed-self-host.log`,
+`build/cpb-index-committed-profiler-build.log`,
+`build/cpb-index-committed-native-regression.log`, and
+`build/cpb-index-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
