@@ -839,6 +839,18 @@ regressions also passed. Evidence:
 `build/effect-template-filter-native-regression.log`, and
 `build/effect-template-filter-sampling-regression.log`.
 
+## Cumulative compiler throughput through template filtering (2026-09-09)
+
+Archived self-hosted `2f8b2180` versus self-hosted `2ec59777`, compiling
+identical current compiler source at O0 with the same runtime and output path:
+baseline/current wall times 163.02/52.96 seconds; reverse-order
+current/baseline 52.66/163.35 seconds. User CPU times were 162.00/52.51
+and 52.27/162.52 respectively. All four emitted objects were byte-identical,
+and the comparison chain exited zero. Mean wall time fell from 163.185 to
+52.81 seconds: 3.09× throughput, or 67.6% less wall time. This is compiler
+throughput on this workload, not a profiler-overhead measurement or a claim
+about all Elisa programs. Evidence: `build/cumulative-template-full-*.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
