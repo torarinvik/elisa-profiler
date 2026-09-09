@@ -865,7 +865,12 @@ Self-hosted baseline `2ec59777` and candidate full O0 compilation took
 User CPU times were 52.36/50.53 and 50.52/52.32. All four objects were
 byte-identical and the benchmark chain exited zero: 3.0–3.8% less wall time
 on this workload. Evidence: `build/effect-row-full-*.log`.
-Committed-compiler bootstrap and profiler regressions remain pending.
+Fresh bootstrap of committed `88362a1d` passed five probes, full compiler
+emission (19,120,960 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. Profiler rebuild and native/sampling regressions passed;
+the complete validation chain exited zero. Evidence:
+`build/effect-row-committed-self-host.log`, `build/effect-row-profiler-build.log`,
+`build/effect-row-native-regression.log`, and `build/effect-row-sampling-regression.log`.
 
 ## Broad regression checkpoint (2026-09-09)
 
