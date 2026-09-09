@@ -1175,7 +1175,11 @@ User CPU times were 38.17/38.06 and 38.04/38.11. The paired means are
 38.655 seconds for baseline and 38.545 seconds for candidate (0.28% less wall
 time and 0.24% less user CPU); retired instructions fell by 0.02% and cycles
 by 0.25%. All four objects were byte-identical and the chain exited zero.
-Evidence: `build/packed-index-*.log`.
+These measurements used `-emit llvm`; they measure LLVM emission, excluding
+native object emission. They must not be compared directly with the preceding
+41.510-second native-object benchmark. The small difference from two pairs is
+preliminary evidence, not a statistically established speedup. The timing logs
+are in the compiler worktree: `build/packed-index-{baseline,candidate}-{a,b}.log`.
 
 Fresh bootstrap of committed `a9bc2f25` passed five probes, full compiler
 emission (19,131,416 bytes), byte-identical generation 3/4 objects, and all 40
@@ -1187,6 +1191,19 @@ regression also passed; the complete chain exited zero. Evidence:
 `build/packed-index-committed-sampling-regression.log`.
 
 ## Broad regression checkpoint (2026-09-09)
+
+Validation correction: the rejected effect-identity helper experiment was
+originally compared against the stage0-built seed. The unchanged self-hosted
+generation also emits the additional line-14 diagnostic in
+`darray_element_mismatch.pos.elisa`. Comparing the preserved candidate against
+`build/self_host_gen2/elisac-stage1-gen2` instead passed all 560 fixtures,
+including identical diagnostics, statuses, and successful LLVM output (exit 0;
+compiler-worktree evidence `build/.effect-corrected-parity.DKfEP0`). Thus the
+earlier mismatch does not establish a regression caused by that optimization.
+The experiment remains uncommitted: the identity table also contains the
+internal `__try_lexical_module` marker, which needs separate handling before
+it can replace declaration membership checks. Performance comparisons must
+use matching compiler generations and emission modes.
 
 After compiler `2ec59777`, the full `make test` log reached its final
 `process-group cleanup OK` check, and the observed make process exited.
