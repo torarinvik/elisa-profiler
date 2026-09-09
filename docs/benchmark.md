@@ -872,6 +872,21 @@ the complete validation chain exited zero. Evidence:
 `build/effect-row-committed-self-host.log`, `build/effect-row-profiler-build.log`,
 `build/effect-row-native-regression.log`, and `build/effect-row-sampling-regression.log`.
 
+## Compact ensures-return annotations (2026-09-09)
+
+The recursive return-type validator now receives only parser rows whose name is
+`__ensures_return_bool`; unrelated annotation rows are not rescanned for every
+function. A focused filter regression and 485 semantic fixture comparisons
+matched exactly, including successful LLVM output.
+
+Self-hosted baseline `88362a1d` and candidate full O0 compilation took
+51.66/50.25 seconds; reversing order, candidate/baseline took 50.17/51.99.
+User CPU times were 50.92/49.24 and 49.31/50.99. All four objects were
+byte-identical and the chain exited zero: 2.8–3.5% less wall time on this
+workload. Evidence: `build/ens-return-bool-full-*.log`.
+Fresh bootstrap and profiler regressions for committed `8734d199` are recorded
+below.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
