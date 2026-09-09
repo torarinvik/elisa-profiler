@@ -1214,6 +1214,37 @@ No failure is reported in `build/post-optimizations-full-test.log`.
 The original process exit-status handle was not recovered, so this records
 the completed test-log evidence rather than an independently captured exit code.
 
+## Effect fulfillment metadata filtering (2026-09-09)
+
+Compiler commit `747d8616` filters fulfillment annotations once per file before
+walking function declarations, preserving annotation order and duplicate clauses.
+This removes unrelated metadata from repeated per-function scans.
+
+The matching self-hosted baseline (`a9bc2f25`) and candidate compiled
+`src/driver/elisac.elisa` with `-O0` to **native objects**, sequentially in
+baseline/candidate/candidate/baseline order with `DYLD_SHARED_REGION=avoid`.
+Elapsed times were baseline 41.40/42.35s and candidate 40.69/41.15s:
+means 41.875s and 40.920s (2.28% observed reduction). Retired instructions
+averaged 682.451 billion versus 660.944 billion (3.15% reduction).
+All four native objects were byte-identical. Two pairs are preliminary timing
+evidence, not a statistically established speedup. Logs are in the compiler
+worktree at `build/effect-law-{baseline,candidate}-{a,b}.log`.
+
+All 560 fixture/breadth comparisons passed with matching exit statuses,
+diagnostics, and successful LLVM outputs (exit 0;
+`build/.effect-law-parity.nkVldT`). The focused Elisa regression
+`test/parity/effect_law_filter_smoke.elisa` also passed: duplicate clauses,
+diagnostic ordering, nested modules, composite laws, accepted fulfillments,
+and unconstrained functions.
+
+Promotion gates passed (captured exit 0): fresh compiler seed and manifest,
+all 11 local branch tips included, self-hosting stages A (5/5), B (19,132,192
+bytes), C (byte-identical fixed point), D (40 repeat objects), profiler rebuild,
+native regression, and sampling regression. Profiler-worktree logs are
+`build/effect-law-committed-{seed,self-host,profiler-build,native-regression,sampling-regression}.log`.
+Existing uncommitted worktree changes were preserved and remain listed in the
+integration ledger; branch ancestry does not mean every uncommitted edit is merged.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
