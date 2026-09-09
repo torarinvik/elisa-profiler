@@ -943,6 +943,31 @@ sampling regression also passed; the complete chain exited zero. Evidence:
 `build/error-family-native-regression.log`, and
 `build/error-family-sampling-regression.log`.
 
+## Consolidate the disjoint freshness statement walk (2026-09-09)
+
+The fresh-variable collector now uses one exhaustive statement match instead
+of dispatching through seven sequential matches for every statement. The
+change preserves the existing recursive walk and variable bookkeeping. All
+560 Elisa fixture comparisons matched statuses, diagnostics, and successful
+LLVM output byte-for-byte.
+
+Self-hosted baseline `9bf231e6` and candidate full O0 compilation took
+46.01/45.74 seconds; reversing order, candidate/baseline took 45.81/45.97.
+User CPU times were 45.38/45.12 and 45.18/45.35. The paired means are
+45.99 seconds for baseline and 45.78 seconds for candidate (0.47% less wall
+time and 0.47% less user CPU); retired instructions fell by 0.28%. All four
+objects were byte-identical and the chain exited zero. Evidence:
+`build/disjoint-collector-full-*.log`.
+
+Fresh bootstrap of committed `e34e3af1` passed five probes, full compiler
+emission (19,122,040 bytes), byte-identical generation 3/4 objects, and all
+40 repeat emissions. The profiler rebuild, native regression, and native
+sampling regression also passed; the complete chain exited zero. Evidence:
+`build/disjoint-collector-committed-self-host.log`,
+`build/disjoint-collector-committed-profiler-build.log`,
+`build/disjoint-collector-committed-native-regression.log`, and
+`build/disjoint-collector-committed-sampling-regression.log`.
+
 ## Broad regression checkpoint (2026-09-09)
 
 After compiler `2ec59777`, the full `make test` log reached its final
