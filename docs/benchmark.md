@@ -1281,6 +1281,39 @@ the capture used `ELISA_ALLOW_STALE_STAGE1=1`. The ordinary compiler seed and
 manifest were subsequently refreshed successfully without this override
 (`build/post-effect-law-restored-seed.log`).
 
+## Declared effect-family index (2026-09-09)
+
+Compiler `befe4994` records effect declaration names in a parser-owned list and
+uses it for abstract-row classification instead of scanning all annotation
+metadata. The list is populated only by actual effect declarations. Internal
+lexical identities therefore cannot become effects by accident; real effects
+using the internal marker's spelling remain supported.
+
+Matching self-hosted baseline `747d8616` and candidate compiled the same current
+compiler source with `-O0` to native objects, sequentially in
+baseline/candidate/candidate/baseline order. Wall times were
+40.33/39.56/39.35/40.57s: baseline mean 40.450s and candidate 39.455s
+(2.46% observed reduction). Mean retired instructions fell from 661.053 billion
+to 640.257 billion (3.15%). All four objects were byte-identical. Two timing
+pairs remain preliminary evidence rather than a statistically established
+speedup. Compiler-worktree logs:
+`build/effect-declaration-index-{baseline,candidate}-{a,b}.log`.
+
+All 560 fixture/breadth comparisons passed, including matching statuses,
+diagnostics, and successful LLVM output (exit 0;
+`build/.effect-declaration-index-parity.lja7Mj`). The Elisa regression
+`test/parity/effect_declaration_index_smoke.elisa` passed generic/qualified
+membership, missing names, internal-only markers, and an actual declaration
+with the marker spelling.
+
+Promotion checks passed with captured exit 0: fresh seed; manifest/toolchain/ABI
+validation; all 11 local branch tips included; self-hosting A (5/5), B
+(19,132,544 bytes), C (byte-identical fixed point), D (40 identical repeats);
+profiler rebuild; native and sampling regressions. Profiler-worktree logs:
+`build/effect-declaration-index-committed-{seed,self-host,profiler-build,native-regression,sampling-regression}.log`.
+Existing uncommitted changes in other worktrees remain preserved and reported
+by the integration ledger.
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
