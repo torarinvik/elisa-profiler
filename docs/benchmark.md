@@ -1639,6 +1639,21 @@ timing-failure checks, bootstrap/path/process-group cleanup, and the remaining
 profiler workload and artifact suites. The dedicated compiler and profiler
 source worktrees are clean after the gate.
 
+## Fresh O3 native-stack cross-check (2026-09-09)
+
+After reconciliation, the active O3 stage1 product compiled its own driver to
+a native object successfully in 13.9 seconds. A concurrent macOS
+`/usr/bin/sample` capture collected 5,937 main-thread stack observations. The
+largest visible groups were LLVM target object emission (1,326 observations
+through `LLVMTargetMachineEmitToFile`) and `__munmap` (1,501 observations).
+The O3 product is dead-stripped and carries no local Elisa function symbols,
+so the remaining stage1 frames are reported as load-address offsets rather
+than actionable function names. This is useful confirmation of the broad
+LLVM/allocator split, but it is not evidence for another `likely`/`unlikely`
+source hint. The accepted hints remain the measured string-length mismatch
+fast path and cold arena-cache admission; further hints require symbolized or
+instrumented attribution plus repeated end-to-end throughput measurements.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
