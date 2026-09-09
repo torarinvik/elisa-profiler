@@ -1481,6 +1481,35 @@ local branch tips included; self-host stages A (5/5), B (19,776,736 bytes), C
 and sampling regressions. Profiler-worktree logs:
 `build/sview-length-committed-{seed,self-host,profiler-build,native-regression,sampling-regression}.log`.
 
+## Bounded mmap region cache and keyed reclaim hint (2026-09-09)
+
+The compiler worktree commit `4702bcf9` keeps up to 16 recently freed, small
+mmap-backed regions in an intrusive cache instead of retaining only one region
+or calling `munmap` immediately. The cache reuses regions by capacity and resets
+their headers before publication. Reclaimed darray spans also use a separate
+arena-address-keyed hint, so bump-only arenas skip the stale process-wide
+free-span walk. Lifecycle handling clears or migrates the hint across reset,
+rewind, trim, free, and adopt. The public `Arena` layout and stage0 interface
+remain unchanged.
+
+Fresh products were seeded at `-O0` from the same compiler commit, with the
+baseline worktree retaining the prior one-region cache. Six alternating native
+object builds of `src/driver/elisac.elisa` measured:
+
+| product | mean wall | mean user | mean system | max RSS |
+| --- | ---: | ---: | ---: | ---: |
+| baseline | 23.982 s | 19.378 s | 4.540 s | 1,138,832 KB |
+| candidate | 21.943 s | 18.837 s | 3.057 s | 1,142,608 KB |
+
+That is an 8.50% wall-time throughput improvement, a 32.7% reduction in system
+time, and a 0.33% peak-RSS increase on this workload. All 12 emitted objects
+were byte-identical. The focused allocator fixtures and self-host stages A–D
+passed; stage C reached a byte-identical fixed point and stage D was deterministic
+across 10 runs. The full optimization pipeline passed 139 fixtures at `-O0`,
+`-O2`, and `-O3`. Evidence is in the compiler worktree under
+`build/arena-cache-hint-fair-*.time`, `build/arena-cache-hint-fair-*.o`, and
+`build/arena-cache-hint-self-host-gen2/`.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
