@@ -830,8 +830,14 @@ order, 54.58/52.94 seconds. User CPU times were 53.61/52.31 and 53.83/52.29.
 All four objects were byte-identical: 2.0–3.0% less wall time than `78c55f54`
 with self-hosted binaries on identical source. Evidence:
 `build/effect-template-filter-full-{baseline,candidate}.log` and their
-`-reverse.log` variants. Fresh committed bootstrap and profiler regressions
-remain pending.
+`-reverse.log` variants. Fresh bootstrap of committed `2ec59777` passed: five
+probes, full compiler emission (19,119,928 bytes), byte-identical generation 3/4
+objects, and all 40 repeat emissions. Profiler rebuild and native/sampling
+regressions also passed. Evidence:
+`build/effect-template-filter-committed-self-host.log`,
+`build/effect-template-filter-profiler-build.log`,
+`build/effect-template-filter-native-regression.log`, and
+`build/effect-template-filter-sampling-regression.log`.
 
 ## Promote a local baseline
 
