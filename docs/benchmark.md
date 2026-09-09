@@ -1543,6 +1543,31 @@ allocator source remains unhinted. Evidence is in the compiler worktree under
 `build/string-branch-bench-*.time`, `build/string-branch-o2-bench-*.time`, and
 `build/arena-loop-bench-*.time`.
 
+## Cold arena cache admission hint (2026-09-09)
+
+Compiler commit `4e182d8e` marks the bounded mmap-cache admission test in
+`free_region` as `if unlikely`. Once the 128-entry cache is warm, teardown
+usually takes the direct unmap path, so this keeps that steady-state path as
+the fall-through branch. This is a code-layout hint only; cache capacity,
+ownership, and zeroing semantics are unchanged.
+
+Twelve alternating runs of the current 128-entry control product and the
+hinted product compiled `src/driver/elisac.elisa` to native objects at `-O0`:
+
+| product | mean wall | mean user | mean system | max RSS |
+| --- | ---: | ---: | ---: | ---: |
+| control | 20.741 s | 16.848 s | 3.786 s | 1,191,744 KB |
+| `if unlikely` | 20.253 s | 16.918 s | 3.211 s | 1,189,456 KB |
+
+The hint reduced wall time by 2.35% and system time by 15.19%, while user time
+was effectively neutral (+0.42%) and peak RSS did not increase. All 24 output
+objects were byte-identical. A complementary `if likely` on the cache-hit
+condition was rejected: six alternating runs were 5.36% slower wall time and
+had 44.2% higher system time. The hinted compiler passed self-host stages A–D
+and retained the byte-identical fixed point and 10-repeat determinism.
+Evidence is in the compiler worktree under
+`build/branch-hint-bench.7jf0nF/` and `build/branch-hint-combined-bench.BinYts/`.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
