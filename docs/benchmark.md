@@ -1591,6 +1591,19 @@ pipeline, compiler-manifest freshness, native regression, and sampling smoke
 all pass with the O2 product. Evidence is in the compiler worktree under
 `build/stage1-opt-level-bench.XvYzDM/`.
 
+The follow-up O3 comparison used twelve alternating runs per product from the
+same compiler source (24 total), again compiling the target at `-O0`:
+
+| stage1 product | mean wall | mean user | mean system | max RSS |
+| --- | ---: | ---: | ---: | ---: |
+| `-O2` | 12.999 s | 9.841 s | 3.098 s | 1,187,536 KB |
+| `-O3` | 12.748 s | 9.799 s | 2.888 s | 1,187,536 KB |
+
+O3 is therefore the selected default: it reduced wall time by a further 1.93%,
+user time by 0.43%, and system time by 6.78%, with unchanged peak RSS and
+byte-identical objects. Evidence is in the compiler worktree under
+`build/stage1-o3-bench.KQQ9hl/`.
+
 ## Promote a local baseline
 
 ### Rejected expansion to string selection paths
