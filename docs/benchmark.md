@@ -1245,6 +1245,42 @@ native regression, and sampling regression. Profiler-worktree logs are
 Existing uncommitted worktree changes were preserved and remain listed in the
 integration ledger; branch ancestry does not mean every uncommitted edit is merged.
 
+### Rejected lazy grant collection experiment
+
+After `747d8616`, collecting effect grants only upon the first matching law
+obligation did not improve full-compiler native-object emission. Sequential
+baseline/candidate/candidate/baseline elapsed times were 40.75/40.89/41.06/41.09s
+(baseline mean 40.920s, candidate 40.975s). Retired instructions were effectively
+unchanged: means 661.126 billion and 661.046 billion. All four output objects
+were byte-identical. This small sample supports neither a useful speedup nor
+a meaningful slowdown; the source change was reverted instead of retained.
+Compiler-worktree logs: `build/effect-law-lazy-{baseline,candidate}-{a,b}.log`.
+
+### Fresh profile after fulfillment filtering
+
+`build/post-effect-law-full-profile.json` captures committed compiler `747d8616`
+compiling its own source to a native object at `-O0`. The function-instrumented
+prebuilt target used the existing collector/runtime objects from the preceding
+packed-index capture, which were not changed by the semantic-only optimization.
+The capture succeeded in 46.761s (45.537s user CPU), with 8,310 samples at a
+5,000-microsecond requested period, zero missed samples or dropped frames,
+8,316 valid frames, and 3,238,911 valid capture bytes. Capture/detail were complete.
+
+Leading instrumented-stack leaves were `emit_object` (545), `arena_realloc`
+(471), `new_region_with_owner` (443), `packed_dynamic_row_load_value` (307),
+`note_local_type` (286), `effect_template_row_is_abstract` (198),
+`disjoint_collect_fresh` (194), `disjoint_scan_expr` (180), and
+`callable_error_family` (173). These are callback-stack samples, not native-PC
+self times; one capture does not establish per-function speedups. Allocation,
+packed-row code generation, and repeated semantic lookups remain optimization
+targets rather than evidence that compiler performance is finished.
+
+The initial launch stopped at the timestamp-based freshness check after the
+rejected experiment was reverted. With source verified identical to the commit,
+the capture used `ELISA_ALLOW_STALE_STAGE1=1`. The ordinary compiler seed and
+manifest were subsequently refreshed successfully without this override
+(`build/post-effect-law-restored-seed.log`).
+
 ## Promote a local baseline
 
 Keep release or reference history separate from the build cache with an
