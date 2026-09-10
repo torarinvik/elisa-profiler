@@ -1,5 +1,23 @@
 # Native benchmark manifests
 
+## Constant flag-name experiment
+
+Replacing four temporary flag-name darrays with C-string literals preserved the
+O0/O3 flag tests, including environment changes within one process. Matched O3
+control/candidate compilers used source `386bc581`, the same producer, runtime,
+and link options. One warmup per side preceded eight ABBA-ordered O0 compiler
+workloads. Every output matched; binary/runtime hashes, source diff, and HEAD
+were unchanged throughout.
+
+CPU means were 53.4825/50.4800 seconds (5.6% lower for the candidate), with paired
+control-minus-candidate 95% interval [-11.156, 17.161] seconds. Wall means were
+56.4300/68.7475 seconds, with paired interval [-68.672, 44.037] seconds. Both
+are inconclusive; all observations, including the 130.70-second candidate wall
+run, were retained. The production patch remains unapplied. Raw measurements,
+hashes, and analysis are in compiler `build/literal-flags-throughput.bcBO4L/`;
+the saved patch is `build/literal-flags-candidate.patch`. Semantic regression
+coverage remains in `test/parity/backend_flag_queries_smoke.elisa`.
+
 ## Disjointness-analysis opt-in experiment
 
 The warmed follow-up did **not** confirm the pilot's large improvement. One
