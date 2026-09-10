@@ -121,6 +121,7 @@ extend ProfilerNative:
                 indexed: mutable MachOIndex = zeroed
                 assert index_macho(data, &indexed) == MachOIndexStatus.Indexed
                 assert indexed.has_uuid and indexed.has_symbols
+                assert macho_same_build_id(data, data)
                 assert indexed.symbol_count > NATIVE_ZERO.usize()
                 assert indexed.segment_count > NATIVE_ZERO.usize()
                 starts: mutable darray[u64] = []
@@ -171,6 +172,29 @@ extend ProfilerNative:
             assert indexed.has_uuid and indexed.uuid_offset == uuid_command + MACHO_COMMAND_HEADER_BYTES
             assert indexed.has_symbols and indexed.symbol_count == NATIVE_ONE.usize()
             assert indexed.symbol_offset == MACHO_TEST_SYMBOLS and indexed.strings_offset == MACHO_TEST_STRINGS
+            assert not macho_same_build_id(data, data)
+            uuid_start: usize = uuid_command + MACHO_COMMAND_HEADER_BYTES
+            data[uuid_start] <- NATIVE_ONE.u8()
+            other: mutable darray[u8] = []
+            for index in NATIVE_ZERO.usize()..<data.count |data, other|:
+                other.push(data[index])
+            assert macho_same_build_id(data, other)
+            for index in NATIVE_ZERO.usize()..<MACHO_UUID_BYTES |data, other, uuid_start|:
+                other[uuid_start + index] <- data[uuid_start + index] + NATIVE_ONE.u8()
+                assert not macho_same_build_id(data, other)
+                other[uuid_start + index] <- data[uuid_start + index]
+            macho_test_word(&other, MACHO_SUBTYPE_OFFSET, NATIVE_ONE.u32())
+            assert not macho_same_build_id(data, other)
+            macho_test_word(&other, MACHO_SUBTYPE_OFFSET, NATIVE_ZERO.u32())
+            macho_test_word(&other, MACHO_CPU_OFFSET, NATIVE_ZERO.u32())
+            assert not macho_same_build_id(data, other)
+            macho_test_word(&other, MACHO_CPU_OFFSET, MACHO_TEST_CPU)
+            for length in NATIVE_ZERO.usize()..<MACHO_TEST_BYTES |data, other|:
+                other.count <- length
+                assert not macho_same_build_id(data, other)
+            other.count <- MACHO_TEST_BYTES
+            macho_test_word(&other, uuid_command, NATIVE_ZERO.u32())
+            assert not macho_same_build_id(data, other)
             for length in NATIVE_ZERO.usize()..<MACHO_TEST_BYTES |data, indexed|:
                 data.count <- length
                 assert index_macho(data, &indexed) == MachOIndexStatus.Truncated

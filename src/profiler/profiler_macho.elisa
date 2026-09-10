@@ -20,6 +20,7 @@ extend ProfilerNative:
         const MACHO_LINKEDIT_OFFSET: usize = 8
         const MACHO_LINKEDIT_SIZE_OFFSET: usize = 12
         const MACHO_UUID_COMMAND_BYTES: usize = 24
+        const MACHO_UUID_BYTES: usize = 16
         const MACHO_SYMTAB_COMMAND_BYTES: usize = 24
         const MACHO_SYMBOL_OFFSET: usize = 8
         const MACHO_SYMBOL_COUNT_OFFSET: usize = 12
@@ -137,6 +138,22 @@ extend ProfilerNative:
             symbol_count: mutable usize
             strings_offset: mutable usize
             strings_size: mutable usize
+
+        # Match producer build metadata, not file contents or link-map identity.
+        # Missing/zero UUIDs are unknown, even when both inputs are identical.
+        def macho_same_build_id(left: darray[u8]&, right: darray[u8]&) -> bool:
+            left_index: mutable MachOIndex = zeroed
+            right_index: mutable MachOIndex = zeroed
+            return false if index_macho(left, &left_index) != MachOIndexStatus.Indexed
+            return false if index_macho(right, &right_index) != MachOIndexStatus.Indexed
+            return false if not left_index.has_uuid or not right_index.has_uuid
+            return false if left_index.cpu_type != right_index.cpu_type or left_index.cpu_subtype != right_index.cpu_subtype
+            nonzero: mutable bool = false
+            for index in NATIVE_ZERO.usize()..<MACHO_UUID_BYTES |left, right, left_index, right_index, nonzero|:
+                byte: u8 = left[left_index.uuid_offset + index]
+                return false if byte != right[right_index.uuid_offset + index]
+                nonzero <- true if byte != NATIVE_ZERO.u8()
+            return nonzero
 
         # Only called after the containing header/command is bounds checked.
         def macho_value(data: darray[u8]&, offset: usize) -> u64:
