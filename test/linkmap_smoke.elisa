@@ -1,11 +1,22 @@
 include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
 include "../src/profiler/profiler_linkmap.elisa"
+include "../src/profiler/profiler_linkmap_index.elisa"
+
+@link_name("read")
+extern linkmap_test_read(fd: i64, buffer: u8&, count: usize) -> i64 can[Console]
 
 module LinkMapSmoke:
     private:
         const EXPECTED_ADDRESS: u64 = 0x100000680
         const EXPECTED_SIZE: u64 = 0x118
         const MAX_ADDRESS: u64 = 0xffffffffffffffff
+        const INPUT_BYTES: usize = 4096
+        const FIRST_ADDRESS: u64 = 16
+        const FIRST_END: u64 = 20
+        const SECOND_ADDRESS: u64 = 32
+        const SECOND_END: u64 = 33
+        const EXPECTED_ROWS: usize = 2
+        const F_BYTE: u8 = 102
 
         def check(text: sview, valid: bool) -> ElisaProfilerLinkMap::SymbolRow can[Abort.Panic, Memory.Allocate]:
             bytes: mutable darray[u8] = []
@@ -19,7 +30,35 @@ module LinkMapSmoke:
             return row
 
     public:
+        def index_check(text: sview, valid: bool) -> void can[Abort.Panic, Memory.Allocate]:
+            bytes: mutable darray[u8] = []
+            for index in 0..<text.len |bytes, text|:
+                bytes.push(text[index])
+            rows: mutable darray[ElisaProfilerLinkMap::SymbolRow] = []
+            assert ElisaProfilerLinkMap::index_symbols(bytes, &rows) == valid
+            if not valid:
+                assert rows.count == 0
+                return
+            assert rows.count == EXPECTED_ROWS
+            row: mutable ElisaProfilerLinkMap::SymbolRow = zeroed
+            assert not ElisaProfilerLinkMap::lookup_symbol(rows, FIRST_ADDRESS - 1, &row)
+            assert ElisaProfilerLinkMap::lookup_symbol(rows, FIRST_ADDRESS, &row)
+            assert row.name_size == "foo".len and bytes[row.name_start] == F_BYTE
+            assert ElisaProfilerLinkMap::lookup_symbol(rows, FIRST_END - 1, &row)
+            assert not ElisaProfilerLinkMap::lookup_symbol(rows, FIRST_END, &row)
+            assert not ElisaProfilerLinkMap::lookup_symbol(rows, SECOND_ADDRESS - 1, &row)
+            assert ElisaProfilerLinkMap::lookup_symbol(rows, SECOND_ADDRESS, &row)
+            assert not ElisaProfilerLinkMap::lookup_symbol(rows, SECOND_END, &row)
+            assert row.name_size == 0
+
         def run() -> i64 can[Abort.Panic, Memory.Allocate]:
+            index_check("# Sections:\n0x0 ignored section row\n# Symbols:\r\n# Address Size File Name\n0x0 0x0 [0] label\n0x10 0x4 [1] foo\n0x20 0x1 [1] bar\n# Dead Stripped Symbols:\n<<dead>> junk", true)
+            index_check("# Symbols:\n0x10 0x4 [1] foo\n0x20 0x1 [1] bar", true)
+            index_check("# Symbols:\n0x10 0x4 [1] foo\n0x12 0x1 [1] overlap", false)
+            index_check("# Symbols:\n0x20 0x4 [1] foo\n0x10 0x1 [1] unsorted", false)
+            index_check("# Symbols:\n0x10 0x4 [1] foo\nmalformed", false)
+            index_check("# Symbols:\n# Symbols:\n", false)
+            index_check("no symbol section", false)
             row: ElisaProfilerLinkMap::SymbolRow = check("0x100000680\t0x118\t[  1] l_new_region_backend", true)
             assert row.address == EXPECTED_ADDRESS and row.size == EXPECTED_SIZE
             assert row.name_size == "l_new_region_backend".len
@@ -42,5 +81,27 @@ module LinkMapSmoke:
             _ = check("", false)
             return 0
 
+        def check_stdin() -> void can[Abort.Panic, Memory.Allocate, Console]:
+            data: mutable darray[u8] = []
+            buffer: mutable darray[u8] = [0.u8() for _ in 0..<INPUT_BYTES]
+            while true |data, buffer|:
+                count: i64 = linkmap_test_read(0, &buffer[0], INPUT_BYTES)
+                assert count >= 0
+                break if count == 0
+                for index in 0..<count.usize() |data, buffer|:
+                    data.push(buffer[index])
+            if data.count != 0:
+                rows: mutable darray[ElisaProfilerLinkMap::SymbolRow] = []
+                assert ElisaProfilerLinkMap::index_symbols(data, &rows)
+                assert rows.count != 0
+                for index in 0..<rows.count |rows|:
+                    found: mutable ElisaProfilerLinkMap::SymbolRow = zeroed
+                    assert ElisaProfilerLinkMap::lookup_symbol(rows, rows[index].address, &found)
+                    assert found.name_start == rows[index].name_start
+                    assert ElisaProfilerLinkMap::lookup_symbol(rows, rows[index].address + rows[index].size - 1, &found)
+                    assert found.name_start == rows[index].name_start
+
 def main() -> i64:
-    return LinkMapSmoke::run()
+    result: i64 = LinkMapSmoke::run()
+    LinkMapSmoke::check_stdin()
+    return result

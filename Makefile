@@ -72,7 +72,7 @@ linkmap-smoke:
 		ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
 		"$(NATIVE_STAGE1_BIN)" -emit exe -O$$opt -o "$(PROFILER_ROOT)/build/linkmap-smoke-O$$opt" \
 		"$(PROFILER_ROOT)/test/linkmap_smoke.elisa"; \
-		"$(PROFILER_ROOT)/build/linkmap-smoke-O$$opt"; \
+		"$(PROFILER_ROOT)/build/linkmap-smoke-O$$opt" </dev/null; \
 	done
 
 test: linkmap-smoke

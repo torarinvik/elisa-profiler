@@ -1,0 +1,69 @@
+# Strict ordered range index for ld maps. Caller must independently verify the
+# executable identity and restrict lookups to mapped executable sections.
+extend ElisaProfilerLinkMap:
+    private:
+        const LF: u8 = 10
+        const CR: u8 = 13
+        const COMMENT: u8 = 35
+        const SEARCH_DIVISOR: usize = 2
+
+        def line_is(data: darray[u8]&, start: usize, stop: usize, text: sview) -> bool can[Abort.Panic]:
+            return false if stop - start != text.len
+            for index in ZERO..<text.len |data, start, text|:
+                return false if data[start + index] != text[index]
+            return true
+
+    public:
+        # Reject unsorted/overlapping positive-sized rows instead of guessing
+        # which alias owns a PC. Zero-sized labels cannot establish an extent.
+        def index_symbols[@r](data: darray[u8]&, output: mutable darray[SymbolRow]& @r) -> bool can[Abort.Panic, Memory.Allocate]:
+            output <- []
+            rows: mutable darray[SymbolRow] @r = []
+            cursor: mutable usize = ZERO
+            active: mutable bool = false
+            seen: mutable bool = false
+            previous_end: mutable u64 = 0
+            while cursor < data.count |data, rows, cursor, active, seen, previous_end|:
+                start: usize = cursor
+                while cursor < data.count |data, cursor|:
+                    break if data[cursor] == LF
+                    cursor <- cursor + ONE
+                stop: mutable usize = cursor
+                cursor <- cursor + ONE if cursor < data.count
+                stop <- stop - ONE if stop > start and data[stop - ONE] == CR
+                if line_is(data, start, stop, "# Symbols:"):
+                    return false if seen
+                    seen <- true
+                    active <- true
+                elif line_is(data, start, stop, "# Dead Stripped Symbols:"):
+                    return false if not active
+                    active <- false
+                elif active and stop > start:
+                    if data[start] != COMMENT:
+                        row: mutable SymbolRow = zeroed
+                        return false if not parse_symbol_range(data, start, stop, &row)
+                        if row.size != 0:
+                            return false if rows.count != ZERO and row.address < previous_end
+                            previous_end <- row.address + row.size
+                            rows.push(row)
+            return false if not seen
+            output <- rows
+            return true
+
+        # Input must be the immutable ordered output of index_symbols.
+        # Half-open intervals: gaps and the final end address are unknown.
+        def lookup_symbol(rows: darray[SymbolRow]&, address: u64, output: mutable SymbolRow&) -> bool can[Abort.Panic]:
+            output <- zeroed
+            low: mutable usize = ZERO
+            high: mutable usize = rows.count
+            while low < high |rows, address, low, high|:
+                middle: usize = low + (high - low) / SEARCH_DIVISOR
+                if rows[middle].address <= address:
+                    low <- middle + ONE
+                else:
+                    high <- middle
+            return false if low == ZERO
+            row: SymbolRow = rows[low - ONE]
+            return false if address - row.address >= row.size
+            output <- row
+            return true
