@@ -2,6 +2,24 @@
 
 ## Same-source producer comparison
 
+Follow-up sampling after merging compiler main's test-only update (worktree
+`ed3b564c`) completed successfully: 59,021 instrumented CPU-stack samples,
+zero reported misses, 84.802 seconds wall and 78.869 seconds process CPU.
+The compiler was built at O3 using the pinned `codegen-stage0-current` Elisa
+compiler, then compiled its own source to an O0 object. That output matched
+the producer comparison's reference object byte for byte. The local capture is
+`build/producer-gap-current-sample.json` in the profiler repository.
+
+Leading leaf-frame counts were `emit_object` 7,020, `arena_realloc` 2,860,
+`arena_take_free_block` 2,751, `disjoint_scan_expr` 2,204, and
+`packed_dynamic_row_load_value` 1,688. `arena_profile_allocation_event` received
+904 samples even though allocation capture was disabled. These are last
+instrumented Elisa frames, not native instruction-pointer attribution;
+foreign LLVM work is charged to its Elisa caller and instrumentation adds cost.
+The single capture is hotspot evidence, not evidence of a throughput improvement.
+Next investigations are disabled-allocation hook overhead and generated-code
+differences; neither has yet been shown to explain the producer CPU gap.
+
 Both O3 compiler executables were built from clean `c0773f12` source. One used
 the pinned stage0 producer (`851a4ee8` checkout, binary SHA256 `0fc034c4…`);
 the other used the saved stage1 producer (`569758b2`, binary `542654e6…`).
