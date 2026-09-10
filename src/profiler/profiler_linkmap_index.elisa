@@ -14,6 +14,23 @@ extend ElisaProfilerLinkMap:
             return true
 
     public:
+        # The caller must obtain this range from the matching executable, not
+        # from the untrusted link map. Addresses are unslid image addresses.
+        # This containment gate does not establish executable/map identity.
+        def lookup_code_symbol(rows: darray[SymbolRow]&, address: u64, section_start: u64, section_size: u64, output: mutable SymbolRow&) -> bool can[Abort.Panic]:
+            output <- zeroed
+            return false if section_size > MAX_VALUE - section_start
+            return false if address < section_start
+            return false if address - section_start >= section_size
+            row: mutable SymbolRow = zeroed
+            return false if not lookup_symbol(rows, address, &row)
+            return false if row.address < section_start
+            offset: u64 = row.address - section_start
+            return false if offset >= section_size
+            return false if row.size > section_size - offset
+            output <- row
+            return true
+
         # Reject unsorted/overlapping positive-sized rows instead of guessing
         # which alias owns a PC. Zero-sized labels cannot establish an extent.
         def index_symbols[@r](data: darray[u8]&, output: mutable darray[SymbolRow]& @r) -> bool can[Abort.Panic, Memory.Allocate]:

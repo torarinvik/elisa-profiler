@@ -50,6 +50,13 @@ module LinkMapSmoke:
             assert ElisaProfilerLinkMap::lookup_symbol(rows, SECOND_ADDRESS, &row)
             assert not ElisaProfilerLinkMap::lookup_symbol(rows, SECOND_END, &row)
             assert row.name_size == 0
+            assert ElisaProfilerLinkMap::lookup_code_symbol(rows, FIRST_ADDRESS, FIRST_ADDRESS, FIRST_END - FIRST_ADDRESS, &row)
+            assert not ElisaProfilerLinkMap::lookup_code_symbol(rows, SECOND_ADDRESS, FIRST_ADDRESS, FIRST_END - FIRST_ADDRESS, &row)
+            assert not ElisaProfilerLinkMap::lookup_code_symbol(rows, FIRST_ADDRESS, FIRST_ADDRESS, FIRST_END - FIRST_ADDRESS - 1, &row)
+            assert not ElisaProfilerLinkMap::lookup_code_symbol(rows, FIRST_ADDRESS + 1, FIRST_ADDRESS + 1, FIRST_END - FIRST_ADDRESS, &row)
+            assert not ElisaProfilerLinkMap::lookup_code_symbol(rows, FIRST_ADDRESS, FIRST_ADDRESS, 0, &row)
+            assert not ElisaProfilerLinkMap::lookup_code_symbol(rows, MAX_ADDRESS, MAX_ADDRESS, 1, &row)
+            assert row.name_size == 0 and row.address == 0
 
         def run() -> i64 can[Abort.Panic, Memory.Allocate]:
             index_check("# Sections:\n0x0 ignored section row\n# Symbols:\r\n# Address Size File Name\n0x0 0x0 [0] label\n0x10 0x4 [1] foo\n0x20 0x1 [1] bar\n# Dead Stripped Symbols:\n<<dead>> junk", true)
