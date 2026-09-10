@@ -2,6 +2,33 @@
 
 ## Function-name index validation
 
+A fresh indexed-compiler profile completed with 51,744 samples, zero reported
+misses, and successful output. The pre-index control then compiled the same
+current source at O0 and produced a byte-identical object. The capture is
+profiler `build/function-name-index-sample.json`; the comparison objects are
+`build/function-name-index-target.o` and `build/function-name-index-control-target.o`.
+
+Compared with the earlier 59,021-sample capture, inclusive instrumented-frame
+counts changed as follows (overlapping frames must not be summed):
+
+| Frame | Earlier samples | Indexed samples |
+| --- | ---: | ---: |
+| `disjoint_scan_expr` | 3,403 | 0 |
+| `disjoint_collect_fresh` | 1,580 | 0 |
+| `lookup_return_type` | 876 | 30 |
+| `function_is_error` | 664 | 15 |
+| `function_index_of_arity` | 99 | 4 |
+| `function_index_of_line` | 84 | 2 |
+
+This supports removal of the targeted sampled work, not an isolated end-to-end
+speedup: the profiles differ in source revision and include both disjointness
+gating and indexing. The newer run took 72.890 seconds wall and 67.989 seconds
+process CPU. Leading leaf frames remain `emit_object` (4,776),
+`arena_take_free_block` (3,298), `arena_realloc` (2,461), `enum_variant_count`
+(1,853), `packed_dynamic_row_load_value` (1,360), and `mutable_ref_param_type`
+(1,280). Foreign work is charged to its last instrumented Elisa caller, not
+attributed through native instruction-pointer sampling.
+
 Compiler `f8b3a146` adds an order-preserving name index for the declaration
 prefix, retaining a linear fallback for later generic-instantiation rows.
 The initial consumers are function lookup by owner/name, arity, and source
