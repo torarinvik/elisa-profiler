@@ -1,5 +1,32 @@
 # Native benchmark manifests
 
+## Disjointness-analysis opt-in experiment
+
+The default compiler path computed whole-program disjointness facts even though
+their alias-scope metadata consumer requires `ELISACORE_NOALIAS_MUTABLE_REFS`.
+A candidate gates that analysis on the same condition. Four exploratory O0
+compiler-source compilations (control, candidate, candidate, control; no warmups)
+all produced byte-identical objects. Binary/runtime hashes and the source patch
+were unchanged throughout.
+
+| Run | Compiler | Wall seconds | User seconds | System seconds |
+| --- | --- | ---: | ---: | ---: |
+| 1 | Control | 74.69 | 67.48 | 1.13 |
+| 2 | Candidate | 40.68 | 39.34 | 0.44 |
+| 3 | Candidate | 37.12 | 35.30 | 0.50 |
+| 4 | Control | 46.37 | 44.45 | 0.59 |
+
+Mean process CPU was 56.825 versus 37.790 seconds (33.5% lower for the candidate).
+Both pairs favored the candidate, but two pairs without warmups and visibly
+variable control timings are insufficient to establish a stable speedup estimate.
+Raw artifacts are in compiler `build/disjoint-gate-throughput.UVhfo8/`.
+The Elisa white-box test `test/parity/disjoint_opt_in_smoke.elisa` checks empty
+analysis tables when disabled and preserved proven facts when enabled. Environment
+variable presence, including value `0`, retains its existing enabling semantics.
+Run it from this repository with `make disjoint-opt-in-smoke`, selecting the
+desired compiler using `NATIVE_STAGE1_BIN`. Broader bootstrap validation and a
+warmed repeated benchmark remain required before promoting this experiment.
+
 ## Same-source producer comparison
 
 The packed-store no-inline hypothesis was tested and rejected for this build.

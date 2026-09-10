@@ -45,6 +45,19 @@ compiler-runtime-freshness-smoke:
 
 test: compiler-runtime-freshness-smoke
 
+.PHONY: disjoint-opt-in-smoke
+disjoint-opt-in-smoke:
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@"$(NATIVE_STAGE1_BIN)" -emit obj -O0 -o "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke.o" \
+		"$(COMPILER_WORKTREE)/test/parity/disjoint_opt_in_smoke.elisa"
+	@set -eu; llvm_libdir="$$(llvm-config --libdir)"; \
+		"$${ELISA_CLANG:-clang}" -Wl,-dead_strip -o "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke" \
+		"$(PROFILER_ROOT)/build/disjoint-opt-in-smoke.o" "$(NATIVE_RUNTIME_OBJECT)" \
+		-L"$$llvm_libdir" -lLLVM -Wl,-rpath,"$$llvm_libdir"; \
+		env -u ELISACORE_NOALIAS_MUTABLE_REFS "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"; \
+		ELISACORE_NOALIAS_MUTABLE_REFS=1 "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"; \
+		ELISACORE_NOALIAS_MUTABLE_REFS=0 "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"
+
 .PHONY: allocation-lifetimes-smoke
 allocation-lifetimes-smoke: compiler-manifest-smoke
 	@mkdir -p "$(PROFILER_ROOT)/build"
