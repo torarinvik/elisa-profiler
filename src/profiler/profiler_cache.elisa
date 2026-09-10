@@ -397,6 +397,7 @@ extend ProfilerNative:
 
 
         def build_instrumented_executable(
+            link_arguments: darray[darray[u8]]&,
             cache: mutable NativeBuildCache&, cache_requested: bool, cache_directory: darray[u8]&, source: darray[u8]&, source_map_path: darray[u8]&, dependency_digest: darray[u8]&, compiler_root: darray[u8]&, compiler_branch: darray[u8]&, compiler_commit: darray[u8]&, compiler_dirty: bool, compiler_dirty_metadata: darray[u8]&, compiler_stage1: darray[u8]&, compiler_binary: darray[u8]&, compiler_tool: darray[u8]&, objcopy_tool: darray[u8]&, collector_source: darray[u8]&, runtime_object: darray[u8]&, target_object: darray[u8]&, renamed_object: darray[u8]&, runtime_collector_object: darray[u8]&, collector_object: darray[u8]&, executable: darray[u8]&, compile_output_path: darray[u8]&, compile_error_path: darray[u8]&, link_error_path: darray[u8]&, opt_level: i64, host: NativeHostMetadata, functions_only: bool = false
         ) -> bool can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             prepare_native_build_cache(cache, cache_requested, cache_directory, source, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, compiler_dirty_metadata, compiler_stage1, compiler_binary, runtime_object, collector_source, compiler_tool, objcopy_tool, opt_level, host, functions_only)
@@ -495,5 +496,7 @@ extend ProfilerNative:
             cache_append_path_argument(command_arguments, renamed_object)
             cache_append_path_argument(command_arguments, runtime_collector_object)
             cache_append_path_argument(command_arguments, collector_object)
+            for argument_index in NATIVE_ZERO.usize()..<link_arguments.count |command_arguments, link_arguments|:
+                cache_append_path_argument(command_arguments, link_arguments[argument_index])
             return false if run_tool_direct(compiler_tool, command_arguments, compile_output_path, link_error_path) != NATIVE_ZERO
             return true

@@ -1,0 +1,6 @@
+# A real external-library dependency, absent from the profiler's default link.
+extern LLVMGetGlobalContext() -> void&
+
+def main() -> i64:
+    _ = LLVMGetGlobalContext()
+    return 0

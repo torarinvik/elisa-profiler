@@ -1,5 +1,13 @@
 # Native benchmark manifests
 
+For source-built `profile`/`record` targets with external libraries, repeat
+`--link-arg ARG` to supply individual Clang arguments, for example
+`--link-arg -L/path/to/lib --link-arg -lLLVM --link-arg -Wl,-rpath,/path/to/lib`.
+Arguments retain their order and are passed directly without shell expansion.
+These options are incompatible with `--prebuilt` and `--cache-dir`: external
+library contents are not yet fingerprinted, so such builds cannot reuse the
+build cache. This option is not yet part of benchmark manifests.
+
 Optimization priority: maximize throughput, not minimize memory. Report peak
 memory as a tradeoff and check for pressure or instability, but higher RSS alone
 does not disqualify a measured throughput improvement. Instruction counts are

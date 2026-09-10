@@ -2059,6 +2059,7 @@ extend ProfilerNative:
             stdin_path: mutable darray[u8] = []
             environment: mutable darray[u8] = []
             target_arguments: mutable darray[darray[u8]] = []
+            link_arguments: mutable darray[darray[u8]] = []
             random_seed: mutable darray[u8] = []
             random_seed_source: mutable darray[u8] = []
             if copy_environment("ELISA_RANDOM_SEED", random_seed):
@@ -2072,7 +2073,7 @@ extend ProfilerNative:
             prebuilt_requested: mutable bool = false
             source_seen: mutable bool = false
             index: mutable i64 = NATIVE_FIRST_OPTION_INDEX
-            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, artifact_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, random_seed, random_seed_source, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
+            while index < argc |index, slots, source, output, progress_path, path_maps, artifact_output, embed_source, opt_level, event_trace, recent_path, format_text, format_folded, format_html, format_speedscope, mode, mode_seen, diagnostic_mode, requested_repetitions, warmup_repetitions, trace_limit, sample_period_microseconds, capture_byte_limit, artifact_byte_limit, timeout_ns, working_directory, stdin_path, environment, target_arguments, link_arguments, random_seed, random_seed_source, cache_directory, cache_requested, cache_disabled, prebuilt_executable, prebuilt_requested, source_seen|:
                 argument: cstr = slots[index].cast[cstr]
                 if profiler_ffi_strcmp(argument, "--") == NATIVE_ZERO:
                     index <- index + NATIVE_ONE
@@ -2159,6 +2160,14 @@ extend ProfilerNative:
                     return report_error("--cache-dir may be specified only once") if cache_requested
                     copy_cstr(cache_directory, slots[index + NATIVE_ONE].cast[cstr])
                     cache_requested <- true
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--link-arg") == NATIVE_ZERO:
+                    return report_error("--link-arg requires one nonempty argument") if index + NATIVE_ONE >= argc
+                    link_argument: mutable darray[u8] = []
+                    copy_cstr(link_argument, slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("--link-arg requires one nonempty argument") if link_argument.count == NATIVE_ZERO.usize()
+                    link_arguments.push(link_argument)
                     index <- index + NATIVE_TWO
                     continue
                 if profiler_ffi_strcmp(argument, "--no-cache") == NATIVE_ZERO:
@@ -2322,6 +2331,9 @@ extend ProfilerNative:
             if protocol_field_is(random_seed_source, "cli"):
                 append_random_seed_environment(environment, random_seed)
             return report_error("profile requires a source path") if not source_seen
+            if link_arguments.count > NATIVE_ZERO.usize():
+                return report_error("--link-arg cannot be combined with --cache-dir: external libraries are not fingerprinted") if cache_requested
+                return report_error("--link-arg cannot be combined with --prebuilt") if prebuilt_requested
             if diagnostic_mode:
                 event_trace <- true
                 recent_path <- false
@@ -2426,7 +2438,7 @@ extend ProfilerNative:
                 if build_ok:
                     executable <- prebuilt_executable
             else:
-                build_ok <- build_instrumented_executable(&build_cache, cache_requested and not cache_disabled, cache_directory, source, source_map_path, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host, (protocol_field_is(mode, "functions") or protocol_field_is(mode, "sample")))
+                build_ok <- build_instrumented_executable(link_arguments, &build_cache, cache_requested and not cache_disabled, cache_directory, source, source_map_path, dependency_digest, compiler_root, compiler_branch, compiler_commit, compiler_dirty, dirty_metadata, compiler_stage1, compiler_binary, compiler_tool, objcopy_tool, collector_source, runtime_object, target_object, renamed_object, runtime_collector_object, collector_object, executable, compile_output_path, compile_error_path, link_error_path, opt_level, host, (protocol_field_is(mode, "functions") or protocol_field_is(mode, "sample")))
             if not build_ok:
                 build_diagnostics: mutable darray[u8] = read_file(compile_error_path)
                 write_stderr(build_diagnostics)

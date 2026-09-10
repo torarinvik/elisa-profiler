@@ -66,6 +66,17 @@ region-cache-oversize-smoke:
 test: region-cache-oversize-smoke
 
 .PHONY: linkmap-smoke
+.PHONY: external-link-smoke
+LLVM_CONFIG ?= /opt/homebrew/opt/llvm/bin/llvm-config
+external-link-smoke: profiler-native
+	@set -eu; \
+		llvm_libdir="$$("$(LLVM_CONFIG)" --libdir)"; \
+		"$(NATIVE_PROFILER_BIN)" profile test/external_link_workload.elisa --mode functions \
+			--link-arg "-L$$llvm_libdir" --link-arg -lLLVM --link-arg "-Wl,-rpath,$$llvm_libdir" \
+			--format json --output build/external-link-smoke.json; \
+		if "$(NATIVE_PROFILER_BIN)" profile test/external_link_workload.elisa --link-arg -lLLVM --cache-dir build/link-cache-rejected; then exit 1; fi; \
+		if "$(NATIVE_PROFILER_BIN)" profile test/external_link_workload.elisa --link-arg; then exit 1; fi
+
 linkmap-smoke:
 	@mkdir -p "$(PROFILER_ROOT)/build"
 	@set -e; for opt in 0 3; do \
