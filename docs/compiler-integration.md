@@ -7,6 +7,15 @@ experiments can repair compiler defects without modifying their owners.
 
 ## Main integration — 2026-09-09
 
+A two-second diagnostic sample during the refreshed-stage0 O3 reseed caught
+active LLVM optimization (inlining, constraint analysis, GVN and CFG work).
+Local evidence: `build/refreshed-stage0-build-sample.txt`. This is a partial
+stage0-build window, not a profile of stage1 execution or an end-to-end timing.
+The collapsed report includes sleeping Go threads, so its all-thread wait
+counts must not be presented as CPU percentages. LLVM pass-cost measurements
+would be needed before changing optimization policy; do not remove bounds
+checks to recover throughput.
+
 Integrated validation follow-up: the O3 compiler and stage1-built runtime
 completed their rebuild. Native profiler regression, Mach-O/link-map checks,
 and the committed-branch audit passed. Runtime freshness fixture `569758b2`
