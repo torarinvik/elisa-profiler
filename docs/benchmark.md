@@ -1,5 +1,23 @@
 # Native benchmark manifests
 
+## Integrated compiler capture — 2026-09-10
+
+The Elisa-native profiler successfully source-built and sampled compiler
+`569758b2` with explicit LLVM link arguments. The O0 instrumented compiler
+compiled its own source to an O0 object, exiting zero in 216.272 seconds wall
+(124.985 seconds process CPU). The completed capture contains 92,883 samples,
+zero reported missed signals and zero overflowing sampled stacks. This is
+capture validation, not an optimized throughput baseline or speedup claim.
+Evidence: `build/integrated-compiler-linked-sample.json`.
+
+Leading sampled leaf labels included `emit_object` (7,596),
+`arena_take_free_block` (4,374), `enum_variant_count` (3,250),
+`disjoint_scan_expr` (2,760), and `arena_realloc` (2,661). These are last
+instrumented Elisa frames, not native instruction-pointer self times: foreign
+LLVM/runtime work may be charged to its Elisa caller. Names use capture-local
+source-name fallback rather than stable compiler identities. An O3 instrumented
+capture is required before selecting a throughput optimization from this list.
+
 For source-built `profile`/`record` targets with external libraries, repeat
 `--link-arg ARG` to supply individual Clang arguments, for example
 `--link-arg -L/path/to/lib --link-arg -lLLVM --link-arg -Wl,-rpath,/path/to/lib`.
