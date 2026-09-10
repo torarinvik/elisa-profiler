@@ -8,6 +8,7 @@ extend ProfilerNative:
         const MACHO_SECTION_FLAGS_OFFSET: usize = 64
         const MACHO_SECTION_TYPE_MASK: u32 = 255
         const MACHO_PURE_INSTRUCTIONS: u32 = 0x80000000
+        const MACHO_SECTION_HIGH_VM_FLAG: u32 = 1
 
         struct MachOCodeSection:
             address: mutable u64
@@ -20,6 +21,7 @@ extend ProfilerNative:
             output <- zeroed
             segment: mutable MachOSegment = zeroed
             return false if not macho_segment(data, command, &segment)
+            return false if (macho_word(data, command + MACHO_SEGMENT_FLAGS_OFFSET) & MACHO_SECTION_HIGH_VM_FLAG) != NATIVE_ZERO.u32()
             return false if (segment.protection & MACHO_EXECUTE_PROTECTION) == NATIVE_ZERO.u32()
             count: usize = macho_word(data, command + MACHO_SEGMENT_SECTIONS_OFFSET).usize()
             return false if ordinal >= count

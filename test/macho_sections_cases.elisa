@@ -25,4 +25,27 @@ extend ProfilerNative:
             macho_test_word(&data, entry + MACHO_SECTION_FLAGS_OFFSET, NATIVE_ZERO.u32())
             assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
             assert section.address == NATIVE_ZERO.u64()
+            macho_test_word(&data, entry + MACHO_SECTION_FLAGS_OFFSET, MACHO_PURE_INSTRUCTIONS)
+            macho_test_word(&data, command + MACHO_SEGMENT_FLAGS_OFFSET, MACHO_SECTION_HIGH_VM_FLAG)
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            macho_test_word(&data, command + MACHO_SEGMENT_FLAGS_OFFSET, NATIVE_ZERO.u32())
+            macho_test_word(&data, command + MACHO_SEGMENT_PROTECTION_OFFSET, NATIVE_ZERO.u32())
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            macho_test_word(&data, command + MACHO_SEGMENT_PROTECTION_OFFSET, MACHO_EXECUTE_PROTECTION)
+            macho_test_word(&data, entry + MACHO_SECTION_FLAGS_OFFSET, MACHO_PURE_INSTRUCTIONS | NATIVE_ONE.u32())
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            macho_test_word(&data, entry + MACHO_SECTION_FLAGS_OFFSET, MACHO_PURE_INSTRUCTIONS)
+            macho_test_word(&data, entry + MACHO_SECTION_SIZE_OFFSET, NATIVE_ZERO.u32())
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            macho_test_word(&data, entry + MACHO_SECTION_SIZE_OFFSET, NATIVE_ONE.u32())
+            macho_test_word(&data, entry + MACHO_SECTION_FILE_OFFSET, extent.u32() + NATIVE_ONE.u32())
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            macho_test_word(&data, entry + MACHO_SECTION_FILE_OFFSET, extent.u32())
+            original_count: usize = data.count
+            for length in NATIVE_ZERO.usize()..<original_count |data, command, section|:
+                data.count <- length
+                assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+                assert section.address == NATIVE_ZERO.u64() and section.size == NATIVE_ZERO.u64()
+            data.count <- original_count
+            assert macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
             return NATIVE_ZERO
