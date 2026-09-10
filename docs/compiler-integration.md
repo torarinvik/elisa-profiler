@@ -7,6 +7,18 @@ experiments can repair compiler defects without modifying their owners.
 
 ## Main integration — 2026-09-09
 
+Refresh on 2026-09-10: the dedicated compiler advanced from `b34733a1` to
+`a74427ff` (AST-summary parity and three runtime-hook harness updates). Its
+local O3 seed rebuild completed, and the content/artifact/toolchain/ABI/flag
+manifest checks passed. Link-map tests passed at O0/O3; Mach-O synthetic and
+self-image decoding passed at O1. This does not establish bootstrap closure
+or a throughput improvement for this revision.
+
+The all-branch integration audit is not green: `codex/wasm-sdk` advanced to
+`88eba025`, outside this main snapshot. Those new backend/runtime/toolchain
+changes require separate review and validation; the rebuilt compiler must
+not be described as containing every branch's latest gains.
+
 At the user's request, the owner checkout's `main` branch was fast-forwarded
 from `7890e0f3` to `df6cf817`, incorporating the dedicated profiler compiler's
 240 commits outside the previous main history. All seven remaining local
