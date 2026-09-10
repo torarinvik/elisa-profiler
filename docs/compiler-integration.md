@@ -7,6 +7,18 @@ experiments can repair compiler defects without modifying their owners.
 
 ## Main integration — 2026-09-09
 
+The `a74427ff` bootstrap subsequently passed all stages: A5/5, generation-3
+object size 19,728,200 bytes, byte-identical generation-3/4 objects, and 40/40
+deterministic repeat emissions. Evidence: local
+`build/compiler-refresh-a74427ff-selfhost.log`.
+
+Dedicated branch merge `872b0f0b` then integrated the four `codex/wasm-sdk`
+commits through `88eba025`. The sole conflict, in `build_emit_native.sh`, uses
+the shared fallback generator and preserves explicit generation/link failures
+and temporary-file cleanup. Shell syntax and staged whitespace checks pass.
+The integrated O3 rebuild has started; bootstrap results above apply only to
+the pre-merge revision, not this new runtime/bounds-check implementation.
+
 Refresh on 2026-09-10: the dedicated compiler advanced from `b34733a1` to
 `a74427ff` (AST-summary parity and three runtime-hook harness updates). Its
 local O3 seed rebuild completed, and the content/artifact/toolchain/ABI/flag
