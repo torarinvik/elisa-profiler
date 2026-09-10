@@ -465,19 +465,6 @@ extend ProfilerNative:
             append_text(destination, fallback)
 
 
-        def read_manifest_digest(manifest_path: darray[u8]&, object_name: sview) -> darray[u8] can[Abort.Panic, Memory.Allocate]:
-            manifest: darray[u8] = read_file(manifest_path)
-            return [] if manifest.count == NATIVE_ZERO.usize()
-            object_start: i64 = json_key_value_start(manifest, object_name, NATIVE_ZERO.usize(), manifest.count)
-            return [] if object_start < NATIVE_ZERO
-            object_stop: i64 = json_object_end(manifest, object_start.usize(), manifest.count)
-            return [] if object_stop < NATIVE_ZERO
-            result: mutable darray[u8] = []
-            return [] if not json_read_string_field(manifest, "sha256", object_start.usize(), object_stop.usize(), &result)
-            return [] if result.count != NATIVE_SHA256_HEX_LENGTH
-            return result
-
-
         def trim_line_endings(value: mutable darray[u8]&) -> void:
             while value.count > NATIVE_ZERO.usize() |value|:
                 last: u8 = value[value.count - NATIVE_ONE.usize()]
@@ -2353,8 +2340,10 @@ extend ProfilerNative:
             runtime_object: mutable darray[u8] = []
             environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
             compiler_manifest: mutable darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
-            stage1_digest: mutable darray[u8] = read_manifest_digest(compiler_manifest, "stage1")
-            runtime_digest: mutable darray[u8] = read_manifest_digest(compiler_manifest, "runtime")
+            # Hash the selected artifacts, not a manifest that may describe a
+            # different binary, runtime, or an older build at the same path.
+            stage1_digest: mutable darray[u8] = cache_file_digest(compiler_stage1)
+            runtime_digest: mutable darray[u8] = cache_file_digest(runtime_object)
             compiler_tool: mutable darray[u8] = []
             environment_or("ELISA_CLANG", "clang", compiler_tool)
             objcopy_tool: mutable darray[u8] = []

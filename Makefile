@@ -159,6 +159,13 @@ profiler-native:
 	@echo "native profiler: $(NATIVE_PROFILER_BIN)"
 
 .PHONY: profiler-provenance-smoke
+.PHONY: profile-compiler-digest-smoke
+profile-compiler-digest-smoke: profiler-native
+	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_PROFILER_BIN)" profile examples/hot_loop.elisa --mode functions --format json --output build/compiler-digest-smoke.json
+	@test "$$(jq -r '.compiler.stage1_sha256' build/compiler-digest-smoke.json)" = "$$(shasum -a 256 "$(NATIVE_STAGE1_BIN)" | awk '{print $$1}')"
+	@test "$$(jq -r '.compiler.runtime_object_sha256' build/compiler-digest-smoke.json)" = "$$(shasum -a 256 "$(NATIVE_RUNTIME_OBJECT)" | awk '{print $$1}')"
+
 profiler-provenance-smoke:
 	@set -eu; manifest_copy="$$(mktemp)"; trap 'rm -f "$$manifest_copy"' EXIT; \
 		cp "$(COMPILER_BUILD_MANIFEST)" "$$manifest_copy"; \

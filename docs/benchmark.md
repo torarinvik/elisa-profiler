@@ -6,6 +6,10 @@ Compiler provenance is written by `make compiler-seed`, not by a profiler
 rebuild. `make profiler-provenance-smoke` verifies that rebuilding the profiler
 leaves the existing compiler manifest byte-identical. A newer ambient stage0
 binary must not retroactively become the recorded producer of an older compiler.
+Capture reports hash the selected compiler executable and runtime object directly;
+they do not copy hashes from a potentially stale manifest. Verify this with
+`make profile-compiler-digest-smoke`. The manifest path remains a reference to
+the separately recorded build provenance, not proof that it describes these files.
 
 ## Duplicate parameter classification experiment — not promoted
 
