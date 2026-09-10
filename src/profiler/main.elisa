@@ -1449,6 +1449,8 @@ extend ProfilerNative:
             append_millis(buffer, execution_ci95_high_ns)
             append_text(buffer, ",\"execution_ci95_available\":")
             append_text(buffer, "true" if execution_ci95_available else "false")
+            append_text(buffer, ",\"execution_ci95_method\":")
+            append_text(buffer, "\"student_t_conservative_v1\"" if execution_ci95_available else "null")
             append_text(buffer, ",\"cpu_user_ms\":")
             if resource_metrics_available:
                 append_millis(buffer, cpu_user_ns)

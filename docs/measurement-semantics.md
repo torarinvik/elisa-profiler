@@ -270,9 +270,11 @@ must apply the same arbitrary-precision policy or they may round values above
   `execution_ms_ci95_low`/`execution_ms_ci95_high` fields summarize the
   selected measured repetitions. The standard deviation is the sample standard
   deviation in microsecond precision (`n - 1` denominator). When at least two
-  repetitions are available, the interval is a two-sided normal approximation
-  using `1.96 * s / sqrt(n)`; fixed-point native arithmetic rounds its bounds
-  conservatively outward. With fewer than two observations,
+  repetitions are available, the interval uses a conservative two-sided
+  Student-t critical value with `n - 1` degrees of freedom; fixed-point native
+  arithmetic rounds its half-width outward. The report records
+  `execution_ci95_method: "student_t_conservative_v1"`; an absent method in an
+  older capture must not be assumed to use this calculation. With fewer than two observations,
   `execution_ci95_available` is `false` and the equal bounds are descriptive,
   not an uncertainty interval. This is repetition-level benchmark evidence,
   never a claim that individual trace events are independent samples.
@@ -516,10 +518,12 @@ No individual trace event is treated as an independent statistical sample.
 The median is the middle value (the arithmetic mean of the two middle values
 for an even count), and standard deviation is the sample standard deviation of
 the selected repetition durations after conversion to microsecond precision.
-For at least two observations, the report also emits a two-sided normal
-approximation using `1.96 * s / sqrt(n)`. With fewer than two observations,
+For at least two observations, the report also emits a Student-t-based
+approximation using `t * s / sqrt(n)`, with conservative critical values and
+outward-rounded half-width (see [benchmark uncertainty](benchmark.md#repetition-uncertainty)).
+With fewer than two observations,
 `execution_ci95_available` is false and equal descriptive bounds are emitted;
-they must not be presented as uncertainty.
+they must not be presented as uncertainty, and `execution_ci95_method` is null.
 
 ## Loss and unsupported values
 

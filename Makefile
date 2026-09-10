@@ -97,6 +97,23 @@ linkmap-smoke:
 test: linkmap-smoke
 
 .PHONY: hash-smoke
+.PHONY: confidence-smoke
+confidence-smoke:
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@set -eu; for opt in 0 3; do \
+		ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_STAGE1_BIN)" -emit exe -O$$opt -o "$(PROFILER_ROOT)/build/confidence-smoke-O$$opt" "$(PROFILER_ROOT)/test/confidence_smoke.elisa"; \
+		"$(PROFILER_ROOT)/build/confidence-smoke-O$$opt"; \
+	done
+
+test: confidence-smoke
+
+.PHONY: confidence-report-smoke
+confidence-report-smoke: profiler-native
+	@ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_PROFILER_BIN)" profile examples/hot_loop.elisa --mode functions --repeat 3 --format json --output build/confidence-report-smoke.json
+	@jq -e '.run.execution_ci95_available == true and .run.execution_ci95_method == "student_t_conservative_v1"' build/confidence-report-smoke.json >/dev/null
+
 hash-smoke: compiler-manifest-smoke
 	@mkdir -p "$(PROFILER_ROOT)/build"
 	@ELISA_STAGE1_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \

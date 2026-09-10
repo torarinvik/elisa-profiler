@@ -346,6 +346,7 @@
         "execution_ms_ci95_low": { "type": "number", "minimum": 0 },
         "execution_ms_ci95_high": { "type": "number", "minimum": 0 },
         "execution_ci95_available": { "type": "boolean" },
+        "execution_ci95_method": { "enum": ["student_t_conservative_v1", null] },
         "cpu_user_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_system_ms": { "type": ["number", "null"], "minimum": 0 },
         "cpu_ms": { "type": ["number", "null"], "minimum": 0 },

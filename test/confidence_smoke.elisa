@@ -1,0 +1,41 @@
+include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
+include "../src/profiler/profiler_model.elisa"
+
+extend ProfilerNative:
+    private:
+        const CONFIDENCE_TEST_STDEV_NS: i64 = 1000000
+        const CONFIDENCE_TEST_TWO_WIDTH: i64 = 8986563
+        const CONFIDENCE_TEST_THREE_WIDTH: i64 = 2484989
+        const CONFIDENCE_TEST_SIX_WIDTH: i64 = 1050225
+        const CONFIDENCE_TEST_COUNT_LIMIT: i64 = 128
+        # Exact wide-integer oracle: ceil(I64_MAX * 2001 / floor(sqrt(61e6))).
+        const CONFIDENCE_TEST_LARGE_FINITE_WIDTH: i64 = 2363120031465609013
+
+    public:
+        def confidence_smoke() -> void can[Abort.Panic]:
+            assert native_confidence_half_width(CONFIDENCE_TEST_STDEV_NS, 0) == 0
+            assert native_confidence_half_width(CONFIDENCE_TEST_STDEV_NS, 1) == 0
+            assert native_confidence_half_width(0, 2) == 0
+            assert native_confidence_half_width(-1, 2) == 0
+            assert native_confidence_half_width(CONFIDENCE_TEST_STDEV_NS, 2) == CONFIDENCE_TEST_TWO_WIDTH
+            assert native_confidence_half_width(CONFIDENCE_TEST_STDEV_NS, 3) == CONFIDENCE_TEST_THREE_WIDTH
+            assert native_confidence_half_width(CONFIDENCE_TEST_STDEV_NS, 6) == CONFIDENCE_TEST_SIX_WIDTH
+            # df = sample count - 1, including both conservative table boundaries.
+            assert native_confidence_critical_scaled(30) == NATIVE_CONFIDENCE_T95_DF29
+            assert native_confidence_critical_scaled(31) == NATIVE_CONFIDENCE_T95_DF30
+            assert native_confidence_critical_scaled(60) == NATIVE_CONFIDENCE_T95_DF30
+            assert native_confidence_critical_scaled(61) == NATIVE_CONFIDENCE_T95_DF60
+            assert native_confidence_critical_scaled(NATIVE_I64_MAX) == NATIVE_CONFIDENCE_T95_DF60
+            # Saturating an intermediate numerator used to SHRINK this interval.
+            assert native_confidence_half_width(NATIVE_I64_MAX, 2) == NATIVE_I64_MAX
+            assert native_confidence_half_width(NATIVE_I64_MAX, 61) == CONFIDENCE_TEST_LARGE_FINITE_WIDTH
+            assert native_confidence_half_width(1, 2) == 9
+            previous: mutable i64 = NATIVE_I64_MAX
+            for count in 2..<CONFIDENCE_TEST_COUNT_LIMIT |previous|:
+                width: i64 = native_confidence_half_width(CONFIDENCE_TEST_STDEV_NS, count)
+                assert width > 0 and width <= previous
+                previous <- width
+
+def main() -> i32 can[Abort.Panic]:
+    ProfilerNative::confidence_smoke()
+    return 0

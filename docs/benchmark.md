@@ -1,5 +1,29 @@
 # Native benchmark manifests
 
+## Per-pass enum index experiment — inconclusive
+
+On merged compiler revision `c0773f12`, matched O3 control and candidate
+executables were built by the same saved stage1 compiler. After one warmup per
+side, twelve self-source O0 compilations ran in control/candidate/candidate/control
+order repeated three times. Every output was byte-identical; compiler/runtime
+hashes and the working-source patch remained unchanged. All observations were
+retained.
+
+Control/candidate means were 119.952/122.272 seconds wall and 84.125/81.353
+seconds process CPU. Although mean CPU time fell 3.3%, six adjacent paired
+control-minus-candidate differences give approximate Student-t 95% intervals
+of [-25.866, 21.226] seconds wall and [-3.021, 8.564] seconds CPU. Neither
+establishes a gain; the production wiring is not promoted. The standalone
+index prototype and differential tests remain available for future work.
+
+Evidence: compiler worktree `build/enum-index-throughput.BEEOSM/analysis.json`,
+raw timing files, artifact hashes, and source patch. The pre-main-merge candidate
+passed full self-host closure; the merged candidate passed the index and typed-
+`with` checks. These correctness checks do not turn inconclusive timing into a
+speedup. A separate same-source stage0-built versus stage1-built comparison is
+the next investigation; earlier timings across different source revisions do
+not establish a code-generation regression.
+
 ## Build provenance
 
 Compiler provenance is written by `make compiler-seed`, not by a profiler
@@ -10,6 +34,18 @@ Capture reports hash the selected compiler executable and runtime object directl
 they do not copy hashes from a potentially stale manifest. Verify this with
 `make profile-compiler-digest-smoke`. The manifest path remains a reference to
 the separately recorded build provenance, not proof that it describes these files.
+
+## Repetition uncertainty
+
+Native capture intervals use two-sided Student-t critical values with `n - 1`
+degrees of freedom, not the large-sample normal value for every repetition count.
+Values through 30 degrees of freedom come from the
+[NIST Student-t table](https://www.itl.nist.gov/div898/handbook/eda/section3/eda3672.htm),
+rounded outward at the profiler's fixed-point precision. Larger samples use
+conservative df30/df60 bounds. Fewer than two observations still have no interval.
+These are approximate intervals for the selected repetition set, not a remedy
+for host interference, correlated observations, or changing workloads. Independent
+capture intervals are not a paired-difference significance test.
 
 ## Duplicate parameter classification experiment — not promoted
 

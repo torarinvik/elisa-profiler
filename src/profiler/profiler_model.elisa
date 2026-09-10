@@ -63,11 +63,45 @@ module ProfilerNative:
         const NATIVE_NANOS_PER_MILLISECOND: i64 = 1000000
         const NATIVE_NANOS_PER_MICROSECOND: i64 = 1000
         const NATIVE_MICROSECONDS_PER_SECOND: i64 = 1000000
-        # Approximate 95% confidence intervals use a two-sided normal critical
-        # value of 1.96. Fixed-point arithmetic keeps the native report free of
-        # floating-point rounding differences while preserving sub-second data.
+        # Two-sided Student-t 95% critical values, scaled by 1000. NIST's
+        # 0.975 column is rounded to three decimals; add one scaled unit so
+        # rounding never narrows the interval. Above df30 use the next lower
+        # tabulated df (30 or 60), conservatively retaining df60 above that.
+        # https://www.itl.nist.gov/div898/handbook/eda/section3/eda3672.htm
         const NATIVE_CONFIDENCE_SCALE: i64 = 1000
-        const NATIVE_CONFIDENCE_Z95_SCALE: i64 = 1960
+        const NATIVE_CONFIDENCE_SMALL_DF_MAX: i64 = 30
+        const NATIVE_CONFIDENCE_LARGE_DF: i64 = 60
+        const NATIVE_CONFIDENCE_T95_DF60: i64 = 2001
+        const NATIVE_CONFIDENCE_T95_DF1: i64 = 12707
+        const NATIVE_CONFIDENCE_T95_DF2: i64 = 4304
+        const NATIVE_CONFIDENCE_T95_DF3: i64 = 3183
+        const NATIVE_CONFIDENCE_T95_DF4: i64 = 2777
+        const NATIVE_CONFIDENCE_T95_DF5: i64 = 2572
+        const NATIVE_CONFIDENCE_T95_DF6: i64 = 2448
+        const NATIVE_CONFIDENCE_T95_DF7: i64 = 2366
+        const NATIVE_CONFIDENCE_T95_DF8: i64 = 2307
+        const NATIVE_CONFIDENCE_T95_DF9: i64 = 2263
+        const NATIVE_CONFIDENCE_T95_DF10: i64 = 2229
+        const NATIVE_CONFIDENCE_T95_DF11: i64 = 2202
+        const NATIVE_CONFIDENCE_T95_DF12: i64 = 2180
+        const NATIVE_CONFIDENCE_T95_DF13: i64 = 2161
+        const NATIVE_CONFIDENCE_T95_DF14: i64 = 2146
+        const NATIVE_CONFIDENCE_T95_DF15: i64 = 2132
+        const NATIVE_CONFIDENCE_T95_DF16: i64 = 2121
+        const NATIVE_CONFIDENCE_T95_DF17: i64 = 2111
+        const NATIVE_CONFIDENCE_T95_DF18: i64 = 2102
+        const NATIVE_CONFIDENCE_T95_DF19: i64 = 2094
+        const NATIVE_CONFIDENCE_T95_DF20: i64 = 2087
+        const NATIVE_CONFIDENCE_T95_DF21: i64 = 2081
+        const NATIVE_CONFIDENCE_T95_DF22: i64 = 2075
+        const NATIVE_CONFIDENCE_T95_DF23: i64 = 2070
+        const NATIVE_CONFIDENCE_T95_DF24: i64 = 2065
+        const NATIVE_CONFIDENCE_T95_DF25: i64 = 2061
+        const NATIVE_CONFIDENCE_T95_DF26: i64 = 2057
+        const NATIVE_CONFIDENCE_T95_DF27: i64 = 2053
+        const NATIVE_CONFIDENCE_T95_DF28: i64 = 2049
+        const NATIVE_CONFIDENCE_T95_DF29: i64 = 2046
+        const NATIVE_CONFIDENCE_T95_DF30: i64 = 2043
         const NATIVE_MIN_CONFIDENCE_SAMPLES: i64 = 2
         const NATIVE_TIMEOUT_FRACTION_DIGITS: i64 = 9
         const NATIVE_TIMEOUT_FRACTION_FIRST_DIVISOR: i64 = 100000000
@@ -324,6 +358,44 @@ module ProfilerNative:
             return guess
 
 
+        def native_confidence_critical_scaled(sample_count: i64) -> i64:
+            return NATIVE_ZERO if sample_count < NATIVE_MIN_CONFIDENCE_SAMPLES
+            degrees: i64 = sample_count - NATIVE_ONE
+            return NATIVE_CONFIDENCE_T95_DF60 if degrees >= NATIVE_CONFIDENCE_LARGE_DF
+            return NATIVE_CONFIDENCE_T95_DF30 if degrees >= NATIVE_CONFIDENCE_SMALL_DF_MAX
+            return match degrees:
+                1: NATIVE_CONFIDENCE_T95_DF1
+                2: NATIVE_CONFIDENCE_T95_DF2
+                3: NATIVE_CONFIDENCE_T95_DF3
+                4: NATIVE_CONFIDENCE_T95_DF4
+                5: NATIVE_CONFIDENCE_T95_DF5
+                6: NATIVE_CONFIDENCE_T95_DF6
+                7: NATIVE_CONFIDENCE_T95_DF7
+                8: NATIVE_CONFIDENCE_T95_DF8
+                9: NATIVE_CONFIDENCE_T95_DF9
+                10: NATIVE_CONFIDENCE_T95_DF10
+                11: NATIVE_CONFIDENCE_T95_DF11
+                12: NATIVE_CONFIDENCE_T95_DF12
+                13: NATIVE_CONFIDENCE_T95_DF13
+                14: NATIVE_CONFIDENCE_T95_DF14
+                15: NATIVE_CONFIDENCE_T95_DF15
+                16: NATIVE_CONFIDENCE_T95_DF16
+                17: NATIVE_CONFIDENCE_T95_DF17
+                18: NATIVE_CONFIDENCE_T95_DF18
+                19: NATIVE_CONFIDENCE_T95_DF19
+                20: NATIVE_CONFIDENCE_T95_DF20
+                21: NATIVE_CONFIDENCE_T95_DF21
+                22: NATIVE_CONFIDENCE_T95_DF22
+                23: NATIVE_CONFIDENCE_T95_DF23
+                24: NATIVE_CONFIDENCE_T95_DF24
+                25: NATIVE_CONFIDENCE_T95_DF25
+                26: NATIVE_CONFIDENCE_T95_DF26
+                27: NATIVE_CONFIDENCE_T95_DF27
+                28: NATIVE_CONFIDENCE_T95_DF28
+                29: NATIVE_CONFIDENCE_T95_DF29
+                _: NATIVE_CONFIDENCE_T95_DF30
+
+
         def native_confidence_half_width(value_stdev_ns: i64, sample_count: i64) -> i64:
             # A single observation has no estimate of dispersion. The caller
             # serializes equal bounds with `available: false` in that case.
@@ -331,8 +403,13 @@ module ProfilerNative:
             scaled_count: i64 = native_saturating_mul_nonnegative(sample_count, native_saturating_mul_nonnegative(NATIVE_CONFIDENCE_SCALE, NATIVE_CONFIDENCE_SCALE))
             scaled_root: i64 = integer_sqrt(scaled_count)
             return NATIVE_ZERO if scaled_root <= NATIVE_ZERO
-            numerator: i64 = native_saturating_mul_nonnegative(value_stdev_ns, NATIVE_CONFIDENCE_Z95_SCALE)
-            return numerator / scaled_root
+            critical: i64 = native_confidence_critical_scaled(sample_count)
+            # Divide before multiplying so a large standard deviation cannot
+            # overflow the numerator and silently produce a narrower interval.
+            whole: i64 = native_saturating_mul_nonnegative(value_stdev_ns / scaled_root, critical)
+            remainder: i64 = native_saturating_mul_nonnegative(value_stdev_ns % scaled_root, critical)
+            fraction: i64 = remainder / scaled_root + (NATIVE_ONE if remainder % scaled_root > NATIVE_ZERO else NATIVE_ZERO)
+            return native_saturating_add(whole, fraction)
 
         struct TargetRunResult:
             status: i64
