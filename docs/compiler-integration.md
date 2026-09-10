@@ -7,6 +7,20 @@ experiments can repair compiler defects without modifying their owners.
 
 ## Main integration — 2026-09-09
 
+Integrated validation follow-up: the O3 compiler and stage1-built runtime
+completed their rebuild. Native profiler regression, Mach-O/link-map checks,
+and the committed-branch audit passed. Runtime freshness fixture `569758b2`
+updates the fake compiler to stage1 and verifies fallback-generator changes
+invalidate the runtime cache; its regression passes.
+
+The initial bounds gate found the local stage0 checkout missing main's release
+bounds fix. Merge `457d4445` preserves its local runtime-fallback gain while
+importing that fix. Its local rebuild and `TestIndexWatchdog` pass; the combined
+stage0/stage1 O0/O2 bounds gate now passes, including trap IR and in-range runs.
+Global installations were not changed. The stage0 binary changed after the
+integrated seed was built: reseeding is required before claiming that seed was
+produced by the refreshed stage0. No throughput improvement is established.
+
 The `a74427ff` bootstrap subsequently passed all stages: A5/5, generation-3
 object size 19,728,200 bytes, byte-identical generation-3/4 objects, and 40/40
 deterministic repeat emissions. Evidence: local
