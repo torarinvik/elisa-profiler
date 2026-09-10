@@ -16,6 +16,7 @@ COMPILER_BUILD_MANIFEST := $(COMPILER_WORKTREE)/build/compiler-build-manifest.js
 # seeded; callers may still override STAGE0_BIN or ELISACORE_BIN explicitly.
 STAGE0_BIN ?= $(shell if test -x "$(STAGE0_CORE)/compiler/bin/elisac"; then printf '%s\n' "$(STAGE0_CORE)/compiler/bin/elisac"; else command -v elisac-stage0 2>/dev/null || true; fi)
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
+BACKEND_SMOKE_STACK_BYTES := 0x20000000
 
 .PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke legacy-fixture-smoke collector-strict-smoke collector-content-smoke collector-trace-buffer-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
 
@@ -57,6 +58,20 @@ disjoint-opt-in-smoke:
 		env -u ELISACORE_NOALIAS_MUTABLE_REFS "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"; \
 		ELISACORE_NOALIAS_MUTABLE_REFS=1 "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"; \
 		ELISACORE_NOALIAS_MUTABLE_REFS=0 "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"
+
+.PHONY: function-name-index-smoke backend-flag-queries-smoke
+function-name-index-smoke backend-flag-queries-smoke:
+	@mkdir -p "$(PROFILER_ROOT)/build"
+	@set -eu; llvm_libdir="$$(llvm-config --libdir)"; \
+		for opt in 0 3; do \
+			artifact="$(PROFILER_ROOT)/build/$@-O$$opt"; \
+			"$(NATIVE_STAGE1_BIN)" -emit obj "-O$$opt" -o "$$artifact.o" \
+				"$(COMPILER_WORKTREE)/test/parity/$(subst -,_,$@).elisa"; \
+			"$${ELISA_CLANG:-clang}" -Wl,-dead_strip -Wl,-stack_size,$(BACKEND_SMOKE_STACK_BYTES) \
+				-o "$$artifact" "$$artifact.o" "$(NATIVE_RUNTIME_OBJECT)" \
+				-L"$$llvm_libdir" -lLLVM -Wl,-rpath,"$$llvm_libdir"; \
+			"$$artifact"; \
+		done
 
 .PHONY: allocation-lifetimes-smoke
 allocation-lifetimes-smoke: compiler-manifest-smoke

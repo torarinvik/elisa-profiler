@@ -1,5 +1,24 @@
 # Native benchmark manifests
 
+## Function-name index validation
+
+Compiler `f8b3a146` adds an order-preserving name index for the declaration
+prefix, retaining a linear fallback for later generic-instantiation rows.
+The initial consumers are function lookup by owner/name, arity, and source
+line, plus return-type and error-function facts. Small tables remain linear.
+
+Differential Elisa tests passed at O0 and O3, including true bucket collisions,
+duplicate precedence, module ownership, arity/line selection, appended rows,
+and rebuilding. The indexed compiler also passed the targeted pattern-binding,
+typed-with, and packed-context checks; full self-hosting passed five probes,
+compiler self-compilation, byte-identical generations, and 40 determinism runs.
+`make function-name-index-smoke backend-flag-queries-smoke` subsequently passed
+both tests at O0 and O3 using the indexed compiler. Select that compiler with
+`NATIVE_STAGE1_BIN` when repeating the targets. Evidence logs are compiler
+`build/function-name-index-selfhost.log` and profiler
+`build/index-and-flags-make.log`. This is correctness evidence, not yet a
+measured throughput improvement.
+
 ## Constant flag-name experiment
 
 Replacing four temporary flag-name darrays with C-string literals preserved the
