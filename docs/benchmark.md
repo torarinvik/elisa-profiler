@@ -24,8 +24,12 @@ The Elisa white-box test `test/parity/disjoint_opt_in_smoke.elisa` checks empty
 analysis tables when disabled and preserved proven facts when enabled. Environment
 variable presence, including value `0`, retains its existing enabling semantics.
 Run it from this repository with `make disjoint-opt-in-smoke`, selecting the
-desired compiler using `NATIVE_STAGE1_BIN`. Broader bootstrap validation and a
-warmed repeated benchmark remain required before promoting this experiment.
+desired compiler using `NATIVE_STAGE1_BIN`. Full bootstrap validation subsequently
+passed: five regression probes, compiler self-compilation, byte-identical
+generations, and 40 deterministic output checks. The source change and Elisa
+regression are committed in compiler `df144c9c`. A warmed repeated benchmark is
+still required for a reliable speedup estimate; the installed binaries have not
+been replaced. Bootstrap evidence is in compiler `build/disjoint-gate-selfhost.log`.
 
 ## Same-source producer comparison
 
