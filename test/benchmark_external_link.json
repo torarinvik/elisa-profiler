@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "baseline_source": "test/external_link_workload.elisa",
+  "candidate_source": "test/external_link_workload.elisa",
+  "mode": "functions",
+  "link_arguments": ["-L/opt/homebrew/opt/llvm/lib", "-lLLVM", "-Wl,-rpath,/opt/homebrew/opt/llvm/lib", "-Wl,-rpath,/tmp/Elisa benchmark link space"]
+}

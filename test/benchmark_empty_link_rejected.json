@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "baseline_source": "test/external_link_workload.elisa",
+  "candidate_source": "test/external_link_workload.elisa",
+  "link_arguments": [""]
+}

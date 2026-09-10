@@ -93,7 +93,7 @@ extend ProfilerNative:
             append_command_i64_argument(arguments, "", value)
 
 
-        def benchmark_append_profile_arguments[@r](arguments: mutable darray[darray[u8]]& @r, source: darray[u8]&, output: darray[u8]&, mode: darray[u8]&, repetitions: i64, warmups: i64, sample_period: i64, capture_bytes: i64, random_seed: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[darray[u8]], target_arguments: darray[darray[u8]], embed_source: bool) -> void can[Abort.Panic, Memory.Allocate]:
+        def benchmark_append_profile_arguments[@r](arguments: mutable darray[darray[u8]]& @r, source: darray[u8]&, output: darray[u8]&, mode: darray[u8]&, repetitions: i64, warmups: i64, sample_period: i64, capture_bytes: i64, random_seed: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[darray[u8]], target_arguments: darray[darray[u8]], link_arguments: darray[darray[u8]], embed_source: bool) -> void can[Abort.Panic, Memory.Allocate]:
             append_command_argument(arguments, "profile")
             append_command_path_argument(arguments, source)
             append_command_argument(arguments, "--format")
@@ -124,6 +124,9 @@ extend ProfilerNative:
             for index in 0..<environment.count |index, arguments, environment|:
                 append_command_argument(arguments, "--env")
                 append_command_path_argument(arguments, environment[index])
+            for link_argument in link_arguments |arguments|:
+                append_command_argument(arguments, "--link-arg")
+                append_command_path_argument(arguments, link_argument)
             if target_arguments.count > NATIVE_ZERO.usize():
                 append_command_argument(arguments, "--")
                 for index in 0..<target_arguments.count |index, arguments, target_arguments|:
@@ -138,9 +141,9 @@ extend ProfilerNative:
             result.push(null)
 
 
-        def benchmark_profile(argv_zero: cstr, source: darray[u8]&, output: darray[u8]&, mode: darray[u8]&, repetitions: i64, warmups: i64, sample_period: i64, capture_bytes: i64, random_seed: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[darray[u8]], target_arguments: darray[darray[u8]], embed_source: bool) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+        def benchmark_profile(argv_zero: cstr, source: darray[u8]&, output: darray[u8]&, mode: darray[u8]&, repetitions: i64, warmups: i64, sample_period: i64, capture_bytes: i64, random_seed: darray[u8]&, working_directory: darray[u8]&, stdin_path: darray[u8]&, environment: darray[darray[u8]], target_arguments: darray[darray[u8]], link_arguments: darray[darray[u8]], embed_source: bool) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
             arguments: mutable darray[darray[u8]] = []
-            benchmark_append_profile_arguments(&arguments, source, output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+            benchmark_append_profile_arguments(&arguments, source, output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, link_arguments, embed_source)
             command_argv: mutable darray[cstr] = []
             benchmark_make_argv(argv_zero, arguments, &command_argv)
             return run(command_argv.count.i64() - NATIVE_ONE, (&command_argv[0]).cast[mutable void&] can Unsafe.PointerCast)
@@ -241,6 +244,12 @@ extend ProfilerNative:
             return report_error("benchmark manifest has an invalid target_arguments array") if not benchmark_string_array(manifest, "target_arguments", &target_arguments)
             for environment_index in 0..<environment.count |environment_index, environment|:
                 return report_error("benchmark environment entries must be KEY=VALUE") if not environment_assignment_valid(environment[environment_index]) or profiler_internal_environment_assignment(environment[environment_index])
+            link_arguments: mutable darray[darray[u8]] = []
+            return report_error("benchmark manifest has an invalid link_arguments array") if not benchmark_string_array(manifest, "link_arguments", &link_arguments)
+            for link_argument in link_arguments:
+                return report_error("benchmark link arguments must be nonempty and contain no NUL bytes") if link_argument.count == NATIVE_ZERO.usize()
+                for byte in link_argument:
+                    return report_error("benchmark link arguments must be nonempty and contain no NUL bytes") if byte == NATIVE_BYTE_NUL
             embed_source: mutable bool = false
             return report_error("benchmark manifest has an invalid embed_source value") if not json_read_optional_bool_field(manifest, "embed_source", NATIVE_ZERO.usize(), manifest.count, &embed_source)
             wall_percent: mutable i64 = NATIVE_COMPARISON_THRESHOLD_DISABLED
@@ -266,20 +275,20 @@ extend ProfilerNative:
             baseline_status: mutable i64 = NATIVE_ZERO
             candidate_status: mutable i64 = NATIVE_ZERO
             if benchmark_order_is_candidate_first(execution_order):
-                candidate_status <- benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                candidate_status <- benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, link_arguments, embed_source)
                 if candidate_status != NATIVE_ZERO:
                     benchmark_cleanup_intermediates(baseline_output, candidate_output)
                     return report_error("benchmark candidate capture failed")
-                baseline_status <- benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                baseline_status <- benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, link_arguments, embed_source)
                 if baseline_status != NATIVE_ZERO:
                     benchmark_cleanup_intermediates(baseline_output, candidate_output)
                     return report_error("benchmark baseline capture failed")
             else:
-                baseline_status <- benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                baseline_status <- benchmark_profile(argv_zero, baseline_source, baseline_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, link_arguments, embed_source)
                 if baseline_status != NATIVE_ZERO:
                     benchmark_cleanup_intermediates(baseline_output, candidate_output)
                     return report_error("benchmark baseline capture failed")
-                candidate_status <- benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, embed_source)
+                candidate_status <- benchmark_profile(argv_zero, candidate_source, candidate_output, mode, repetitions, warmups, sample_period, capture_bytes, random_seed, working_directory, stdin_path, environment, target_arguments, link_arguments, embed_source)
                 if candidate_status != NATIVE_ZERO:
                     benchmark_cleanup_intermediates(baseline_output, candidate_output)
                     return report_error("benchmark candidate capture failed")

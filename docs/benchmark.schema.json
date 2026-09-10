@@ -21,6 +21,7 @@
     "stdin": { "type": "string" },
     "environment": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*=.*$" } },
     "target_arguments": { "type": "array", "items": { "type": "string" } },
+    "link_arguments": { "type": "array", "items": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$" } },
     "embed_source": { "type": "boolean" },
     "max_wall_regression_percent": { "type": "integer", "minimum": 0, "maximum": 1000000 },
     "max_wall_ms": { "type": "integer", "minimum": 0 },

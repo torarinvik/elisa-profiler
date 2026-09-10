@@ -1,5 +1,12 @@
 # Native benchmark manifests
 
+## Build provenance
+
+Compiler provenance is written by `make compiler-seed`, not by a profiler
+rebuild. `make profiler-provenance-smoke` verifies that rebuilding the profiler
+leaves the existing compiler manifest byte-identical. A newer ambient stage0
+binary must not retroactively become the recorded producer of an older compiler.
+
 ## Duplicate parameter classification experiment — not promoted
 
 An O3 compiler capture recorded 1,858 of 65,550 samples with leaf label
@@ -50,7 +57,12 @@ For source-built `profile`/`record` targets with external libraries, repeat
 Arguments retain their order and are passed directly without shell expansion.
 These options are incompatible with `--prebuilt` and `--cache-dir`: external
 library contents are not yet fingerprinted, so such builds cannot reuse the
-build cache. This option is not yet part of benchmark manifests.
+build cache. Benchmark manifests accept the same arguments in `link_arguments`,
+an optional array of nonempty strings without NUL bytes. Each entry is forwarded
+as one `--link-arg` to both sides, preserving order and spaces without shell
+splitting. Library files must remain unchanged during the comparison; the
+manifest does not authenticate their contents. The optional macOS/Homebrew
+`make benchmark-external-link-smoke` checks this with a real LLVM dependency.
 
 Optimization priority: maximize throughput, not minimize memory. Report peak
 memory as a tradeoff and check for pressure or instability, but higher RSS alone

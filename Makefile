@@ -67,6 +67,14 @@ test: region-cache-oversize-smoke
 
 .PHONY: linkmap-smoke
 .PHONY: external-link-smoke
+.PHONY: benchmark-external-link-smoke
+benchmark-external-link-smoke: profiler-native
+	@"$(NATIVE_PROFILER_BIN)" benchmark test/benchmark_external_link.json --format json --output build/benchmark-external-link.json
+	@set -eu; for fixture in empty nul; do \
+		result=0; "$(NATIVE_PROFILER_BIN)" benchmark "test/benchmark_$${fixture}_link_rejected.json" --output "build/benchmark-$${fixture}-link-rejected.json" || result=$$?; \
+		test "$$result" -eq 2; \
+	done
+
 LLVM_CONFIG ?= /opt/homebrew/opt/llvm/bin/llvm-config
 external-link-smoke: profiler-native
 	@set -eu; \
@@ -146,17 +154,16 @@ profiler-native:
 		ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
 		"$(NATIVE_COMPILER_SCRIPT)" -emit exe "$(NATIVE_OPT_LEVEL)" -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
 		mv "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_BIN)"
-	@stage0="$${ELISACORE_BIN:-$(STAGE0_BIN)}"; \
-		if test -n "$$stage0"; then \
-			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
-			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
-			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level="$(NATIVE_OPT_LEVEL)" --stage0 "$$stage0"; \
-		else \
-			python3 "$(PROFILER_ROOT)/scripts/compiler_build_manifest.py" --compiler-root "$(COMPILER_WORKTREE)" \
-			--stage1 "$(NATIVE_STAGE1_BIN)" --runtime "$(NATIVE_RUNTIME_OBJECT)" --output "$(COMPILER_BUILD_MANIFEST)" \
-			--seed-opt-level="$(SEED_OPT_LEVEL)" --seed-max-rss-kb "$(SEED_MAX_RSS_KB)" --native-opt-level="$(NATIVE_OPT_LEVEL)"; \
-		fi
+# Building a profiler does not rebuild its compiler. Only compiler-seed may
+# record seed provenance; ambient stage0 paths/flags are not build evidence.
 	@echo "native profiler: $(NATIVE_PROFILER_BIN)"
+
+.PHONY: profiler-provenance-smoke
+profiler-provenance-smoke:
+	@set -eu; manifest_copy="$$(mktemp)"; trap 'rm -f "$$manifest_copy"' EXIT; \
+		cp "$(COMPILER_BUILD_MANIFEST)" "$$manifest_copy"; \
+		$(MAKE) profiler-native; \
+		cmp "$$manifest_copy" "$(COMPILER_BUILD_MANIFEST)"
 
 profiler-native-smoke: profiler-native
 	@set -eu; native_work="$$(mktemp -d)"; trap 'rm -rf "$$native_work"' EXIT; \
