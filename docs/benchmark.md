@@ -2,6 +2,14 @@
 
 ## Same-source producer comparison
 
+The packed-store no-inline hypothesis was tested and rejected for this build.
+Adding `@inline(never)` to the twelve helpers on stage0's special no-inline list
+produced a byte-identical self-hosted compiler object (SHA256 `66051eb4…`).
+The candidate also passed pattern-binding and packed-store-context regressions.
+The annotations were removed; no timing comparison of identical code was run.
+Allocation collection itself already returns before locking in sample mode;
+ABI negotiation remains mode-independent by design.
+
 Follow-up sampling after merging compiler main's test-only update (worktree
 `ed3b564c`) completed successfully: 59,021 instrumented CPU-stack samples,
 zero reported misses, 84.802 seconds wall and 78.869 seconds process CPU.
