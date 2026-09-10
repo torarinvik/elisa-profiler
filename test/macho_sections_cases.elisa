@@ -1,0 +1,28 @@
+extend ProfilerNative:
+    public:
+        def macho_sections_smoke() -> i64 can[Abort.Panic, Memory.Allocate]:
+            extent: usize = MACHO_HEADER_BYTES + MACHO_SEGMENT_BYTES + MACHO_SECTION_BYTES
+            data: mutable darray[u8] = [NATIVE_ZERO.u8() for _ in NATIVE_ZERO.usize()..<(extent + MACHO_WORD_BYTES)]
+            command: usize = MACHO_HEADER_BYTES
+            entry: usize = command + MACHO_SEGMENT_BYTES
+            macho_test_word(&data, command, MACHO_SEGMENT_COMMAND)
+            macho_test_word(&data, command + MACHO_WORD_BYTES, (MACHO_SEGMENT_BYTES + MACHO_SECTION_BYTES).u32())
+            macho_test_word(&data, command + MACHO_SEGMENT_SECTIONS_OFFSET, NATIVE_ONE.u32())
+            macho_test_word(&data, command + MACHO_SEGMENT_PROTECTION_OFFSET, MACHO_EXECUTE_PROTECTION)
+            macho_test_word(&data, command + MACHO_SEGMENT_SIZE_OFFSET, data.count.u32())
+            macho_test_word(&data, command + MACHO_SEGMENT_FILE_SIZE_OFFSET, data.count.u32())
+            macho_test_word(&data, entry + MACHO_SECTION_ADDRESS_OFFSET, extent.u32())
+            macho_test_word(&data, entry + MACHO_SECTION_FILE_OFFSET, extent.u32())
+            macho_test_word(&data, entry + MACHO_SECTION_SIZE_OFFSET, MACHO_WORD_BYTES.u32())
+            macho_test_word(&data, entry + MACHO_SECTION_FLAGS_OFFSET, MACHO_PURE_INSTRUCTIONS)
+            section: mutable MachOCodeSection = zeroed
+            assert macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            assert section.address == extent.u64() and section.size == MACHO_WORD_BYTES.u64()
+            assert not macho_code_section(data, command, NATIVE_ONE.usize(), &section)
+            macho_test_word(&data, entry + MACHO_SECTION_SIZE_OFFSET, MACHO_WORD_BYTES.u32() + NATIVE_ONE.u32())
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            macho_test_word(&data, entry + MACHO_SECTION_SIZE_OFFSET, MACHO_WORD_BYTES.u32())
+            macho_test_word(&data, entry + MACHO_SECTION_FLAGS_OFFSET, NATIVE_ZERO.u32())
+            assert not macho_code_section(data, command, NATIVE_ZERO.usize(), &section)
+            assert section.address == NATIVE_ZERO.u64()
+            return NATIVE_ZERO

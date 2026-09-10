@@ -1,0 +1,44 @@
+# Conservative file-backed instruction extents. This does not authenticate
+# symbols or exclude LC_DATA_IN_CODE entries inside instruction sections.
+extend ProfilerNative:
+    private:
+        const MACHO_SECTION_ADDRESS_OFFSET: usize = 32
+        const MACHO_SECTION_SIZE_OFFSET: usize = 40
+        const MACHO_SECTION_FILE_OFFSET: usize = 48
+        const MACHO_SECTION_FLAGS_OFFSET: usize = 64
+        const MACHO_SECTION_TYPE_MASK: u32 = 255
+        const MACHO_PURE_INSTRUCTIONS: u32 = 0x80000000
+
+        struct MachOCodeSection:
+            address: mutable u64
+            size: mutable u64
+            file_offset: mutable u64
+
+        # command must be a validated load-command boundary. Accept only regular
+        # pure-instruction sections wholly backed by the executable segment.
+        def macho_code_section(data: darray[u8]&, command: usize, ordinal: usize, output: mutable MachOCodeSection&) -> bool:
+            output <- zeroed
+            segment: mutable MachOSegment = zeroed
+            return false if not macho_segment(data, command, &segment)
+            return false if (segment.protection & MACHO_EXECUTE_PROTECTION) == NATIVE_ZERO.u32()
+            count: usize = macho_word(data, command + MACHO_SEGMENT_SECTIONS_OFFSET).usize()
+            return false if ordinal >= count
+            entry: usize = command + MACHO_SEGMENT_BYTES + ordinal * MACHO_SECTION_BYTES
+            flags: u32 = macho_word(data, entry + MACHO_SECTION_FLAGS_OFFSET)
+            return false if (flags & MACHO_SECTION_TYPE_MASK) != NATIVE_ZERO.u32()
+            return false if (flags & MACHO_PURE_INSTRUCTIONS) == NATIVE_ZERO.u32()
+            address: u64 = macho_value(data, entry + MACHO_SECTION_ADDRESS_OFFSET)
+            size: u64 = macho_value(data, entry + MACHO_SECTION_SIZE_OFFSET)
+            file_offset: u64 = macho_word(data, entry + MACHO_SECTION_FILE_OFFSET).u64()
+            return false if size == NATIVE_ZERO.u64() or address < segment.vm_address or file_offset < segment.file_offset
+            vm_delta: u64 = address - segment.vm_address
+            file_delta: u64 = file_offset - segment.file_offset
+            return false if vm_delta > segment.vm_size or file_delta > segment.file_size
+            return false if size > segment.vm_size - vm_delta or size > segment.file_size - file_delta
+            # Ordinary file-backed mappings have identical file and VM deltas.
+            # This also rejects high-VM/otherwise unusual layouts conservatively.
+            return false if vm_delta != file_delta
+            output.address <- address
+            output.size <- size
+            output.file_offset <- file_offset
+            return true

@@ -1,6 +1,8 @@
 include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
 include "../src/profiler/profiler_model.elisa"
 include "../src/profiler/profiler_macho.elisa"
+include "../src/profiler/profiler_macho_sections.elisa"
+include "macho_sections_cases.elisa"
 include "../src/profiler/profiler_macho_map.elisa"
 include "../src/profiler/profiler_macho_functions.elisa"
 include "macho_map_cases.elisa"
@@ -124,6 +126,18 @@ extend ProfilerNative:
                 assert macho_same_build_id(data, data)
                 assert indexed.symbol_count > NATIVE_ZERO.usize()
                 assert indexed.segment_count > NATIVE_ZERO.usize()
+                cursor: mutable usize = MACHO_HEADER_BYTES
+                stop: usize = cursor + macho_word(data, MACHO_COMMAND_BYTES_OFFSET).usize()
+                code_count: mutable usize = NATIVE_ZERO.usize()
+                while cursor < stop |cursor, stop, data, code_count|:
+                    if macho_word(data, cursor) == MACHO_SEGMENT_COMMAND:
+                        count: usize = macho_word(data, cursor + MACHO_SEGMENT_SECTIONS_OFFSET).usize()
+                        for ordinal in NATIVE_ZERO.usize()..<count |cursor, data, code_count|:
+                            section: mutable MachOCodeSection = zeroed
+                            if macho_code_section(data, cursor, ordinal, &section):
+                                code_count <- code_count + NATIVE_ONE.usize()
+                    cursor <- cursor + macho_word(data, cursor + MACHO_WORD_BYTES).usize()
+                assert code_count > NATIVE_ZERO.usize()
                 starts: mutable darray[u64] = []
                 assert decode_macho_function_starts(data, indexed, &starts) == MachOIndexStatus.Indexed
                 assert starts.count > NATIVE_ZERO.usize()
@@ -241,6 +255,7 @@ extend ProfilerNative:
 
 def main() -> i64 can[Abort.Panic, Memory.Allocate, Console]:
     assert ProfilerNative::macho_smoke() == 0
+    assert ProfilerNative::macho_sections_smoke() == 0
     assert ProfilerNative::macho_segment_smoke() == 0
     assert ProfilerNative::macho_map_smoke() == 0
     assert ProfilerNative::macho_functions_smoke() == 0
