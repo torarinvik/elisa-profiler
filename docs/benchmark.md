@@ -2,6 +2,20 @@
 
 ## Disjointness-analysis opt-in experiment
 
+The warmed follow-up did **not** confirm the pilot's large improvement. One
+warmup per side followed by eight ABBA-ordered runs produced mean control/candidate
+CPU times of 76.4325/73.8075 seconds (3.4% lower), but the four paired
+control-minus-candidate differences have a conservative Student-t 95% interval
+of [-12.804, 18.054] seconds. Mean wall times were 100.5975/105.745 seconds;
+their paired interval was [-43.978, 33.683] seconds. Both results are inconclusive.
+All eight objects matched, all binary/runtime hashes stayed unchanged, and
+source diff and HEAD checks passed. No samples were discarded. Raw timings and
+analysis are in compiler `build/disjoint-gate-warmed.8uRyY0/`.
+The host was busy during this run (one observation: load average 15.54, swap in
+use 15.7 GB); this is context, not proof of the cause of any individual timing.
+The committed change skips verified-unused analysis and passes the correctness
+gates below, but it should not be advertised as a measured 33.5% speedup.
+
 The default compiler path computed whole-program disjointness facts even though
 their alias-scope metadata consumer requires `ELISACORE_NOALIAS_MUTABLE_REFS`.
 A candidate gates that analysis on the same condition. Four exploratory O0
