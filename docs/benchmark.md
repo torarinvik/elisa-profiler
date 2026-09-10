@@ -6,8 +6,10 @@ Both O3 compiler executables were built from clean `c0773f12` source. One used
 the pinned stage0 producer (`851a4ee8` checkout, binary SHA256 `0fc034c4…`);
 the other used the saved stage1 producer (`569758b2`, binary `542654e6…`).
 This compares whole build pipelines, including runtime code generation/linkage,
-not an isolated LLVM pass. The older stage1 producer remains a confounding
-factor to check with a refreshed bootstrap.
+not an isolated LLVM pass. A further rebuild using the fresh `c0773f12`
+stage0-built self-host compiler produced an object byte-identical to the
+measured selfhost-built object (SHA256 `66051eb4…`). The older stage1 producer
+therefore does not explain that object-code difference.
 
 After one warmup per side, eight O0 self-source compilations ran in
 stage0-built/selfhost-built/selfhost-built/stage0-built order repeated twice.
@@ -20,8 +22,8 @@ All measurements were retained. This supports investigating the CPU-cost gap;
 it does not establish a universal twofold wall-time improvement.
 
 Raw evidence and analysis: compiler worktree
-`build/producer-throughput.y6hcbc/`. A fresh self-host producer build is the
-next check before attributing the gap to a particular backend behavior.
+`build/producer-throughput.y6hcbc/`. Profiling and targeted generated-IR
+comparisons are still needed before attributing the gap to a backend behavior.
 
 ## Per-pass enum index experiment — inconclusive
 
