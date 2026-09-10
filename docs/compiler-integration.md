@@ -7,6 +7,15 @@ experiments can repair compiler defects without modifying their owners.
 
 ## Main integration — 2026-09-09
 
+Final refreshed seed checkpoint: stage1 `569758b2` was rebuilt at O3 using
+local stage0 `457d4445`, including the rebuilt stage1-produced runtime. Build
+identity/ABI/content checks, the 7/7 committed-branch audit, link-map tests,
+and Mach-O tests pass. Full integrated bootstrap is now running; earlier
+bootstrap evidence applies to `a74427ff` only. Logs:
+`build/refreshed-stage0-seed.log`, `build/refreshed-seed-validation.log`, and
+`build/refreshed-seed-selfhost.log`. Pin this artifact for the next validated
+throughput baseline rather than mixing revisions during measurement.
+
 A two-second diagnostic sample during the refreshed-stage0 O3 reseed caught
 active LLVM optimization (inlining, constraint analysis, GVN and CFG work).
 Local evidence: `build/refreshed-stage0-build-sample.txt`. This is a partial
