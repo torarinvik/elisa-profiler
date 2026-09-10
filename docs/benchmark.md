@@ -1,5 +1,31 @@
 # Native benchmark manifests
 
+## Duplicate parameter classification experiment — not promoted
+
+An O3 compiler capture recorded 1,858 of 65,550 samples with leaf label
+`enum_variant_count`. A candidate grouped the paired enum and struct parameter
+pushes behind one lookup each. It passed bootstrap A–D and produced the same
+three existing strict-runtime permission disagreements as baseline in the
+575-case semantic acceptance replay.
+
+Twelve uninstrumented self-source compilations ran in baseline/candidate/
+candidate/baseline order repeated three times. All outputs were byte-identical.
+Wall means were 56.213s baseline and 62.285s candidate; user CPU means were
+31.565s and 31.145s. Six adjacent paired baseline-minus-candidate differences
+give a Student-t 95% interval of [-24.211, 12.067] seconds wall and
+[-1.107, 1.947] seconds user CPU. No samples were discarded. The large
+variation does not establish a gain, so the candidate was reverted and the
+validated baseline restored. Evidence: `build/enum-lookup-throughput.ttNWZR`,
+`build/enum-lookup-selfhost.log`, `build/enum-baseline-semantic.log`, and
+`build/enum-lookup-semantic.log`. Prioritize reducing whole repeated scans and
+measurement variability over another tiny call-count-only experiment.
+
+Restoration caveat: the live stage0 executable changed externally during the
+experiment (recorded SHA256 `23b1db70…`, now `d345636e…`). The restored compiler's
+saved manifest correctly rejects this live-toolchain mismatch. Its recorded
+provenance was not rewritten. This does not change the saved baseline/candidate
+executables used for the twelve measurements; verify provenance before reseeding.
+
 ## Integrated compiler capture — 2026-09-10
 
 The Elisa-native profiler successfully source-built and sampled compiler
