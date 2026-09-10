@@ -18,7 +18,7 @@ STAGE0_BIN ?= $(shell if test -x "$(STAGE0_CORE)/compiler/bin/elisac"; then prin
 NATIVE_SMOKE_TIMEOUT_SECONDS ?= 30
 BACKEND_SMOKE_STACK_BYTES := 0x20000000
 
-.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke legacy-fixture-smoke collector-strict-smoke collector-content-smoke collector-trace-buffer-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
+.PHONY: compiler-status compiler-audit compiler-ledger-smoke compiler-manifest-smoke compiler-seed compiler-smoke compiler-identity-smoke compiler-self-host-smoke profiler-native profiler-native-smoke pgo-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke protocol-property-smoke legacy-fixture-smoke collector-strict-smoke collector-content-smoke collector-trace-buffer-smoke collector-identity-smoke collector-sanitizer-smoke collector-callback-benchmark runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke test
 
 compiler-status:
 	@test -x "$(COMPILER_WORKTREE)/scripts/elisac_stage1.sh" || { echo "compiler worktree missing: $(COMPILER_WORKTREE)" >&2; exit 2; }
@@ -59,8 +59,8 @@ disjoint-opt-in-smoke:
 		ELISACORE_NOALIAS_MUTABLE_REFS=1 "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"; \
 		ELISACORE_NOALIAS_MUTABLE_REFS=0 "$(PROFILER_ROOT)/build/disjoint-opt-in-smoke"
 
-.PHONY: function-name-index-smoke backend-flag-queries-smoke
-function-name-index-smoke backend-flag-queries-smoke:
+.PHONY: function-name-index-smoke backend-flag-queries-smoke return-type-id-index-smoke
+function-name-index-smoke backend-flag-queries-smoke return-type-id-index-smoke:
 	@mkdir -p "$(PROFILER_ROOT)/build"
 	@set -eu; llvm_libdir="$$(llvm-config --libdir)"; \
 		for opt in 0 3; do \
@@ -316,6 +316,18 @@ profiler-native-smoke: profiler-native
 		grep -Fq 'Elisa profile comparison' "$$native_work/comparison.txt"; \
 		grep -Fq 'wall mean:' "$$native_work/comparison.txt"
 
+pgo-smoke: profiler-native
+	@set -eu; native_work="$$(mktemp -d)"; trap 'rm -rf "$$native_work"' EXIT; \
+		profile_cmd() { ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" "$(NATIVE_PROFILER_BIN)" "$$@"; }; \
+		profile_cmd profile "$(PROFILER_ROOT)/examples/hot_loop.elisa" --mode functions --format json --output "$$native_work/capture.json"; \
+		profile_cmd pgo "$$native_work/capture.json" --top 2 --output "$$native_work/hot.elisapgo"; \
+		grep -Fqx 'ELISA_PGO_V1' "$$native_work/hot.elisapgo"; \
+		grep -Fq 'hot main' "$$native_work/hot.elisapgo"; \
+		grep -Fq 'hot accumulate' "$$native_work/hot.elisapgo"; \
+		if profile_cmd pgo "$$native_work/capture.json" --min-calls 999999 --output "$$native_work/empty.elisapgo"; then \
+			echo "pgo accepted a capture with no eligible functions" >&2; exit 1; \
+		fi
+
 profile-budget-smoke: profiler-native
 	@"$(PROFILER_ROOT)/test/profile_budget_smoke.sh"
 
@@ -424,4 +436,4 @@ bootstrap-path-smoke: profiler-native
 process-group-smoke:
 	@python3 "$(PROFILER_ROOT)/test/process_group_smoke.py"
 
-test: compiler-self-host-smoke compiler-smoke compiler-identity-smoke profiler-native-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke recovery-smoke protocol-property-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke collector-content-smoke collector-trace-buffer-smoke collector-identity-smoke collector-sanitizer-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke
+test: compiler-self-host-smoke compiler-smoke compiler-identity-smoke profiler-native-smoke pgo-smoke sampling-smoke build-cache-smoke prebuilt-smoke native-timeout-smoke recovery-smoke protocol-property-smoke profile-budget-smoke profile-workload-compare-smoke benchmark-smoke baseline-smoke fixture-diversity-smoke metamorphic-smoke collector-content-smoke collector-trace-buffer-smoke collector-identity-smoke collector-sanitizer-smoke collector-strict-smoke runtime-abi-smoke timing-failure-smoke timing-mismatch-smoke overflow-mismatch-smoke progress-smoke path-remap-smoke source-stability-smoke bootstrap-path-smoke process-group-smoke

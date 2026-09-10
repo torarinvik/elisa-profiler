@@ -119,6 +119,7 @@ include "./profiler_aggregation.elisa"
 include "./profiler_capabilities.elisa"
 include "./profiler_benchmark.elisa"
 include "./profiler_baseline.elisa"
+include "./profiler_pgo.elisa"
 include "./profiler_help.elisa"
 
 extend ProfilerNative:
@@ -1998,7 +1999,7 @@ extend ProfilerNative:
         
     public:
         def run(argc: i64, argv: mutable void&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
-            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO, --cache-dir PATH, --no-cache, or --prebuilt EXECUTABLE] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
+            return report_error("usage: elisa-profiler profile|record SOURCE [options including --path-map FROM=TO, --cache-dir PATH, --no-cache, or --prebuilt EXECUTABLE] [-- TARGET_ARGS...] or report CAPTURE [--format json|text|folded|speedscope|html] [--source PATH] [--output PATH] or recover MANIFEST [--format json|text|folded|speedscope|html] [--output PATH] or pgo CAPTURE [--output PATH] [--top N] [--min-calls N] [--min-inclusive-ns N]") if argc < NATIVE_MIN_COMMAND_ARGUMENTS
             slots: mutable cstr&& = argv.cast[mutable cstr&&]
             first: cstr = slots[NATIVE_COMMAND_ARGUMENT_INDEX].cast[cstr]
             if help_flag(first):
@@ -2017,7 +2018,8 @@ extend ProfilerNative:
             return doctor(argc, slots) if profiler_ffi_strcmp(first, "doctor") == NATIVE_ZERO
             return benchmark(argc, slots) if profiler_ffi_strcmp(first, "benchmark") == NATIVE_ZERO
             return baseline(argc, slots) if profiler_ffi_strcmp(first, "baseline") == NATIVE_ZERO
-            return report_error("unknown command; use profile, record, report, recover, compare, benchmark, baseline, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
+            return pgo(argc, slots) if profiler_ffi_strcmp(first, "pgo") == NATIVE_ZERO
+            return report_error("unknown command; use profile, record, report, recover, compare, benchmark, baseline, pgo, or doctor") if profiler_ffi_strcmp(first, "profile") != NATIVE_ZERO and profiler_ffi_strcmp(first, "record") != NATIVE_ZERO and profiler_ffi_strcmp(first, "recover") != NATIVE_ZERO
             return report_error("usage: elisa-profiler profile|record SOURCE [--format json] [--mode sample] [--sample-period-us MICROSECONDS] [--max-capture-bytes BYTES] [--max-artifact-bytes BYTES] [--output PATH] [--progress PATH] [--path-map FROM=TO] [--cache-dir PATH|--no-cache] [--prebuilt EXECUTABLE] [--artifact-output PATH] [--embed-source] [--cwd PATH] [--stdin PATH] [--env KEY=VALUE] [--random-seed SEED] [--timeout SECONDS] [-- TARGET_ARGS...]") if argc < NATIVE_MIN_PATH_ARGUMENTS
         
             source: mutable darray[u8] = []

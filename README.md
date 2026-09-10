@@ -155,6 +155,8 @@ helpers, try:
         --format html -o profiles/comparison.html
     bin/elisa-profiler compare profiles/baseline.json profiles/candidate.json \
         --max-wall-regression-percent 5 --max-wall-ms 250
+    bin/elisa-profiler pgo profiles/hot-loop.json --top 32 \
+        --output profiles/hot-loop.elisapgo
 
 The default `full` mode records function, statement, and scalar-value events.
 `functions` keeps function/call-path evidence, `statements` keeps statement
@@ -206,6 +208,15 @@ status digest and dirty-file list, host/toolchain information, profiling build
 options, and the content fingerprint used to validate the cached runtime
 object. A report therefore identifies both the compiler checkout and the
 actual binaries used to produce the capture.
+Use `pgo CAPTURE` to turn a complete successful `functions` or `full` capture into
+the compiler-facing `ELISA_PGO_V1` profile. The command aggregates repeated
+function records, selects the largest inclusive-time functions (32 by default),
+and writes one `hot NAME` record per selected source-level function. Use
+`--top`, `--min-calls`, and `--min-inclusive-ns` to make the selection policy
+explicit. Both stage0 and stage1 accept the result with
+`-fprofile-use PROFILE`; malformed, partial, failed, or evidence-losing captures
+are rejected. This profile changes optimization cost hints only and cannot change
+program semantics.
 Function timing also includes mean inclusive/self duration and percentages of
 the root function's inclusive time, so the JSON report is useful without a
 separate post-processing step.

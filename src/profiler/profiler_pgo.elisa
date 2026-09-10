@@ -1,0 +1,140 @@
+# Compiler-facing profile generation for the native profiler.
+#
+# The JSON report remains the archival and presentation format. This module deliberately emits
+# a smaller, fail-closed contract that the stage0 and stage1 compilers can consume without
+# depending on the profiler's JSON implementation:
+#
+#     ELISA_PGO_V1
+#     hot <source-level-function-name>
+#
+# Only complete successful function/full captures are accepted. The default selector keeps the
+# 32 functions with the largest inclusive time, while the thresholds let a build pipeline make
+# the policy explicit. The result is an optimization hint, never a correctness assumption.
+extend ProfilerNative:
+    private:
+        const NATIVE_PGO_TOP_DEFAULT: i64 = 32
+        const NATIVE_PGO_TOP_MAX: i64 = 4096
+        const NATIVE_PGO_FIRST_OPTION_INDEX: i64 = 3
+        const NATIVE_PGO_PROFILE_HEADER: cstr = "ELISA_PGO_V1"
+
+        def pgo_function_name_valid(name: darray[u8]&) -> bool:
+            return false if name.count == NATIVE_ZERO.usize()
+            for index in 0..<name.count |index, name|:
+                byte: u8 = name[index]
+                # The compiler profile is line-oriented. JSON permits escaped control bytes in
+                # a function name, but allowing one here would make the compiler see a
+                # different set of records than the profiler validated.
+                return false if byte < 32
+            return true
+
+
+        def pgo_function_index(names: darray[darray[u8]]&, candidate: darray[u8]&) -> i64 can[Abort.Panic]:
+            for index in 0..<names.count |index, names, candidate|:
+                return index.i64() if byte_arrays_equal(names[index], candidate)
+            return NATIVE_NEGATIVE_ONE
+
+
+        def pgo_append_profile(buffer: mutable darray[u8]&, names: darray[darray[u8]]&) -> void can[Abort.Panic, Memory.Allocate]:
+            append_text(buffer, NATIVE_PGO_PROFILE_HEADER)
+            buffer.push(NATIVE_BYTE_NEWLINE)
+            for name in names |buffer|:
+                append_text(buffer, "hot ")
+                buffer.extend(name)
+                buffer.push(NATIVE_BYTE_NEWLINE)
+
+
+        def pgo_profile(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return report_error("usage: elisa-profiler pgo CAPTURE [--output PATH] [--top N] [--min-calls N] [--min-inclusive-ns N]") if argc < NATIVE_MIN_PATH_ARGUMENTS
+            capture_path: mutable darray[u8] = []
+            copy_cstr(capture_path, slots[NATIVE_TWO.usize()].cast[cstr])
+            output_path: mutable darray[u8] = []
+            top: mutable i64 = NATIVE_PGO_TOP_DEFAULT
+            min_calls: mutable i64 = NATIVE_ONE
+            min_inclusive_ns: mutable i64 = NATIVE_ZERO
+            index: mutable i64 = NATIVE_PGO_FIRST_OPTION_INDEX
+            while index < argc |index, slots, output_path, top, min_calls, min_inclusive_ns|:
+                argument: cstr = slots[index].cast[cstr]
+                if profiler_ffi_strcmp(argument, "--output") == NATIVE_ZERO or profiler_ffi_strcmp(argument, "-o") == NATIVE_ZERO:
+                    return report_error("pgo --output requires a path") if index + NATIVE_ONE >= argc
+                    copy_cstr(output_path, slots[index + NATIVE_ONE].cast[cstr])
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--top") == NATIVE_ZERO:
+                    return report_error("pgo --top requires a positive integer") if index + NATIVE_ONE >= argc
+                    parsed_top: i64 = parse_nonnegative_cstr(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("pgo --top requires a positive integer") if parsed_top < NATIVE_ONE or parsed_top > NATIVE_PGO_TOP_MAX
+                    top <- parsed_top
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--min-calls") == NATIVE_ZERO:
+                    return report_error("pgo --min-calls requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    parsed_min_calls: i64 = parse_nonnegative_cstr(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("pgo --min-calls requires a non-negative integer") if parsed_min_calls < NATIVE_ZERO
+                    min_calls <- parsed_min_calls
+                    index <- index + NATIVE_TWO
+                    continue
+                if profiler_ffi_strcmp(argument, "--min-inclusive-ns") == NATIVE_ZERO:
+                    return report_error("pgo --min-inclusive-ns requires a non-negative integer") if index + NATIVE_ONE >= argc
+                    parsed_min_inclusive: i64 = parse_nonnegative_cstr(slots[index + NATIVE_ONE].cast[cstr])
+                    return report_error("pgo --min-inclusive-ns requires a non-negative integer") if parsed_min_inclusive < NATIVE_ZERO
+                    min_inclusive_ns <- parsed_min_inclusive
+                    index <- index + NATIVE_TWO
+                    continue
+                return report_error("unknown pgo option") if argument[NATIVE_ZERO.usize()] == NATIVE_BYTE_MINUS
+                return report_error("pgo accepts exactly one capture path")
+
+            raw: darray[u8] = read_file(capture_path)
+            return report_error("pgo capture could not be read") if raw.count == NATIVE_ZERO.usize()
+            capture: mutable darray[u8] = []
+            return report_error("pgo capture artifact is malformed or unsupported") if not unwrap_profile_artifact(raw, &capture)
+            profile: mutable NativeOfflineProfile = empty_native_offline_profile()
+            return report_error("pgo capture report is malformed or unsupported") if not read_offline_profile(capture, &profile)
+            return report_error("pgo accepts only functions or full captures") if not protocol_field_is(profile.collection_mode, "functions") and not protocol_field_is(profile.collection_mode, "full")
+            return report_error("pgo requires a successful complete capture") if not protocol_field_is(profile.outcome, "success") or not profile.capture_complete or not profile.capture_complete_available
+            return report_error("pgo capture lost profiling evidence") if profile.dropped > NATIVE_ZERO or profile.frame_dropped > NATIVE_ZERO or profile.capture_bytes_dropped > NATIVE_ZERO or profile.trace_omitted > NATIVE_ZERO
+
+            records: mutable darray[ComparisonFunctionRecord] = []
+            return report_error("pgo capture has malformed function records") if not json_read_function_records(capture, &records)
+            return report_error("pgo capture contains no function records") if records.count == NATIVE_ZERO.usize()
+            names: mutable darray[darray[u8]] = []
+            calls: mutable darray[i64] = []
+            inclusive: mutable darray[i64] = []
+            for record in records |record, names, calls, inclusive|:
+                return report_error("pgo capture contains an invalid function name") if not pgo_function_name_valid(record.function)
+                existing: i64 = pgo_function_index(names, record.function)
+                if existing >= NATIVE_ZERO:
+                    calls[existing.usize()] <- native_saturating_add(calls[existing.usize()], record.completed_calls)
+                    inclusive[existing.usize()] <- native_saturating_add(inclusive[existing.usize()], record.inclusive_ns)
+                else:
+                    names.push(record.function)
+                    calls.push(record.completed_calls)
+                    inclusive.push(record.inclusive_ns)
+
+            selected: mutable darray[bool] = []
+            selected_names: mutable darray[darray[u8]] = []
+            for _index in 0..<names.count |selected|:
+                selected.push(false)
+            while selected_names.count.i64() < top |selected_names, names, calls, inclusive, selected, min_calls, min_inclusive_ns|:
+                best: mutable i64 = NATIVE_NEGATIVE_ONE
+                for candidate in 0..<names.count |candidate, names, calls, inclusive, selected, min_calls, min_inclusive_ns, best|:
+                    continue if selected[candidate]
+                    continue if calls[candidate] < min_calls or inclusive[candidate] < min_inclusive_ns
+                    if best < NATIVE_ZERO or inclusive[candidate] > inclusive[best.usize()] or (inclusive[candidate] == inclusive[best.usize()] and calls[candidate] > calls[best.usize()]):
+                        best <- candidate.i64()
+                break if best < NATIVE_ZERO
+                selected[best.usize()] <- true
+                selected_names.push(names[best.usize()])
+            return report_error("pgo capture contains no functions above the selected thresholds") if selected_names.count == NATIVE_ZERO.usize()
+
+            rendered: mutable darray[u8] = []
+            pgo_append_profile(&rendered, selected_names)
+            if output_path.count > NATIVE_ZERO.usize():
+                return NATIVE_ZERO if write_file(output_path, rendered)
+                return report_error("could not write compiler optimization profile")
+            _ = write_all_fd(NATIVE_STANDARD_OUTPUT, rendered) can Console
+            return NATIVE_ZERO
+
+
+    public:
+        def pgo(argc: i64, slots: mutable cstr&&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            return pgo_profile(argc, slots)
