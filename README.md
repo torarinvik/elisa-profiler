@@ -490,3 +490,22 @@ Panics and timed-out children retain their partial trace when the process
 reaches the collector's exit/signal handler. Timed-out targets run in an
 isolated process group; the profiler terminates that group so forked target
 children do not survive the profiling command.
+
+### Uninstrumented speed comparisons
+
+Use ordinary executables to decide whether an optimization is faster; full trace
+and instrumented sampling include observer cost. The companion paired runner
+excludes compilation, randomizes baseline/candidate order within each pair, and
+requires successful exits and identical stdout/stderr across all runs:
+
+```sh
+python3 scripts/benchmark-native.py --baseline /absolute/before --candidate /absolute/after \
+    --repeat 15 --warmup 2 --output timing.json
+```
+
+`--stdin FILE` supplies identical input. Reports record executable/input hashes,
+each run's child CPU and wall time, medians, ranges, and the candidate/baseline
+ratio. Wall time includes process launch and shutdown; use a sufficiently long
+workload (at least tens of milliseconds), a quiet host, and repeat close results.
+This runner provides execution timing, not stacks, allocation traces, or proof
+of speed on workloads that were not measured. Collect those with `profile`.

@@ -309,13 +309,23 @@ python3 scripts/analyze-allocation-sites.py capture.json --output memory-sites.j
 
 This analysis merges layout and allocation events by sequence. It supports
 allocation, in-place growth, moved growth (including preceding allocation and
-reclaim), reclaim, reset, and free. Address reuse after reset starts a new logical
+reclaim), reclaim, reset, free, adoption, trim, and rewind. Stable region-header
+identities keep backing capacity counted once when adoption publishes parent
+layouts before its transfer event. Rewind retires complete allocations beyond
+the mark; a mark cutting through a live allocation makes the result unavailable.
+Address reuse after reset starts a new logical
 lifetime. It measures observed retirement time, not semantic last use or leaks.
 Backing capacity is observed region capacity, not committed pages or RSS.
 Capacity retained at reset is explicitly separate from live allocations.
+`peak_retained_capacity_on_reuse_bytes` measures backing present at reset that
+survives until the next allocation in that arena, after intervening trims. Newly
+created backing is excluded. This distinguishes a transient pre-trim reset total
+from the capacity actually retained for reuse. The report also gives the last
+and arithmetic mean retained capacity over observed reuse boundaries and the
+number of observations. This mean is per reuse, not time weighted.
 
-Capture loss, sequence gaps, missing identities/sizes, unsupported adoption,
-trim/rewind, or exceeding the 100,000-event analysis bound makes lifetime metrics
+Capture loss, sequence gaps, missing identities/sizes/layouts, ambiguous adoption
+or rewind boundaries, or exceeding the 100,000-event analysis bound makes lifetime metrics
 unavailable with a reason. Partial lifetime totals are withheld. Site traffic
 remains observational and explicitly marks analysis truncation. This does not
 prove that unhooked allocators or shutdown operations after capture are covered.
