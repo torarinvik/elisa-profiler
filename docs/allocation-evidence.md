@@ -14,8 +14,9 @@ These are capture-wide observations, not proof of complete coverage in every
 repetition or every allocator. Text and HTML reports apply the same distinction,
 including when loading older saved captures.
 
-This is runtime hook evidence, not a heap census. The current implementation
-does not compute logical live bytes, allocation lifetimes, or leaks. Peak RSS
+This is runtime hook evidence, not a heap census. The raw report does not itself infer logical live bytes, allocation lifetimes,
+or leaks. The bounded analysis described below reconstructs a supported subset
+of observed lifecycles. Peak RSS
 remains an independent operating-system observation and must not be compared
 with a sum of these event sizes as though they measured the same thing.
 
@@ -267,3 +268,63 @@ independent allocator-oracle coverage:
 
 Live-at-end allocations, once implemented, will be retention evidence. Calling
 them leaks requires separate ownership/lifetime proof.
+
+## Source attribution and bounded lifetime analysis
+
+New allocation records can include `site_known`, `site_function_id`, `site_line`,
+`site_caller_id`, `site_caller_line`, `site_stack_omitted`, and `site_stack`.
+Identities retain full uint64 precision. Lines are the last observed compiler
+source positions, including a function-entry fallback before its first statement.
+They are not a claim about the exact allocation expression after optimization.
+`site_stack` is up to eight `function_id:compiler_line` pairs, outermost retained
+frame first, separated by semicolons. `-` means unavailable. The omitted count
+records older frames excluded by that bound. No active frame, overflow, or a
+missing function identity leaves leaf attribution unknown.
+
+The collector copies fixed-width TLS frame data under its existing budget and
+lock. No strings or allocations are created by attribution in the callback.
+The larger event structure is charged to the capture budget. Full captures
+therefore have additional observer overhead; use sample mode or uninstrumented
+runs for timing comparisons.
+
+Wire extension `allocation_site` version 1 immediately follows its allocation
+record and contains sequence, known, function ID, line, caller ID, caller line,
+omitted count, and stack text. The native decoder matches the sequence and
+rejects duplicate/orphan, malformed, and oversized fields. Future extension
+versions remain ignorable. Older captures without attribution still load.
+
+Native HTML reports group observed allocation traffic by source site and retain
+caller context in row titles. The displayed origin skips frames from the known
+Elisa arena/profiler-hook source files, without deleting the raw stack. Unknown
+identities remain unknown. Counts include actual `alloc` records; moved-realloc
+notifications are not counted a second time. Positive in-place growth is shown
+separately. Repetitions are aggregated for the traffic table. Integer arithmetic
+uses BigInt, and the report bounds indexing and displayed rows.
+
+For a per-repetition analysis with lifecycle measurements:
+
+```sh
+python3 scripts/analyze-allocation-sites.py capture.json --output memory-sites.json
+```
+
+This analysis merges layout and allocation events by sequence. It supports
+allocation, in-place growth, moved growth (including preceding allocation and
+reclaim), reclaim, reset, and free. Address reuse after reset starts a new logical
+lifetime. It measures observed retirement time, not semantic last use or leaks.
+Backing capacity is observed region capacity, not committed pages or RSS.
+Capacity retained at reset is explicitly separate from live allocations.
+
+Capture loss, sequence gaps, missing identities/sizes, unsupported adoption,
+trim/rewind, or exceeding the 100,000-event analysis bound makes lifetime metrics
+unavailable with a reason. Partial lifetime totals are withheld. Site traffic
+remains observational and explicitly marks analysis truncation. This does not
+prove that unhooked allocators or shutdown operations after capture are covered.
+
+Regression commands:
+
+```sh
+bash test/collector_allocation_site_smoke.sh
+python3 test/protocol_property_smoke.py
+python3 test/allocation_site_analysis_smoke.py
+node test/allocation_site_html_smoke.js path/to/generated-report.html
+```

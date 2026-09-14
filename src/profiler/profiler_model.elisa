@@ -558,6 +558,7 @@ module ProfilerNative:
             source_lines: mutable darray[i64]
 
         struct CaptureSummary:
+            allocation_site_pending_sequence: mutable darray[u8] = []
             region_layout_records: mutable darray[u8]
             region_layout_count: mutable i64
             allocation_abi_evidence: mutable darray[i64]

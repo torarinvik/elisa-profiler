@@ -194,6 +194,34 @@ def main() -> int:
         assert baseline_process.returncode == 0, baseline_process.stderr
         assert baseline_report is not None
         assert "allocation_hook_abi" not in baseline_report["run"]["repetitions"][0]
+        allocation = protocol_record("allocation", 1, 123, 32, 0, 0, 456, 0, MAX_U64, 1, 2)
+        allocation_capture = baseline_capture + frame(2, allocation)
+        site_values = (MAX_U64, 1, MAX_U64 - 1, 23, MAX_U64 - 2, 12, 0, f"{MAX_U64 - 2}:12;{MAX_U64 - 1}:23")
+        site = protocol_record("extension", "allocation_site", 1, *site_values)
+        process, report = recover(native, work / "allocation-site", allocation_capture + frame(3, site))
+        assert process.returncode == 0, process.stderr
+        event = report["run"]["repetitions"][0]["allocation_events"][0]
+        assert [event[key] for key in ("site_known", "site_function_id", "site_line", "site_caller_id", "site_caller_line")] == list(site_values[1:6]), event
+        # Offline loading must preserve the optional fields and exact u64 identities.
+        offline = work / "allocation-site-offline.html"
+        process = subprocess.run([str(native), "report", str(work / "allocation-site" / "report.json"), "--format", "html", "--output", str(offline)], capture_output=True)
+        assert process.returncode == 0, process.stderr
+        assert str(MAX_U64 - 1) in offline.read_text()
+        invalid_sites = [(*site_values, ""), (MAX_U64,)]
+        for field_index, invalid in ((0, 1), (1, 2), (2, MAX_U64 + 1), (6, MAX_U64 + 1), (7, "1:2;"), (7, f"{MAX_U64 + 1}:2"), (7, ";".join(["1:2"] * 9))):
+            fields = list(site_values)
+            fields[field_index] = invalid
+            invalid_sites.append(tuple(fields))
+        for index, values in enumerate(invalid_sites):
+            invalid = protocol_record("extension", "allocation_site", 1, *values)
+            expect_rejected(native, work / f"site-invalid-{index}", allocation_capture + frame(3, invalid), "invalid allocation site")
+        expect_rejected(native, work / "site-duplicate", allocation_capture + frame(3, site) + frame(4, site), "duplicate allocation site")
+        expect_rejected(native, work / "site-orphan", baseline_capture + frame(2, site), "orphan allocation site")
+        expect_rejected(native, work / "site-no-version", baseline_capture + frame(2, protocol_record("extension", "allocation_site")), "missing site version")
+        future_site = protocol_record("extension", "allocation_site", 2, "future-format")
+        process, report = recover(native, work / "site-future", allocation_capture + frame(3, future_site))
+        assert process.returncode == 0 and 'site_known' not in report['run']['repetitions'][0]['allocation_events'][0]
+
         for index, values in enumerate((REGION_LAYOUT_VALUES, (1, MAX_U64, MAX_U64 - 1, MAX_U64, 0, MAX_U64, MAX_U64, MAX_U64))):
             payload = protocol_record("extension", "region_layout", 1, *values)
             process, report = recover(native, work / f"layout-{index}", baseline_capture + frame(VALUE_FRAME_SEQUENCE, payload))

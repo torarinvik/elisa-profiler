@@ -68,6 +68,11 @@ typedef struct {
     uint64_t sequence;
     uint64_t thread_id;
     uint64_t timestamp_ns;
+    uint64_t function_id, caller_id;
+    uint32_t line, caller_line, site_known;
+    uint32_t site_depth, site_omitted;
+    uint64_t site_ids[8];
+    uint32_t site_lines[8];
 } profile_allocation_event;
 
 typedef struct profile_call_path profile_call_path;
@@ -774,6 +779,7 @@ typedef struct {
     const char *function_name;
     const char *caller_name;
     profile_call_path *path;
+    uint32_t line; /* Last observed source position in this frame. */
     uint64_t function_id;
     uint64_t caller_id;
 #if ELISA_PROFILE_TIMING
@@ -1441,6 +1447,24 @@ static void profile_collect_allocation_event(uint32_t is_region_layout, uint32_t
         .thread_id = thread->thread_id,
         .timestamp_ns = profile_trace_timestamp_ns(),
     };
+    /* Copy fixed-width identities: no allocation or borrowed name pointers. */
+    if (profile_call_depth > 0 && profile_call_overflow_depth == 0) {
+        const profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
+        event->function_id = frame->function_id;
+        event->line = frame->line;
+        event->site_known = frame->function_id != PROFILE_ID_UNSET;
+        size_t start = profile_call_depth > 8 ? profile_call_depth - 8 : 0;
+        event->site_omitted = (uint32_t)start;
+        for (size_t i = start; i < profile_call_depth; ++i) {
+            event->site_ids[event->site_depth] = profile_call_stack[i].function_id;
+            event->site_lines[event->site_depth++] = profile_call_stack[i].line;
+        }
+        if (profile_call_depth > 1) {
+            const profile_call_frame *caller = &profile_call_stack[profile_call_depth - 2];
+            event->caller_id = caller->function_id;
+            event->caller_line = caller->line;
+        }
+    }
     profile_allocation_event_count =
         profile_saturating_increment_u64(profile_allocation_event_count);
     pthread_mutex_unlock(&profile_lock);
@@ -1716,6 +1740,12 @@ static void profile_record(const char *function_name, uint32_t line,
         return;
     }
     function_name = function_name == NULL ? "<unknown>" : function_name;
+    if (profile_call_depth > 0 && profile_call_overflow_depth == 0 &&
+        kind != PROFILE_KIND_FUNCTION) {
+        profile_call_frame *frame = &profile_call_stack[profile_call_depth - 1];
+        if (frame->function_name != NULL && strcmp(frame->function_name, function_name) == 0)
+            frame->line = line;
+    }
     pthread_mutex_lock(&profile_lock);
     profile_thread_state *thread = profile_get_thread_locked();
 #if !ELISA_PROFILE_TIMING
@@ -1906,6 +1936,7 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
         if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
             profile_call_stack[profile_call_depth] = (profile_call_frame){
                 .function_name = function_name,
+                .line = line,
                 .function_id = function_id,
             };
             profile_call_depth = profile_saturating_increment_size(profile_call_depth);
@@ -1937,6 +1968,7 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
     if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
         profile_call_stack[profile_call_depth] = (profile_call_frame){
             .function_name = function_name,
+            .line = line,
             .caller_name = caller_name,
             .path = path,
             .function_id = function_id,
@@ -1955,6 +1987,7 @@ static void profile_record_function_entry(const char *function_name, uint32_t li
     if (profile_call_depth < PROFILE_CALL_STACK_CAPACITY) {
         profile_call_stack[profile_call_depth] = (profile_call_frame){
             .function_name = function_name,
+            .line = line,
             .caller_name = caller_name,
             .path = path,
             .function_id = function_id,
@@ -2532,6 +2565,30 @@ static void profile_dump_allocation_records(void) {
             profile_record_append_uint64(event->thread_id);
             profile_record_append_char('\t');
             profile_record_append_uint64(event->timestamp_ns);
+            profile_record_emit();
+            profile_record_begin();
+            profile_record_append_text("extension\tallocation_site\t1\t");
+            profile_record_append_uint64(event->sequence);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->site_known);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->function_id);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->line);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->caller_id);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->caller_line);
+            profile_record_append_char('\t');
+            profile_record_append_uint64(event->site_omitted);
+            profile_record_append_char('\t');
+            if (event->site_depth == 0) profile_record_append_char('-');
+            for (uint32_t i = 0; i < event->site_depth; ++i) {
+                if (i) profile_record_append_char(';');
+                profile_record_append_uint64(event->site_ids[i]);
+                profile_record_append_char(':');
+                profile_record_append_uint64(event->site_lines[i]);
+            }
             profile_record_emit();
         }
     }

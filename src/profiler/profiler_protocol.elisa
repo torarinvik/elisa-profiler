@@ -615,6 +615,78 @@ extend ProfilerNative:
             return "unknown"
 
 
+        # A v1 site decorates the immediately preceding allocation, never a guessed
+        # address match. Missing extensions preserve the older raw-event contract.
+        def allocation_site_stack_valid(site_frames: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            return true if protocol_field_is(site_frames, "-")
+            cursor: mutable usize = NATIVE_ZERO.usize()
+            pairs: mutable i64 = NATIVE_ZERO
+            while cursor < site_frames.count |cursor, pairs, site_frames|:
+                identity: mutable darray[u8] = []
+                line: mutable darray[u8] = []
+                while cursor < site_frames.count and site_frames[cursor] != NATIVE_BYTE_COLON |cursor, identity, site_frames|:
+                    identity.push(site_frames[cursor])
+                    cursor <- cursor + NATIVE_ONE.usize()
+                return false if cursor == site_frames.count
+                cursor <- cursor + NATIVE_ONE.usize()
+                while cursor < site_frames.count and site_frames[cursor] != 59.u8() |cursor, line, site_frames|:
+                    line.push(site_frames[cursor])
+                    cursor <- cursor + NATIVE_ONE.usize()
+                return false if not protocol_unsigned_u64(identity) or not protocol_unsigned_u64(line)
+                pairs <- pairs + NATIVE_ONE
+                return false if pairs > 8
+                if cursor < site_frames.count:
+                    cursor <- cursor + NATIVE_ONE.usize()
+                    return false if cursor == site_frames.count
+            return pairs > NATIVE_ZERO
+
+
+        def append_allocation_site(summary: mutable CaptureSummary&, records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize) -> void can[Abort.Panic, Memory.Allocate]:
+            sequence: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &sequence)
+            known: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &known)
+            function_id: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &function_id)
+            line: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &line)
+            caller_id: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &caller_id)
+            caller_line: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &caller_line)
+            omitted: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &omitted)
+            site_frames: mutable darray[u8] = []
+            cursor <- protocol_field_into(data, cursor, stop, &site_frames)
+            valid: mutable bool = cursor == stop and data[stop - NATIVE_ONE.usize()] != NATIVE_BYTE_TAB and allocation_site_stack_valid(site_frames) and protocol_unsigned_u64(omitted) and protocol_unsigned_u64(sequence) and protocol_unsigned_u64(known) and protocol_unsigned_u64(function_id) and protocol_unsigned_u64(line) and protocol_unsigned_u64(caller_id) and protocol_unsigned_u64(caller_line)
+            valid <- false if protocol_number_field(known) != NATIVE_ZERO and protocol_number_field(known) != NATIVE_ONE
+            valid <- false if sequence.count != summary.allocation_site_pending_sequence.count or sequence.count == NATIVE_ZERO.usize()
+            if valid:
+                for index in NATIVE_ZERO.usize()..<sequence.count |valid, sequence, summary|:
+                    valid <- false if sequence[index] != summary.allocation_site_pending_sequence[index]
+            if not valid or records.count == NATIVE_ZERO.usize():
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                return
+            summary.allocation_site_pending_sequence <- []
+            _ = records.pop()
+            append_text(records, ",\"site_known\":")
+            append_protocol_number(records, known)
+            append_text(records, ",\"site_function_id\":")
+            append_protocol_number(records, function_id)
+            append_text(records, ",\"site_line\":")
+            append_protocol_number(records, line)
+            append_text(records, ",\"site_caller_id\":")
+            append_protocol_number(records, caller_id)
+            append_text(records, ",\"site_caller_line\":")
+            append_protocol_number(records, caller_line)
+            append_text(records, ",\"site_stack_omitted\":")
+            append_protocol_number(records, omitted)
+            append_text(records, ",\"site_stack\":")
+            append_json_string(records, site_frames)
+            append_text(records, "}")
+
+
         def append_allocation_record(summary: mutable CaptureSummary&, allocation_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.allocation_record_count, NATIVE_PROTOCOL_ERROR_ALLOCATION, NATIVE_MAX_PROTOCOL_ALLOCATION_RECORDS)
             kind_field: mutable darray[u8] = []
@@ -648,6 +720,8 @@ extend ProfilerNative:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                 return
+            summary.allocation_site_pending_sequence <- []
+            summary.allocation_site_pending_sequence.extend(sequence_field)
             append_record_separator(allocation_records)
             append_text(allocation_records, "{\"kind\":\"")
             append_text(allocation_records, kind_name)
@@ -1042,6 +1116,17 @@ extend ProfilerNative:
                                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
                             else:
                                 summary.allocation_abi_flags <- flags
+                    elif frame_valid and line_stop == record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tallocation_site") and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tallocation_site"):
+                        summary.malformed <- true
+                        summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                    elif frame_valid and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tallocation_site\t"):
+                        cursor: mutable usize = record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tallocation_site\t")
+                        version: i64 = parse_protocol_number(data, &cursor, line_stop)
+                        if version < NATIVE_ONE:
+                            summary.malformed <- true
+                            summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION
+                        elif version == NATIVE_ONE:
+                            append_allocation_site(&summary, &allocation_records, data, &cursor, line_stop)
                     elif frame_valid and line_stop == record_start + profiler_ffi_sview_len("ELISA_PROFILE\t1\textension\tregion_layout") and line_prefix(data, record_start, line_stop, "ELISA_PROFILE\t1\textension\tregion_layout"):
                         summary.malformed <- true
                         summary.malformed_code <- NATIVE_PROTOCOL_ERROR_ALLOCATION

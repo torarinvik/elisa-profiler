@@ -50,7 +50,7 @@ extend ProfilerNative:
             return result
 
 
-        def resolve_native_source_location(source_map: NativeSourceMap&, compiler_line: i64, mapped_line: mutable i64) -> bool:
+        def resolve_native_source_location(source_map: NativeSourceMap&, compiler_line: i64, mapped_line: mutable i64&) -> bool:
             mapped_line <- compiler_line
             return false if not source_map.available or compiler_line <= NATIVE_ZERO
             selected: mutable i64 = NATIVE_NEGATIVE_ONE

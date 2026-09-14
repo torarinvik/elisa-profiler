@@ -120,7 +120,7 @@ extend ProfilerNative:
             content_stop: usize = stop - NATIVE_ONE.usize()
             fields: mutable i64 = NATIVE_ZERO
             while cursor < content_stop |cursor, fields, data, content_stop|:
-                return false if fields >= NATIVE_ALLOCATION_JSON_FIELD_COUNT
+                return false if fields >= NATIVE_ALLOCATION_JSON_FIELD_COUNT + 7
                 key_stop: i64 = json_string_end(data, cursor, content_stop)
                 return false if key_stop < NATIVE_ZERO
                 cursor <- json_skip_whitespace(data, key_stop.usize(), content_stop)
@@ -143,7 +143,20 @@ extend ProfilerNative:
                     return false if data[cursor] != NATIVE_BYTE_COMMA
                     cursor <- json_skip_whitespace(data, cursor + NATIVE_ONE.usize(), content_stop)
                     return false if cursor >= content_stop
-            return false if fields != NATIVE_ALLOCATION_JSON_FIELD_COUNT
+            return false if fields != NATIVE_ALLOCATION_JSON_FIELD_COUNT and fields != NATIVE_ALLOCATION_JSON_FIELD_COUNT + 7
+            if fields == NATIVE_ALLOCATION_JSON_FIELD_COUNT + 7:
+                return false if not json_required_unsigned_field_valid(data, "site_known", start, stop)
+                return false if not json_required_unsigned_field_valid(data, "site_function_id", start, stop)
+                return false if not json_required_unsigned_field_valid(data, "site_line", start, stop)
+                return false if not json_required_unsigned_field_valid(data, "site_caller_id", start, stop)
+                return false if not json_required_unsigned_field_valid(data, "site_caller_line", start, stop)
+                return false if not json_required_unsigned_field_valid(data, "site_stack_omitted", start, stop)
+                site_frames: mutable darray[u8] = []
+                return false if not json_read_string_field(data, "site_stack", start, stop, &site_frames)
+                return false if not allocation_site_stack_valid(site_frames)
+                known: mutable i64 = NATIVE_NEGATIVE_ONE
+                return false if not json_read_number_field(data, "site_known", start, stop, &known)
+                return false if known != NATIVE_ZERO and known != NATIVE_ONE
             kind: mutable darray[u8] = []
             code: mutable i64 = NATIVE_ZERO
             observed_repetition: mutable i64 = NATIVE_ZERO
