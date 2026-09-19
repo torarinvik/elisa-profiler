@@ -2338,7 +2338,8 @@ extend ProfilerNative:
             argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
             environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
             compiler_binary: mutable darray[u8] = []
-            environment_or_executable("ELISA_COMPILER_SCRIPT", "../elisa-compiler-worktrees/profiler/scripts/elisac_stage1.sh", argv_zero, "/../../elisa-compiler-worktrees/profiler/scripts/elisac_stage1.sh", compiler_binary)
+            if not copy_environment("ELISA_COMPILER_SCRIPT", compiler_binary):
+                compiler_binary <- path_with_suffix(compiler_root, "/scripts/elisac_stage1.sh")
             compiler_stage1: mutable darray[u8] = []
             environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_stage1)
             runtime_object: mutable darray[u8] = []
