@@ -1,5 +1,5 @@
 # Rewind retains a prefix, resets later regions, and permits tail-address reuse.
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+include "../../Elisa-compiler/elisacore_std/arena.elisa"
 
 module ArenaRewindWorkload:
     private:

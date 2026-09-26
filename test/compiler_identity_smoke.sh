@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../elisa-compiler-worktrees/profiler}"
+COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../Elisa-compiler}"
 STAGE1="${ELISA_STAGE1_BIN:-$COMPILER_ROOT/bin/elisac-stage1}"
 WRAPPER="$COMPILER_ROOT/scripts/elisac_stage1.sh"
 WORK="$(mktemp -d "${ELISA_TEST_TMPDIR:-/tmp}/elisa-profiler-compiler-identity.XXXXXX")"
@@ -41,7 +41,7 @@ declarations = {
     "elisa_trace_record_id(ptr, i32, i64)",
     "elisa_trace_function_entry_id(ptr, i32, i64)",
     "elisa_trace_function_exit_id(ptr, i32, i64)",
-    "elisa_trace_record_value_id(ptr, i32, i64, ptr, i64, i32)",
+    "elisa_trace_record_value_id(ptr, i32, ptr, i64, i32, i64)",
 }
 call_pattern = re.compile(
     r"call void @(?P<name>elisa_trace_(?:record_id|function_entry_id|function_exit_id|record_value_id))"

@@ -1,5 +1,5 @@
 # A reset releases logical allocations while retaining reusable region backing.
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+include "../../Elisa-compiler/elisacore_std/arena.elisa"
 
 module ArenaResetWorkload:
     private:

@@ -1,5 +1,5 @@
 # Reusing a reclaimed span in an earlier region must retain that region identity.
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+include "../../Elisa-compiler/elisacore_std/arena.elisa"
 
 module ArenaReuseWorkload:
     private:

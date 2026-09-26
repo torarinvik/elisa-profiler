@@ -1,9 +1,8 @@
 # Compiler integration ledger
 
-The profiler is built with the dedicated Elisa compiler worktree at
-`../elisa-compiler-worktrees/profiler`, on branch `codex/profiler`. The compiler
-worktree is intentionally separate from every source compiler checkout so profiler
-experiments can repair compiler defects without modifying their owners.
+Current profiler builds use the canonical Elisa compiler checkout at
+`../Elisa-compiler`. The integration records below retain dated evidence from
+earlier dedicated-worktree builds.
 
 ## Main integration — 2026-09-09
 
@@ -197,7 +196,7 @@ currently on disk. Those require a reviewed import commit and the compiler
 build manifest/provenance checks described below.
 
 After a successful seed, the profiler Makefile writes
-`../elisa-compiler-worktrees/profiler/build/compiler-build-manifest.json`. This
+`../Elisa-compiler/build/compiler-build-manifest.json`. This
 manifest is content-addressed over the compiler inputs and records the source
 commit, relevant dirty-source digest, stage0/stage1/runtime hashes, seed and
 native flags, LLVM tool versions and hashes, architecture, and discovered trace

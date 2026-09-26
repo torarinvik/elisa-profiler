@@ -40,7 +40,7 @@ extend ProfilerNative:
                 if second_separator < line_stop:
                     for index in second_separator + NATIVE_ONE.usize()..<line_stop |path, data|:
                         path.push(data[index])
-                valid: bool = flat_line > NATIVE_ZERO and source_line > NATIVE_ZERO and path.count > NATIVE_ZERO.usize()
+                valid: mutable bool = flat_line > NATIVE_ZERO and source_line > NATIVE_ZERO and path.count > NATIVE_ZERO.usize()
                 valid <- valid and (result.flat_lines.count == NATIVE_ZERO.usize() or flat_line > result.flat_lines[result.flat_lines.count - NATIVE_ONE.usize()])
                 if valid:
                     result.flat_lines.push(flat_line)

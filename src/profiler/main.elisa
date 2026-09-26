@@ -7,7 +7,7 @@
 # The native implementation owns the profiler CLI, execution boundary, protocol decoder,
 # aggregation model, and report writers. The low-level C collector remains an explicit ABI
 # component; it is not a second profiler front door.
-include "../../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
+include "../../../Elisa-compiler/elisacore_std/collections.elisa"
 
 struct ProfilerNativeTimespec:
     seconds: i64
@@ -1627,11 +1627,11 @@ extend ProfilerNative:
                 return report_error("unknown doctor option")
             compiler_root: mutable darray[u8] = []
             argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
-            environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
+            environment_or_executable("ELISA_COMPILER_ROOT", "../Elisa-compiler", argv_zero, "/../../Elisa-compiler", compiler_root)
             stage1: mutable darray[u8] = []
-            environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", stage1)
+            environment_or_executable("ELISA_STAGE1_BIN", "../Elisa-compiler/bin/elisac-stage1", argv_zero, "/../../Elisa-compiler/bin/elisac-stage1", stage1)
             runtime: mutable darray[u8] = []
-            environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime)
+            environment_or_executable("ELISA_RUNTIME_OBJ", "../Elisa-compiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../Elisa-compiler/build/runtime/elisacore_runtime.o", runtime)
             collector: mutable darray[u8] = []
             environment_or_executable("ELISA_PROFILER_RUNTIME_C", "scripts/profiler_runtime.c", argv_zero, "/../scripts/profiler_runtime.c", collector)
             manifest_path: darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
@@ -2336,14 +2336,14 @@ extend ProfilerNative:
         
             compiler_root: mutable darray[u8] = []
             argv_zero: cstr = slots[NATIVE_ZERO].cast[cstr]
-            environment_or_executable("ELISA_COMPILER_ROOT", "../elisa-compiler-worktrees/profiler", argv_zero, "/../../elisa-compiler-worktrees/profiler", compiler_root)
+            environment_or_executable("ELISA_COMPILER_ROOT", "../Elisa-compiler", argv_zero, "/../../Elisa-compiler", compiler_root)
             compiler_binary: mutable darray[u8] = []
             if not copy_environment("ELISA_COMPILER_SCRIPT", compiler_binary):
                 compiler_binary <- path_with_suffix(compiler_root, "/scripts/elisac_stage1.sh")
             compiler_stage1: mutable darray[u8] = []
-            environment_or_executable("ELISA_STAGE1_BIN", "../elisa-compiler-worktrees/profiler/bin/elisac-stage1", argv_zero, "/../../elisa-compiler-worktrees/profiler/bin/elisac-stage1", compiler_stage1)
+            environment_or_executable("ELISA_STAGE1_BIN", "../Elisa-compiler/bin/elisac-stage1", argv_zero, "/../../Elisa-compiler/bin/elisac-stage1", compiler_stage1)
             runtime_object: mutable darray[u8] = []
-            environment_or_executable("ELISA_RUNTIME_OBJ", "../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../elisa-compiler-worktrees/profiler/build/runtime/elisacore_runtime.o", runtime_object)
+            environment_or_executable("ELISA_RUNTIME_OBJ", "../Elisa-compiler/build/runtime/elisacore_runtime.o", argv_zero, "/../../Elisa-compiler/build/runtime/elisacore_runtime.o", runtime_object)
             compiler_manifest: mutable darray[u8] = path_with_suffix(compiler_root, "/build/compiler-build-manifest.json")
             # Hash the selected artifacts, not a manifest that may describe a
             # different binary, runtime, or an older build at the same path.
@@ -2436,6 +2436,8 @@ extend ProfilerNative:
             if not build_ok:
                 build_diagnostics: mutable darray[u8] = read_file(compile_error_path)
                 write_stderr(build_diagnostics)
+                build_diagnostics <- read_file(compile_output_path)
+                write_stderr(build_diagnostics) if build_diagnostics.count > NATIVE_ZERO.usize()
                 prebuilt_diagnostics: mutable darray[u8] = read_file(prebuilt_symbols_error_path)
                 write_stderr(prebuilt_diagnostics) if prebuilt_requested
                 build_diagnostics <- read_file(link_error_path)

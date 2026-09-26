@@ -204,7 +204,7 @@ extend ProfilerNative:
             return report_error("benchmark requires --output PATH") if output_path.count == NATIVE_ZERO.usize()
             manifest: darray[u8] = read_file(manifest_path)
             return report_error("benchmark manifest could not be read") if manifest.count == NATIVE_ZERO.usize() or not json_document_is_object(manifest)
-            version: i64 = NATIVE_ZERO
+            version: mutable i64 = NATIVE_ZERO
             return report_error("benchmark manifest has an unsupported schema version") if not json_read_number_field(manifest, "schema_version", NATIVE_ZERO.usize(), manifest.count, &version) or version != NATIVE_BENCHMARK_SCHEMA_VERSION
             baseline_source: mutable darray[u8] = []
             candidate_source: mutable darray[u8] = []

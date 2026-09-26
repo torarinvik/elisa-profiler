@@ -1,5 +1,5 @@
 # An oversized cache miss must leave a parked small region available for reuse.
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/arena.elisa"
+include "../../Elisa-compiler/elisacore_std/arena.elisa"
 
 module RegionCacheOversizeWorkload:
     private:

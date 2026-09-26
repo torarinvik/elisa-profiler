@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../elisa-compiler-worktrees/profiler}"
+COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../Elisa-compiler}"
 COMPILER_SCRIPT="$COMPILER_ROOT/scripts/elisac_stage1.sh"
 
 if [[ ! -x "$COMPILER_SCRIPT" ]]; then
@@ -14,7 +14,7 @@ fi
 # A seed is the only operation that needs stage0. Keep the default explicit and
 # local, while respecting ELISACORE_BIN when the caller has already selected one.
 if [[ "${1:-}" == "--seed" && -z "${ELISACORE_BIN:-}" ]]; then
-    STAGE0_CORE="${ELISA_STAGE0_CORE:-$ROOT/../../Go projects/structpy-tree}"
+    STAGE0_CORE="${ELISA_STAGE0_CORE:-$ROOT/../../Go projects/Elisa-core}"
     if [[ -x "$STAGE0_CORE/compiler/bin/elisac" ]]; then
         export ELISACORE_BIN="$STAGE0_CORE/compiler/bin/elisac"
     fi

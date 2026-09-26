@@ -41,7 +41,7 @@ def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: source_stability_smoke.py NATIVE_PROFILER")
     profiler = Path(sys.argv[1]).resolve()
-    compiler = (ROOT / "../elisa-compiler-worktrees/profiler/bin/elisac-stage1").resolve()
+    compiler = (ROOT / "../Elisa-compiler/bin/elisac-stage1").resolve()
     with tempfile.TemporaryDirectory(prefix="elisa-source-stability-") as directory:
         work = Path(directory)
         source = work / "target.elisa"

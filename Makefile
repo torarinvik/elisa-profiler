@@ -1,6 +1,6 @@
 PROFILER_ROOT := $(abspath .)
-COMPILER_WORKTREE ?= $(abspath ../elisa-compiler-worktrees/profiler)
-STAGE0_CORE ?= $(CURDIR)/../../Go projects/structpy-tree
+COMPILER_WORKTREE ?= $(abspath ../Elisa-compiler)
+STAGE0_CORE ?= $(CURDIR)/../../Go projects/Elisa-core
 SEED_OPT_LEVEL ?= -O3
 NATIVE_OPT_LEVEL ?= -O1
 SEED_MAX_RSS_KB ?= 8388608

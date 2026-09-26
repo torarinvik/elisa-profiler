@@ -7,7 +7,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT INT TERM HUP
 
 [[ -x "$COMPILER" ]] || { echo "compiler wrapper missing: $COMPILER" >&2; exit 2; }
-[[ -x "${ELISA_COMPILER_ROOT:-$ROOT/../elisa-compiler-worktrees/profiler}/bin/elisac-stage1" ]] || {
+[[ -x "${ELISA_COMPILER_ROOT:-$ROOT/../Elisa-compiler}/bin/elisac-stage1" ]] || {
     echo "stage1 compiler is not seeded; run make compiler-seed" >&2
     exit 2
 }

@@ -4,7 +4,7 @@ set -euo pipefail
 # Development-time compiler integration audit. The profiler executable does not
 # depend on this script; it records the state used to build that executable.
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../elisa-compiler-worktrees/profiler}"
+COMPILER_ROOT="${ELISA_COMPILER_ROOT:-$ROOT/../Elisa-compiler}"
 LEDGER_PATH="${ELISA_COMPILER_LEDGER:-$ROOT/build/compiler-integration-ledger.json}"
 
 if ! git -C "$COMPILER_ROOT" rev-parse --git-dir >/dev/null 2>&1; then

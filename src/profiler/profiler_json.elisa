@@ -255,7 +255,7 @@ extend ProfilerNative:
                 elif escaped == NATIVE_BYTE_ESCAPE_TAB:
                     destination.push(NATIVE_BYTE_TAB)
                 elif escaped == NATIVE_BYTE_ESCAPE_UNICODE:
-                    codepoint: i64 = json_hex_quad(data, cursor + NATIVE_ONE.usize(), stop)
+                    codepoint: mutable i64 = json_hex_quad(data, cursor + NATIVE_ONE.usize(), stop)
                     return NATIVE_NEGATIVE_ONE if codepoint < NATIVE_ZERO
                     if codepoint >= NATIVE_UNICODE_HIGH_SURROGATE_MIN and codepoint <= NATIVE_UNICODE_HIGH_SURROGATE_MAX:
                         low_start: usize = cursor + NATIVE_JSON_UNICODE_DIGITS + NATIVE_THREE.usize()

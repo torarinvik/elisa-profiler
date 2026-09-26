@@ -1,4 +1,4 @@
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/collections.elisa"
+include "../../Elisa-compiler/elisacore_std/collections.elisa"
 include "../src/profiler/profiler_model.elisa"
 include "../src/profiler/profiler_macho.elisa"
 include "../src/profiler/profiler_macho_sections.elisa"

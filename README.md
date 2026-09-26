@@ -16,15 +16,14 @@ committed independently when profiling exposes a compiler bug.
 
 ## Local compiler
 
-The default compiler worktree is:
+The default compiler checkout is:
 
 ```text
-../elisa-compiler-worktrees/profiler
+../Elisa-compiler
 ```
 
-It is checked out from the compiler repository's `work` branch on
-`codex/profiler`. The profiler-side wrapper resolves that worktree by default;
-override it with `ELISA_COMPILER_ROOT` when needed.
+The profiler-side wrapper resolves this checkout by default; override it with
+`ELISA_COMPILER_ROOT` when needed.
 
 ```sh
 make compiler-status
@@ -41,15 +40,15 @@ scripts/elisa-compiler -o build/hello.o examples/hello.elisa
 
 `compiler-seed` uses `ELISACORE_BIN` when it is set, then the checked-out
 stage0 at `STAGE0_CORE/compiler/bin/elisac` (defaulting to the documented
-sibling checkout at `../../Go projects/structpy-tree`), and only then an
+sibling checkout at `../../Go projects/Elisa-core`), and only then an
 `elisac-stage0` found on `PATH`. This ordering avoids silently seeding from a
 stale installed snapshot such as `~/.elisac/elisac-stage0`. Set `STAGE0_BIN`,
 `STAGE0_CORE`, or `ELISA_STAGE0_CORE` when using a different explicitly chosen
 stage0. The seeded stage1 binary and compiler build outputs remain ignored
-artifacts inside the compiler worktree.
+artifacts inside the compiler checkout.
 
 `compiler-audit` verifies that every local branch tip in the compiler repository is
-already included in the profiler compiler worktree and atomically writes the ignored
+already included in the selected compiler checkout and atomically writes the ignored
 `build/compiler-integration-ledger.json` inventory. The ledger records remote refresh
 status, worktree HEADs, dirty files, relevant untracked files, and dirty-patch
 digests. It also warns about uncommitted changes in any compiler worktree; those
@@ -74,7 +73,7 @@ separate settings. `-O2` is not a validated profiler build configuration.
 The first implementation milestone is to compile and run an Elisa target with
 source-aware measurements, then report those measurements by function and
 source location. Compiler instrumentation and runtime event-format changes
-will live in the dedicated compiler worktree; the profiler repository will own
+will live in the selected compiler checkout; the profiler repository will own
 the command-line interface, collection, and report formats.
 
 The canonical implementation is Elisa. The native executable is built with
@@ -84,7 +83,7 @@ implementation helpers private. Invoke the built executable directly as
 `bin/elisa-profiler`. The former Python implementation has been removed; no
 user-facing command dispatches through a second profiler implementation. The
 native executable resolves
-defaults for the dedicated compiler worktree, runtime object, and collector
+defaults for the compiler checkout, runtime object, and collector
 source relative to its own location, so it is safe to invoke from outside the
 repository directory.
 

@@ -1,5 +1,5 @@
 # Real dictionary/set growth: verify every value survives repeated rehashes.
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/elisacore_runtime.elisa"
+include "../../Elisa-compiler/elisacore_std/elisacore_runtime.elisa"
 
 module CollectionGrowthWorkload:
     private:

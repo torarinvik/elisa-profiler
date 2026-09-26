@@ -1,6 +1,6 @@
 # Including the default runtime must not make trace callbacks call themselves
 # or hide the collector behind private runtime callback definitions.
-include "../../elisa-compiler-worktrees/profiler/elisacore_std/elisacore_runtime.elisa"
+include "../../Elisa-compiler/elisacore_std/elisacore_runtime.elisa"
 
 module RuntimeTraceWorkload:
     private:
