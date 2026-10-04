@@ -370,6 +370,15 @@ recovery-smoke: profiler-native
 
 test: native-regression-smoke metamorphic-smoke legacy-fixture-smoke
 
+.PHONY: allocation-schema-smoke tool-timeout-smoke
+allocation-schema-smoke:
+	@python3 "$(PROFILER_ROOT)/test/allocation_schema_smoke.py"
+
+tool-timeout-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/tool_timeout_smoke.py" "$(NATIVE_PROFILER_BIN)"
+
+test: allocation-schema-smoke tool-timeout-smoke
+
 .PHONY: collector-regression-smoke
 collector-regression-smoke:
 	@set -eu; regression_work="$$(mktemp -d "$${ELISA_TEST_TMPDIR:-/tmp}/elisa-profiler-regression.XXXXXX")"; trap 'rm -rf "$$regression_work"' EXIT; \

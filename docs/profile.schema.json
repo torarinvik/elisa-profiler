@@ -306,7 +306,7 @@
               "additionalProperties": false
             },
             "recent_path": { "type": "string", "enum": ["last_256", "disabled"] },
-            "timing": { "type": "string", "enum": ["wall"] },
+            "timing": { "type": "string", "enum": ["wall", "cpu"] },
             "sampling": { "type": "string", "enum": ["disabled", "instrumented_cpu"] },
             "sampling_detail": { "$ref": "#/$defs/capability_detail" },
             "allocation": { "$ref": "#/$defs/capability_detail" },
@@ -599,7 +599,23 @@
         "sequence": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
         "thread_id": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
         "timestamp_ns": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
-        "repetition": { "type": "integer", "minimum": 1 }
+        "repetition": { "type": "integer", "minimum": 1 },
+        "site_known": { "type": "integer", "enum": [0, 1] },
+        "site_function_id": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "site_line": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "site_caller_id": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "site_caller_line": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "site_stack_omitted": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "site_stack": { "type": "string", "pattern": "^(-|[0-9]+:[0-9]+(;[0-9]+:[0-9]+){0,7})$" }
+      },
+      "dependentRequired": {
+        "site_known": ["site_function_id", "site_line", "site_caller_id", "site_caller_line", "site_stack_omitted", "site_stack"],
+        "site_function_id": ["site_known"],
+        "site_line": ["site_known"],
+        "site_caller_id": ["site_known"],
+        "site_caller_line": ["site_known"],
+        "site_stack_omitted": ["site_known"],
+        "site_stack": ["site_known"]
       },
       "additionalProperties": false
     },

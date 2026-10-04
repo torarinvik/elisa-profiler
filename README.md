@@ -120,6 +120,11 @@ progress reporting, collector identity, and collector timing failure/mismatch.
 This does not establish support for other Linux architectures or every optional
 Mach-O-specific utility/test target in the Makefile.
 
+Tool subprocesses have a five-minute timeout by default. For large instrumented
+builds, `ELISA_PROFILER_TOOL_TIMEOUT_SECONDS` accepts a finite positive duration
+up to 1800 seconds; invalid values are rejected before launching the tool. This
+does not change the profiled target's separate `--timeout` bound.
+
 The native build pipeline passes compiler, object-copy, collector, linker, and
 Git metadata operations through direct argument vectors. It does not construct
 shell command strings for the normal profiling path, so paths and user-selected

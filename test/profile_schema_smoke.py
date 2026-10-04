@@ -72,6 +72,11 @@ def validate(value: Any, schema: dict[str, Any], root: dict[str, Any], path: str
         if "pattern" in schema and re.search(schema["pattern"], value) is None:
             raise SchemaError(f"{path}: string does not match pattern")
     if isinstance(value, dict):
+        for name, dependencies in schema.get("dependentRequired", {}).items():
+            if name in value:
+                for dependency in dependencies:
+                    if dependency not in value:
+                        raise SchemaError(f"{path}: {name!r} requires {dependency!r}")
         for required in schema.get("required", []):
             if required not in value:
                 raise SchemaError(f"{path}: missing required property {required!r}")

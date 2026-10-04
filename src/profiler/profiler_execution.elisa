@@ -21,6 +21,14 @@ extend ProfilerNative:
 
 
         def run_tool_direct(tool: darray[u8]&, arguments: darray[darray[u8]], stdout_path: darray[u8]&, stderr_path: darray[u8]&) -> i64 can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            # Large instrumented targets can exceed the default five-minute
+            # compiler bound. Permit an explicit, still-bounded host override.
+            tool_timeout_ns: mutable i64 = NATIVE_TOOL_TIMEOUT_NS
+            if profiler_ffi_getenv("ELISA_PROFILER_TOOL_TIMEOUT_SECONDS") is value:
+                tool_timeout_ns <- parse_positive_timeout_ns(value.cast[cstr] can Unsafe.PointerCast)
+                if tool_timeout_ns <= NATIVE_ZERO or tool_timeout_ns > NATIVE_MAX_TOOL_TIMEOUT_NS:
+                    _ = report_error("ELISA_PROFILER_TOOL_TIMEOUT_SECONDS must be positive and at most 1800 seconds")
+                    return NATIVE_NEGATIVE_ONE
             # Build stable C-string storage before creating the child. The child receives a
             # direct argv vector; no shell parser can reinterpret a path or an option.
             tool_storage: mutable darray[u8] = []
@@ -67,7 +75,7 @@ extend ProfilerNative:
                 waited <- profiler_ffi_waitpid(process, &status, NATIVE_WAIT_NO_HANG)
                 break if waited == process or waited < NATIVE_ZERO
                 now: ProfilerNativeTimespec = read_monotonic()
-                if elapsed_nanoseconds(start_time, now) >= NATIVE_TOOL_TIMEOUT_NS:
+                if elapsed_nanoseconds(start_time, now) >= tool_timeout_ns:
                     _ = profiler_ffi_kill(-process, NATIVE_SIGNAL_TERM)
                     grace_start: ProfilerNativeTimespec = now
                     while true |waited, status, grace_start|:
