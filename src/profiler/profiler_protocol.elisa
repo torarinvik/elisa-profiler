@@ -458,6 +458,60 @@ extend ProfilerNative:
             summary.stack_record_count <- native_saturating_add(summary.stack_record_count, NATIVE_ONE)
 
 
+        # Folded stacks are keyed by their frame labels. Keep legacy captures
+        # byte-for-byte unchanged when identity IDs are absent, but make sample
+        # labels distinct when the compiler supplied stable function identities.
+        # Speedscope interns these labels as frames, so the same key also keeps
+        # duplicate source names separate there.
+        def append_sample_stack_for_export(folded: mutable darray[u8]&, stack_names: darray[u8]&, identity_path: darray[u8]&) -> bool can[Abort.Panic, Memory.Allocate]:
+            has_identity: mutable bool = false
+            for index in 0..<identity_path.count |identity_path, has_identity|:
+                has_identity <- true if identity_path[index] != NATIVE_BYTE_ASCII_ZERO and identity_path[index] != NATIVE_BYTE_SEMICOLON
+            if identity_path.count > NATIVE_ZERO.usize() and not protocol_field_is(identity_path, "-"):
+                # Validate path cardinality before the all-zero legacy fallback. Otherwise an
+                # invalid present ID path can evade validation merely because it carries no
+                # stable identity values.
+                stack_frames: mutable usize = NATIVE_ONE.usize()
+                identity_frames: mutable usize = NATIVE_ONE.usize()
+                for index in 0..<stack_names.count |stack_names, stack_frames|:
+                    stack_frames <- stack_frames + NATIVE_ONE.usize() if stack_names[index] == NATIVE_BYTE_SEMICOLON
+                for index in 0..<identity_path.count |identity_path, identity_frames|:
+                    identity_frames <- identity_frames + NATIVE_ONE.usize() if identity_path[index] == NATIVE_BYTE_SEMICOLON
+                return false if stack_frames != identity_frames
+            if identity_path.count == NATIVE_ZERO.usize() or protocol_field_is(identity_path, "-") or not has_identity:
+                folded.extend(stack_names)
+                return true
+            stack_start: mutable usize = NATIVE_ZERO.usize()
+            identity_start: mutable usize = NATIVE_ZERO.usize()
+            first_frame: mutable bool = true
+            while stack_start < stack_names.count |stack_start, identity_start, first_frame, stack_names, identity_path, folded|:
+                stack_stop: mutable usize = stack_start
+                identity_stop: mutable usize = identity_start
+                while stack_stop < stack_names.count and stack_names[stack_stop] != NATIVE_BYTE_SEMICOLON |stack_stop, stack_names|:
+                    stack_stop <- stack_stop + NATIVE_ONE.usize()
+                while identity_stop < identity_path.count and identity_path[identity_stop] != NATIVE_BYTE_SEMICOLON |identity_stop, identity_path|:
+                    identity_stop <- identity_stop + NATIVE_ONE.usize()
+                return false if stack_stop == stack_start or identity_stop == identity_start
+                return false if first_frame and stack_stop == stack_names.count and identity_stop < identity_path.count
+                return false if first_frame and stack_stop < stack_names.count and identity_stop == identity_path.count
+                return false if not first_frame and stack_stop == stack_names.count and identity_stop < identity_path.count
+                return false if not first_frame and stack_stop < stack_names.count and identity_stop == identity_path.count
+                if not first_frame:
+                    folded.push(NATIVE_BYTE_SEMICOLON)
+                for index in stack_start..<stack_stop |stack_names, folded|:
+                    folded.push(stack_names[index])
+                append_text(folded, " [elisa-id=")
+                for index in identity_start..<identity_stop |identity_path, folded|:
+                    folded.push(identity_path[index])
+                folded.push(NATIVE_BYTE_RIGHT_BRACKET)
+                first_frame <- false
+                if stack_stop == stack_names.count:
+                    return identity_stop == identity_path.count
+                stack_start <- stack_stop + NATIVE_ONE.usize()
+                identity_start <- identity_stop + NATIVE_ONE.usize()
+            return false
+
+
         def append_sample_record(summary: mutable CaptureSummary&, sample_records: mutable darray[u8]&, folded_records: mutable darray[u8]&, data: darray[u8]&, cursor: mutable usize&, stop: usize, repetition: i64) -> void can[Abort.Panic, Memory.Allocate]:
             return if protocol_record_limit_reached(summary, summary.sample_record_count, NATIVE_PROTOCOL_ERROR_SAMPLE, NATIVE_MAX_PROTOCOL_SAMPLE_RECORDS)
             sequence_field: mutable darray[u8] = []
@@ -519,8 +573,10 @@ extend ProfilerNative:
             if protocol_field_is(stack_field, "-"):
                 append_text(folded_records, "<root>")
             else:
-                for index in 0..<stack_field.count |folded_records, stack_field|:
-                    folded_records.push(stack_field[index])
+                if not append_sample_stack_for_export(folded_records, stack_field, stack_ids_field):
+                    summary.malformed <- true
+                    summary.malformed_code <- NATIVE_PROTOCOL_ERROR_SAMPLE
+                    return
             folded_records.push(NATIVE_BYTE_SPACE)
             append_i64(folded_records, NATIVE_ONE)
             summary.sample_record_count <- native_saturating_add(summary.sample_record_count, NATIVE_ONE)

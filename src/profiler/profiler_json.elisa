@@ -1491,9 +1491,14 @@ extend ProfilerNative:
                 object_stop: i64 = json_object_end(data, cursor, stop)
                 return false if object_stop < NATIVE_ZERO
                 stack_value: mutable darray[u8] = []
+                identity_path: mutable darray[u8] = []
                 return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &stack_value) or stack_value.count == NATIVE_ZERO.usize()
+                identity_start: i64 = json_key_value_start(data, "stack_ids", cursor, object_stop.usize())
+                if identity_start >= NATIVE_ZERO:
+                    return false if not json_read_string_field(data, "stack_ids", cursor, object_stop.usize(), &identity_path)
+                    return false if identity_path.count > NATIVE_ZERO.usize() and not protocol_field_is(identity_path, "-") and not protocol_identity_path(identity_path)
                 append_folded_separator(folded)
-                folded.extend(stack_value)
+                return false if not append_sample_stack_for_export(folded, stack_value, identity_path)
                 folded.push(NATIVE_BYTE_SPACE)
                 append_i64(folded, NATIVE_ONE)
                 cursor <- object_stop.usize()

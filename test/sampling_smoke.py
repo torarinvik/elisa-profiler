@@ -85,6 +85,43 @@ def main() -> int:
         )
         assert rejected.returncode == 2, (rejected.returncode, rejected.stdout, rejected.stderr)
         assert "malformed_profile" in rejected.stdout
+        zero_id_mismatch = copy.deepcopy(report)
+        zero_id_sample = zero_id_mismatch["samples"][0]
+        zero_id_sample["stack_ids"] = "0" if zero_id_sample["depth"] != 1 else "0;0"
+        zero_id_path = root / "sampling-zero-id-mismatch.json"
+        zero_id_output_path = root / "sampling-zero-id-mismatch.folded"
+        zero_id_path.write_text(json.dumps(zero_id_mismatch), encoding="utf-8")
+        zero_id_export = subprocess.run(
+            [
+                str(profiler), "report", str(zero_id_path), "--format", "folded",
+                "--output", str(zero_id_output_path),
+            ],
+            check=False, capture_output=True, text=True, timeout=45,
+        )
+        assert zero_id_export.returncode == 2, (
+            zero_id_export.returncode, zero_id_export.stdout, zero_id_export.stderr
+        )
+        assert "malformed" in zero_id_export.stderr, (
+            zero_id_export.stdout, zero_id_export.stderr
+        )
+        zero_id_valid = copy.deepcopy(report)
+        zero_id_valid_sample = zero_id_valid["samples"][0]
+        zero_id_valid_sample["stack_ids"] = ";".join(
+            ["0"] * zero_id_valid_sample["depth"]
+        )
+        zero_id_valid_path = root / "sampling-zero-id-valid.json"
+        zero_id_valid_output = root / "sampling-zero-id-valid.folded"
+        zero_id_valid_path.write_text(json.dumps(zero_id_valid), encoding="utf-8")
+        run([
+            str(profiler), "report", str(zero_id_valid_path), "--format", "folded",
+            "--output", str(zero_id_valid_output),
+        ])
+        zero_id_folded = zero_id_valid_output.read_text(encoding="utf-8")
+        first_stack = zero_id_valid_sample["stack"]
+        assert any(
+            line.rsplit(" ", 1)[0] == first_stack
+            for line in zero_id_folded.splitlines() if " " in line
+        ), zero_id_folded
         identity_source = root / "duplicate-function-names.elisa"
         identity_source.write_text(
             "module Left:\n"
@@ -127,6 +164,72 @@ def main() -> int:
             if name == "same"
         }
         assert len(repeated_name_ids) >= 2, (repeated_name_ids, identity_report["samples"][:4])
+        def exported_same_ids(text: str) -> set[str]:
+            result = set()
+            for line in text.splitlines():
+                stack = line.rsplit(" ", 1)[0] if " " in line else ""
+                for frame in stack.split(";"):
+                    prefix = "same [elisa-id="
+                    if frame.startswith(prefix) and frame.endswith("]"):
+                        result.add(frame[len(prefix):-1])
+            return result
+
+        identity_folded_path = root / "duplicate-function-names.folded"
+        run([
+            str(profiler), "report", str(identity_report_path), "--format", "folded",
+            "--output", str(identity_folded_path),
+        ])
+        identity_folded = identity_folded_path.read_text(encoding="utf-8")
+        assert exported_same_ids(identity_folded) == repeated_name_ids, identity_folded
+        identity_speedscope_path = root / "duplicate-function-names.speedscope.json"
+        run([
+            str(profiler), "report", str(identity_report_path), "--format", "speedscope",
+            "--output", str(identity_speedscope_path),
+        ])
+        identity_speedscope = json.loads(identity_speedscope_path.read_text(encoding="utf-8"))
+        speedscope_same_ids = {
+            frame["name"][len("same [elisa-id="):-1]
+            for frame in identity_speedscope["shared"]["frames"]
+            if frame["name"].startswith("same [elisa-id=") and frame["name"].endswith("]")
+        }
+        assert speedscope_same_ids == repeated_name_ids, identity_speedscope["shared"]["frames"]
+        legacy_identity_report = copy.deepcopy(identity_report)
+        for sample in legacy_identity_report["samples"]:
+            sample.pop("stack_ids", None)
+        legacy_identity_report_path = root / "duplicate-function-names-legacy.json"
+        legacy_identity_report_path.write_text(json.dumps(legacy_identity_report), encoding="utf-8")
+        legacy_identity_folded_path = root / "duplicate-function-names-legacy.folded"
+        run([
+            str(profiler), "report", str(legacy_identity_report_path), "--format", "folded",
+            "--output", str(legacy_identity_folded_path),
+        ])
+        legacy_identity_folded = legacy_identity_folded_path.read_text(encoding="utf-8")
+        assert "same" in {
+            frame
+            for line in legacy_identity_folded.splitlines()
+            for frame in (line.rsplit(" ", 1)[0] if " " in line else "").split(";")
+        }, legacy_identity_folded
+        assert exported_same_ids(legacy_identity_folded) == set(), legacy_identity_folded
+        legacy_identity_speedscope_path = root / "duplicate-function-names-legacy.speedscope.json"
+        run([
+            str(profiler), "report", str(legacy_identity_report_path), "--format", "speedscope",
+            "--output", str(legacy_identity_speedscope_path),
+        ])
+        legacy_identity_speedscope = json.loads(legacy_identity_speedscope_path.read_text(encoding="utf-8"))
+        legacy_same_frames = [
+            frame["name"]
+            for frame in legacy_identity_speedscope["shared"]["frames"]
+            if frame["name"] == "same" or frame["name"].startswith("same [elisa-id=")
+        ]
+        assert legacy_same_frames == ["same"], legacy_identity_speedscope["shared"]["frames"]
+        direct_folded_path = root / "duplicate-function-names-direct.folded"
+        run([
+            str(profiler), "profile", str(identity_source), "--mode", "sample",
+            "--sample-period-us", SAMPLE_PERIOD_MICROSECONDS, "--format", "folded",
+            "--output", str(direct_folded_path),
+        ])
+        direct_folded = direct_folded_path.read_text(encoding="utf-8")
+        assert exported_same_ids(direct_folded) == repeated_name_ids, direct_folded
         speedscope_path = root / "sampling.speedscope.json"
         run([str(profiler), "report", str(report_path), "--format", "speedscope", "--output", str(speedscope_path)])
         speedscope = json.loads(speedscope_path.read_text(encoding="utf-8"))

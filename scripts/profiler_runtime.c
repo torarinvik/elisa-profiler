@@ -2829,6 +2829,15 @@ static void profile_write_sample_marker(void) {
         profile_signal_increment(&profile_sample_missed);
         return;
     }
+    /* ITIMER_PROF covers collector/runtime setup and teardown as well as the
+     * instrumented target. A sample without an active Elisa frame has no
+     * attribution in this collector's instrumented_call_stack scope, so
+     * account for it as missed rather than publishing a depth-zero <root> row. */
+    if (profile_call_depth == 0 && profile_call_overflow_depth == 0) {
+        profile_signal_increment(&profile_sample_missed);
+        profile_sample_handler_busy = PROFILE_SAMPLE_HANDLER_IDLE;
+        return;
+    }
     char *buffer = profile_sample_marker_buffer;
     size_t payload_offset = 0;
     payload_offset = profile_signal_append_literal(

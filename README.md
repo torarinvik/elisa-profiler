@@ -429,8 +429,10 @@ only functions whose return hook was observed; panic and timeout reports can
 therefore contain incomplete calls. Timing is an instrumented diagnostic
 estimate: it includes collector overhead and is distinct from statistical CPU
 sampling. In `sample` mode, `summary.sample_count` is the number of valid sample
-records retained, `summary.sample_missed` counts signal coalescing/write-loss
-events, and `summary.sample_period_microseconds` is the requested timer period.
+records retained, `summary.sample_missed` counts signal coalescing, write loss,
+and timer samples that arrive without an active instrumented Elisa frame (which
+cannot be attributed in the advertised stack scope), and
+`summary.sample_period_microseconds` is the requested timer period.
 `sample_missed` or `sampling_setup_failed` makes sample evidence degraded. The
 sample records carry sequence, thread, tracked depth, overflow depth, and a
 semicolon-separated active Elisa stack. They are not a chronological timeline.
