@@ -163,7 +163,8 @@ extend ProfilerNative:
 
         def append_comparison_warning_json(buffer: mutable darray[u8]&, warning: sview, include: bool, first: mutable bool&) -> i64 can[Abort.Panic, Memory.Allocate]:
             return NATIVE_ZERO if not include
-            buffer.push(NATIVE_BYTE_COMMA) if not first
+            was_first: bool = first
+            buffer.push(NATIVE_BYTE_COMMA) if not was_first
             warning_value: mutable darray[u8] = []
             append_text(warning_value, warning)
             append_json_string(buffer, warning_value)
