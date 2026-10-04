@@ -399,6 +399,7 @@
     "active_stack": { "$ref": "#/$defs/active_stack" },
     "program_stdout": { "type": "string" },
     "program_stdout_truncated": { "type": "boolean" },
+    "program_output_byte_limit": { "type": "integer", "minimum": 1, "maximum": 16777216 },
     "program_stderr": { "type": "string" },
     "program_stderr_truncated": { "type": "boolean" },
     "workload": {
@@ -608,7 +609,7 @@
         "site_stack_omitted": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
         "site_stack": { "type": "string", "pattern": "^(-|[0-9]+:[0-9]+(;[0-9]+:[0-9]+){0,7})$" }
       },
-      "dependentRequired": {
+      "dependencies": {
         "site_known": ["site_function_id", "site_line", "site_caller_id", "site_caller_line", "site_stack_omitted", "site_stack"],
         "site_function_id": ["site_known"],
         "site_line": ["site_known"],

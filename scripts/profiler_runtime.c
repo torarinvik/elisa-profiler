@@ -3355,6 +3355,13 @@ int main(int argc, char **argv) {
     }
     atexit(profile_dump);
     int64_t result = elisa_profile_target_main((int64_t)argc, argv);
+    /* The low-level exit below bypasses libc's stream flushing. Preserve the
+     * target's buffered stdout/stderr (and other open C streams) before sealing
+     * the capture; otherwise successful puts/printf calls silently lose their
+     * final partial buffer. This is normal-return code, never a signal handler. */
+    if (fflush(NULL) != 0) {
+        profile_output_write_failed = 1;
+    }
     profile_dump();
     /* The native toolchain may link this collector without a CRT startup
      * object, so returning from main would return into the dyld entry frame.

@@ -528,9 +528,28 @@ extend ProfilerNative:
             return NATIVE_COLLECTOR_STATUS_UNKNOWN
 
 
-        def read_bounded_file(path: darray[u8]&, maximum_bytes: usize, truncated: mutable bool&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast]:
-            result: mutable darray[u8] = read_file(path)
-            if result.count > maximum_bytes:
-                result.count <- maximum_bytes
+        def read_bounded_file(path: darray[u8]&, maximum_bytes: usize, truncated: mutable bool&) -> darray[u8] can[Abort.Panic, Memory.Allocate, Unsafe.PointerCast, Console]:
+            # Bound the read itself, not just the retained array after loading
+            # an arbitrarily larger file. Probe one extra byte to distinguish
+            # an exact-size file from genuine diagnostic loss.
+            result: mutable darray[u8] = []
+            fd: i64 = open_input_file(path)
+            if fd < NATIVE_ZERO:
                 truncated <- true
+                return result
+            chunk: mutable darray[u8] = [NATIVE_BYTE_NUL for _ in 0..<NATIVE_READ_CHUNK_BYTES]
+            while result.count < maximum_bytes |result, chunk, truncated|:
+                remaining: usize = maximum_bytes - result.count
+                request: usize = remaining if remaining < chunk.count else chunk.count
+                received: i64 = profiler_ffi_read(fd, &chunk[0], request)
+                if received <= NATIVE_ZERO:
+                    truncated <- true if received < NATIVE_ZERO
+                    _ = profiler_ffi_close(fd)
+                    return result
+                for index in 0..<received.usize() |result, chunk|:
+                    result.push(chunk[index])
+            extra: mutable u8 = NATIVE_BYTE_NUL
+            received_extra: i64 = profiler_ffi_read(fd, &extra, NATIVE_ONE.usize())
+            truncated <- true if received_extra != NATIVE_ZERO
+            _ = profiler_ffi_close(fd)
             return result

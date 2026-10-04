@@ -377,7 +377,11 @@ allocation-schema-smoke:
 tool-timeout-smoke: profiler-native
 	@python3 "$(PROFILER_ROOT)/test/tool_timeout_smoke.py" "$(NATIVE_PROFILER_BIN)"
 
-test: allocation-schema-smoke tool-timeout-smoke
+.PHONY: program-output-budget-smoke
+program-output-budget-smoke: profiler-native
+	@python3 "$(PROFILER_ROOT)/test/program_output_budget_smoke.py" "$(NATIVE_PROFILER_BIN)"
+
+test: allocation-schema-smoke tool-timeout-smoke program-output-budget-smoke
 
 .PHONY: collector-regression-smoke
 collector-regression-smoke:

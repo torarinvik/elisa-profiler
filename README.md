@@ -279,6 +279,11 @@ resource wrapper can write this optional value.
 Target stdout and stderr are captured independently, included in JSON when
 non-empty, and capped at the named native program-output limit; matching
 `*_truncated` fields keep diagnostic loss explicit.
+The default aggregate limit is 1 MiB per stream across measured repetitions.
+`ELISA_PROFILER_MAX_PROGRAM_OUTPUT_BYTES` can explicitly select a positive limit
+up to 16 MiB per stream for verbose targets such as proof JSON. JSON reports record
+the chosen `program_output_byte_limit`. Invalid overrides fail before compilation;
+raising this diagnostic limit does not change collector or artifact budgets.
 Include-expanded programs retain the file and line where each accepted location
 originated; compiler_line preserves the flattened line for diagnostics, and
 source_mapping counts accepted direct mappings separately from any future
