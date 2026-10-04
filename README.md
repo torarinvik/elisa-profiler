@@ -87,6 +87,39 @@ defaults for the compiler checkout, runtime object, and collector
 source relative to its own location, so it is safe to invoke from outside the
 repository directory.
 
+The native host backend is validated on macOS and x86_64 Linux. File-open flags,
+monotonic clock IDs, target entry-symbol rewriting, and linker arguments are
+selected for the compilation target; Linux uses ELF symbols and GNU linker flags,
+while macOS retains its Mach-O path. Native Windows is deferred until a Windows
+backend and native test host are available; WSL is a Linux host, not Windows validation.
+
+On Linux, use a verified Linux stage1 product and its matching runtime object,
+with the matching LLVM tools on `PATH`. The native build emits a stage1 object
+and links it with Clang, because the pinned compiler's executable linker still
+assumes macOS. There is no automatic stage0 fallback. For example, with the
+repository-pinned toolchain prepared by `elisa-proof/scripts/linux_toolchain.sh`:
+
+```sh
+export PATH=/usr/lib/llvm-20/bin:$PATH
+export ELISA_COMPILER_SCRIPT=/absolute/toolchain/elisac-stage1
+export ELISA_STAGE1_BIN=/absolute/toolchain/elisac-stage1
+export ELISA_COMPILER_ROOT=/absolute/toolchain/compiler
+export ELISA_RUNTIME_OBJ=/absolute/toolchain/compiler/build/runtime/elisacore_runtime.o
+export ELISA_HOST_LINUX=1 ELISA_HOST_X86_64=1
+make profiler-native NATIVE_COMPILER_SCRIPT="$ELISA_COMPILER_SCRIPT" \
+  NATIVE_STAGE1_BIN="$ELISA_STAGE1_BIN" COMPILER_WORKTREE="$ELISA_COMPILER_ROOT" \
+  NATIVE_RUNTIME_OBJECT="$ELISA_RUNTIME_OBJ"
+python3 test/sampling_smoke.py bin/elisa-profiler
+python3 test/build_cache_smoke.py bin/elisa-profiler
+python3 test/native_timeout_smoke.py bin/elisa-profiler
+python3 test/process_group_smoke.py
+```
+
+The Linux validation also covers report replacement/truncation, prebuilt reuse,
+progress reporting, collector identity, and collector timing failure/mismatch.
+This does not establish support for other Linux architectures or every optional
+Mach-O-specific utility/test target in the Makefile.
+
 The native build pipeline passes compiler, object-copy, collector, linker, and
 Git metadata operations through direct argument vectors. It does not construct
 shell command strings for the normal profiling path, so paths and user-selected

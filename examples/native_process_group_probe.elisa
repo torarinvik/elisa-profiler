@@ -2,7 +2,9 @@
 # The launcher must terminate the uniquely named descendant together with this
 # target when the profiler timeout fires.
 
-const PROCESS_GROUP_PROBE_COMMAND: cstr = "exec -a elisa-profiler-process-group-child /bin/sleep 30"
+# `system` uses /bin/sh, which is dash on Linux and does not support `exec -a`.
+# Select bash explicitly so this fixture actually starts its named descendant.
+const PROCESS_GROUP_PROBE_COMMAND: cstr = "/bin/bash -c 'exec -a elisa-profiler-process-group-child /bin/sleep 30'"
 
 @link_name("system")
 extern process_group_probe_system(command: cstr) -> i64

@@ -167,6 +167,9 @@ def main() -> int:
         }]
         baseline.write_text(json.dumps(baseline_capture), encoding="utf-8")
         candidate.write_text(json.dumps(candidate_capture), encoding="utf-8")
+        # Replacing an existing larger report must truncate it. A Darwin O_TRUNC
+        # value on Linux can silently leave an invalid JSON suffix behind.
+        output.write_text("obsolete-report-sentinel" * 32768, encoding="utf-8")
         result = run_command(
             [str(profiler), "compare", str(baseline), str(candidate), "--format", "json", "--output", str(output)],
             "native comparison",

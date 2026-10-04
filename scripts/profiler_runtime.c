@@ -1,3 +1,9 @@
+/* Expose the POSIX APIs explicitly under strict C11 on glibc. Keep Apple's
+ * default feature namespace unchanged; this is a host ABI boundary, not policy. */
+#if defined(__linux__) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>

@@ -272,11 +272,16 @@ module ProfilerNative:
         const NATIVE_HEX_LETTER_OFFSET: u8 = 87
         const NATIVE_O_RDONLY: i64 = 0
         const NATIVE_O_WRONLY: i64 = 1
-        const NATIVE_O_CREAT: i64 = 512
-        const NATIVE_O_TRUNC: i64 = 1024
+        static if ELISA_TARGET_OS_LINUX:
+            const NATIVE_O_CREAT: i64 = 64
+            const NATIVE_O_TRUNC: i64 = 512
+            const NATIVE_MONOTONIC_CLOCK: i64 = 1
+        static else:
+            const NATIVE_O_CREAT: i64 = 512
+            const NATIVE_O_TRUNC: i64 = 1024
+            const NATIVE_MONOTONIC_CLOCK: i64 = 6
         const NATIVE_FILE_MODE: i64 = 420
         const NATIVE_EXECUTABLE_FILE_MODE: i64 = 493
-        const NATIVE_MONOTONIC_CLOCK: i64 = 6
         const NATIVE_SIGNAL_TERM: i64 = 15
         const NATIVE_SIGNAL_KILL: i64 = 9
         const NATIVE_LEGACY_REPORT_SCHEMA_VERSION: i64 = 1

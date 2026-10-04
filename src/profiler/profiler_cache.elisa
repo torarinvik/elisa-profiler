@@ -7,8 +7,18 @@
 extend ProfilerNative:
     private:
         const NATIVE_CACHE_SCHEMA_VERSION: i64 = 1
-        const NATIVE_CACHE_BUILD_FLAGS: cstr = "-g,-ftrace,-pthread,-Wl,-dead_strip"
-        const NATIVE_CACHE_FUNCTION_FLAGS: cstr = "-g,-ftrace-functions,-pthread,-Wl,-dead_strip"
+        static if ELISA_TARGET_OS_LINUX:
+            const NATIVE_TARGET_LINUX: bool = true
+            const NATIVE_CACHE_BUILD_FLAGS: cstr = "-g,-ftrace,-pthread,-Wl,--gc-sections,-no-pie,-lm"
+            const NATIVE_CACHE_FUNCTION_FLAGS: cstr = "-g,-ftrace-functions,-pthread,-Wl,--gc-sections,-no-pie,-lm"
+            const NATIVE_TARGET_MAIN_RENAME: cstr = "main=elisa_profile_target_main"
+            const NATIVE_TARGET_DEAD_STRIP: cstr = "-Wl,--gc-sections"
+        static else:
+            const NATIVE_TARGET_LINUX: bool = false
+            const NATIVE_CACHE_BUILD_FLAGS: cstr = "-g,-ftrace,-pthread,-Wl,-dead_strip"
+            const NATIVE_CACHE_FUNCTION_FLAGS: cstr = "-g,-ftrace-functions,-pthread,-Wl,-dead_strip"
+            const NATIVE_TARGET_MAIN_RENAME: cstr = "_main=_elisa_profile_target_main"
+            const NATIVE_TARGET_DEAD_STRIP: cstr = "-Wl,-dead_strip"
         const NATIVE_CACHE_PROGRAM_SUFFIX: cstr = ".program"
         const NATIVE_CACHE_METADATA_SUFFIX: cstr = ".json"
 
@@ -420,7 +430,7 @@ extend ProfilerNative:
 
             command_arguments <- []
             cache_append_argument(command_arguments, "--redefine-sym")
-            cache_append_argument(command_arguments, "_main=_elisa_profile_target_main")
+            cache_append_argument(command_arguments, NATIVE_TARGET_MAIN_RENAME)
             cache_append_path_argument(command_arguments, target_object)
             cache_append_path_argument(command_arguments, renamed_object)
             rename_status: mutable i64 = run_tool_direct(objcopy_tool, command_arguments, compile_output_path, compile_error_path)
@@ -489,13 +499,17 @@ extend ProfilerNative:
             return false if run_tool_direct(compiler_tool, command_arguments, compile_output_path, compile_error_path) != NATIVE_ZERO
 
             command_arguments <- []
-            cache_append_argument(command_arguments, "-Wl,-dead_strip")
+            cache_append_argument(command_arguments, NATIVE_TARGET_DEAD_STRIP)
+            if NATIVE_TARGET_LINUX:
+                cache_append_argument(command_arguments, "-no-pie")
             cache_append_argument(command_arguments, "-pthread")
             cache_append_argument(command_arguments, "-o")
             cache_append_path_argument(command_arguments, executable)
             cache_append_path_argument(command_arguments, renamed_object)
             cache_append_path_argument(command_arguments, runtime_collector_object)
             cache_append_path_argument(command_arguments, collector_object)
+            if NATIVE_TARGET_LINUX:
+                cache_append_argument(command_arguments, "-lm")
             for argument_index in NATIVE_ZERO.usize()..<link_arguments.count |command_arguments, link_arguments|:
                 cache_append_path_argument(command_arguments, link_arguments[argument_index])
             return false if run_tool_direct(compiler_tool, command_arguments, compile_output_path, link_error_path) != NATIVE_ZERO

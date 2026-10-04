@@ -193,12 +193,9 @@ profiler-native:
 	@test -x "$(NATIVE_COMPILER_SCRIPT)" || { echo "stage1 compiler wrapper missing: $(NATIVE_COMPILER_SCRIPT)" >&2; exit 2; }
 	@test -x "$(NATIVE_STAGE1_BIN)" || { echo "stage1 compiler missing: $(NATIVE_STAGE1_BIN) (run make compiler-seed)" >&2; exit 2; }
 	@test -f "$(NATIVE_RUNTIME_OBJECT)" || { echo "runtime object missing: $(NATIVE_RUNTIME_OBJECT) (run $(COMPILER_WORKTREE)/scripts/build_runtime_object.sh)" >&2; exit 2; }
-	@mkdir -p "$(PROFILER_ROOT)/bin"
-	@set -eu; native_build="$$(mktemp -d "$(PROFILER_ROOT)/bin/.native-build.XXXXXX")"; \
-		trap 'rm -rf "$$native_build"' EXIT; \
-		ELISA_STAGE1_BIN="$(NATIVE_STAGE1_BIN)" ELISA_COMPILER_ROOT="$(COMPILER_WORKTREE)" ELISA_RUNTIME_OBJ="$(NATIVE_RUNTIME_OBJECT)" \
-		"$(NATIVE_COMPILER_SCRIPT)" -emit exe "$(NATIVE_OPT_LEVEL)" -o "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_SOURCE)"; \
-		mv "$$native_build/elisa-profiler" "$(NATIVE_PROFILER_BIN)"
+	@bash "$(PROFILER_ROOT)/scripts/build-native.sh" "$(NATIVE_COMPILER_SCRIPT)" \
+		"$(NATIVE_STAGE1_BIN)" "$(COMPILER_WORKTREE)" "$(NATIVE_RUNTIME_OBJECT)" \
+		"$(NATIVE_OPT_LEVEL)" "$(NATIVE_PROFILER_BIN)"
 # Building a profiler does not rebuild its compiler. Only compiler-seed may
 # record seed provenance; ambient stage0 paths/flags are not build evidence.
 	@echo "native profiler: $(NATIVE_PROFILER_BIN)"

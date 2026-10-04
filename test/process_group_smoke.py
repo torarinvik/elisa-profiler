@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -55,7 +56,17 @@ def main() -> int:
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
-        stdout, stderr = process.communicate(timeout=10)
+        try:
+            stdout, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired as error:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = process.communicate(timeout=5)
+            raise AssertionError(
+                f"process-group probe stalled: stdout={stdout[-500:]!r}, stderr={stderr[-500:]!r}"
+            ) from error
         assert process.returncode == EXPECTED_SIGNAL_EXIT_STATUS, (process.returncode, stdout, stderr)
         payload = report.read_text(encoding="utf-8")
         assert '"timed_out":true' in payload, payload
