@@ -24,6 +24,8 @@ module ArenaAdoptReuseWorkload:
             original_address: uintptr = initial.cast[uintptr]
             filler: mutable heap void& = arena_alloc(&child, FILLER * size_of(uintptr))
             grown: mutable heap void& = arena_realloc(&child, initial, INITIAL * size_of(uintptr), GROWN * size_of(uintptr))
+            # The original raw pointer has no aliases; explicitly reclaim its moved-from span.
+            arena_reclaim_allocation(&child, initial, INITIAL, INITIAL * size_of(uintptr))
             child_tail: heap Region&? = child.end
             arena_adopt(&parent, &child)
             first: mutable heap void& = arena_alloc(&parent, REUSED * size_of(uintptr))

@@ -1026,11 +1026,19 @@ def main():
         moved = [event for event in reuse_events if event["kind"] == "realloc_move"]
         assert len(moved) == 1
         move = moved[0]
+        reclaimed = [event for event in reuse_events if event["kind"] == "reclaim"]
+        assert len(reclaimed) == 1
+        reclaim = reclaimed[0]
+        assert reclaim["old_address"] == move["old_address"]
+        assert reclaim["old_size_bytes"] == move["old_size_bytes"]
+        assert reclaim["arena"] == move["arena"] and reclaim["region"] != move["region"]
+        assert move["sequence"] < reclaim["sequence"]
         same_address = [event for event in reuse_events
                         if event["kind"] == "alloc" and event["address"] == move["old_address"]]
         assert len(same_address) == 2
         original, reused = sorted(same_address, key=lambda event: event["sequence"])
         assert original["sequence"] < move["sequence"] < reused["sequence"]
+        assert reclaim["sequence"] < reused["sequence"]
         assert original["arena"] == reused["arena"] == move["arena"]
         assert original["region"] == reused["region"] != move["region"]
         replacements = sorted((event for event in reuse_events
@@ -1052,6 +1060,17 @@ def main():
         adopted_transfer = [event for event in adopted_events if event["kind"] == "arena_adopt"]
         assert len(adopted_transfer) == 1
         transfer = adopted_transfer[0]
+        adopted_moves = [event for event in adopted_events if event["kind"] == "realloc_move"]
+        assert len(adopted_moves) == 1
+        adopted_move = adopted_moves[0]
+        adopted_reclaims = [event for event in adopted_events if event["kind"] == "reclaim"]
+        assert len(adopted_reclaims) == 1
+        adopted_reclaim = adopted_reclaims[0]
+        assert adopted_reclaim["old_address"] == adopted_move["old_address"]
+        assert adopted_reclaim["old_size_bytes"] == adopted_move["old_size_bytes"]
+        assert adopted_reclaim["arena"] == transfer["old_address"]
+        assert adopted_reclaim["region"] == CHILD_REUSE_REGION
+        assert adopted_move["sequence"] < adopted_reclaim["sequence"] < transfer["sequence"]
         adopted_halves = sorted((event for event in adopted_events
                                 if event["kind"] == "alloc" and event["sequence"] > transfer["sequence"]),
                                key=lambda event: event["sequence"])

@@ -19,6 +19,8 @@ module ArenaReuseWorkload:
             initial: mutable heap void& = arena_alloc(&arena, INITIAL_SLOTS * size_of(uintptr))
             _ = arena_alloc(&arena, (CAPACITY_SLOTS - INITIAL_SLOTS) * size_of(uintptr))
             grown: mutable heap void& = arena_realloc(&arena, initial, INITIAL_SLOTS * size_of(uintptr), GROWN_SLOTS * size_of(uintptr))
+            # This raw allocation has no aliases, so return its moved-from span explicitly.
+            arena_reclaim_allocation(&arena, initial, INITIAL_SLOTS, INITIAL_SLOTS * size_of(uintptr))
             reused: mutable heap void& = arena_alloc(&arena, REUSE_SLOTS * size_of(uintptr))
             remainder: mutable heap void& = arena_alloc(&arena, (INITIAL_SLOTS - REUSE_SLOTS) * size_of(uintptr))
             correct: bool = initial.cast[uintptr] == reused.cast[uintptr] and grown.cast[uintptr] != initial.cast[uintptr] and arena.end_index == NEXT_REGION and remainder.cast[uintptr] == initial.cast[uintptr] + (REUSE_SLOTS * size_of(uintptr)).uintptr()

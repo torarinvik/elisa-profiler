@@ -16,7 +16,7 @@ extern pipeline_strcmp(left: cstr, right: cstr) -> i64
 
 def selected_iterations(argc: i64, argv: mutable void&) -> i64:
     return PIPELINE_DEFAULT_ITERATIONS if argc < PIPELINE_LARGE_ARGUMENT_COUNT
-    slots: mutable cstr&& = argv.cast[mutable cstr&&]
+    slots: mutable cstr&& = argv.cast[mutable cstr&&] can Unsafe.PointerCast
     return PIPELINE_LARGE_ITERATIONS if pipeline_strcmp(slots[PIPELINE_ONE], "--large") == PIPELINE_ZERO
     return PIPELINE_DEFAULT_ITERATIONS
 
