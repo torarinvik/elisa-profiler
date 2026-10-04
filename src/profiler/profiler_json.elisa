@@ -931,12 +931,22 @@ extend ProfilerNative:
                 depth: mutable i64 = NATIVE_ZERO
                 overflow_depth: mutable i64 = NATIVE_ZERO
                 stack_value: mutable darray[u8] = []
+                stack_ids_value: mutable darray[u8] = []
                 repetition: mutable i64 = NATIVE_ZERO
                 return false if not json_read_number_field(data, "sequence", cursor, object_stop.usize(), &sequence)
                 return false if not json_read_nullable_number_field(data, "thread_id", cursor, object_stop.usize(), &thread_id, &thread_available)
                 return false if not json_read_number_field(data, "depth", cursor, object_stop.usize(), &depth)
                 return false if not json_read_number_field(data, "overflow_depth", cursor, object_stop.usize(), &overflow_depth)
                 return false if not json_read_string_field(data, "stack", cursor, object_stop.usize(), &stack_value) or stack_value.count == NATIVE_ZERO.usize()
+                stack_ids_start: i64 = json_key_value_start(data, "stack_ids", cursor, object_stop.usize())
+                if stack_ids_start >= NATIVE_ZERO:
+                    return false if not json_read_string_field(data, "stack_ids", cursor, object_stop.usize(), &stack_ids_value)
+                    return false if not protocol_identity_path(stack_ids_value)
+                    return false if depth < NATIVE_ZERO
+                    identity_depth: mutable usize = NATIVE_ONE.usize()
+                    for index in 0..<stack_ids_value.count |stack_ids_value, identity_depth|:
+                        identity_depth <- identity_depth + NATIVE_ONE.usize() if stack_ids_value[index] == NATIVE_BYTE_SEMICOLON
+                    return false if identity_depth != depth.usize()
                 return false if not json_read_optional_number_field(data, "repetition", cursor, object_stop.usize(), &repetition)
                 return false if depth < NATIVE_ZERO or overflow_depth < NATIVE_ZERO or thread_available and thread_id < NATIVE_ZERO or repetition < NATIVE_ZERO
                 record_count <- record_count + NATIVE_ONE
@@ -1314,6 +1324,7 @@ extend ProfilerNative:
             return false if not json_read_number_field(data, "schema_version", NATIVE_ZERO.usize(), data.count, &schema_version)
             return false if not json_validate_report_envelope(data, schema_version, "profile")
             return false if not json_validate_source_snapshot(data)
+            return false if not json_validate_sample_array(data)
             compiler_start: i64 = json_key_value_start(data, "compiler", NATIVE_ZERO.usize(), data.count)
             summary_start: i64 = json_key_value_start(data, "summary", NATIVE_ZERO.usize(), data.count)
             run_start: i64 = json_key_value_start(data, "run", NATIVE_ZERO.usize(), data.count)
@@ -1398,6 +1409,27 @@ extend ProfilerNative:
                 capture.stable_ids_available <- true if capture.stacks[index].identity_path.count > NATIVE_ZERO.usize()
             for index in 0..<capture.location_records.count |index, capture|:
                 capture.stable_ids_available <- true if capture.location_records[index].identity_id.count > NATIVE_ZERO.usize()
+            samples_start: i64 = json_key_value_start(data, "samples", NATIVE_ZERO.usize(), data.count)
+            if samples_start >= NATIVE_ZERO:
+                samples_stop: i64 = json_array_end(data, samples_start.usize(), data.count)
+                return false if samples_stop < NATIVE_ZERO
+                sample_cursor: mutable usize = samples_start.usize() + NATIVE_ONE.usize()
+                samples_content_stop: usize = samples_stop.usize() - NATIVE_ONE.usize()
+                while sample_cursor < samples_content_stop |data, sample_cursor, samples_content_stop, capture|:
+                    sample_cursor <- json_skip_whitespace(data, sample_cursor, samples_content_stop)
+                    break if sample_cursor >= samples_content_stop or data[sample_cursor] == NATIVE_BYTE_RIGHT_BRACKET
+                    sample_stop: i64 = json_object_end(data, sample_cursor, samples_content_stop)
+                    return false if sample_stop < NATIVE_ZERO
+                    sample_ids_start: i64 = json_key_value_start(data, "stack_ids", sample_cursor, sample_stop.usize())
+                    if sample_ids_start >= NATIVE_ZERO:
+                        sample_ids: mutable darray[u8] = []
+                        return false if not json_read_string_field(data, "stack_ids", sample_cursor, sample_stop.usize(), &sample_ids)
+                        for index in 0..<sample_ids.count |sample_ids, capture|:
+                            capture.stable_ids_available <- true if sample_ids[index] != NATIVE_BYTE_ASCII_ZERO and sample_ids[index] != NATIVE_BYTE_SEMICOLON
+                    sample_cursor <- sample_stop.usize()
+                    if sample_cursor < samples_content_stop:
+                        return false if data[sample_cursor] != NATIVE_BYTE_COMMA
+                        sample_cursor <- sample_cursor + NATIVE_ONE.usize()
             return false if not json_validate_identity_coverage(capture)
             if protocol_field_is(identity_status, "compiler_stable_ids"):
                 return false if not capture.stable_ids_available

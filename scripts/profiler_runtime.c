@@ -2749,7 +2749,8 @@ static size_t profile_signal_append_field(char *buffer, size_t offset,
 }
 
 static size_t profile_signal_append_active_stack(char *buffer, size_t offset,
-                                                 size_t capacity) {
+                                                 size_t capacity,
+                                                 int include_identity_ids) {
     offset = profile_signal_append_literal(buffer, offset, capacity, "\t");
     offset = profile_signal_append_uint(buffer, offset, capacity,
                                         (unsigned int)profile_call_depth);
@@ -2758,14 +2759,29 @@ static size_t profile_signal_append_active_stack(char *buffer, size_t offset,
                                         (unsigned int)profile_call_overflow_depth);
     offset = profile_signal_append_literal(buffer, offset, capacity, "\t");
     if (profile_call_depth == 0) {
-        return profile_signal_append_literal(buffer, offset, capacity, "-");
-    }
-    for (size_t index = 0; index < profile_call_depth; ++index) {
-        if (index != 0) {
-            offset = profile_signal_append_literal(buffer, offset, capacity, ";");
+        offset = profile_signal_append_literal(buffer, offset, capacity, "-");
+    } else {
+        for (size_t index = 0; index < profile_call_depth; ++index) {
+            if (index != 0) {
+                offset = profile_signal_append_literal(buffer, offset, capacity, ";");
+            }
+            offset = profile_signal_append_field(
+                buffer, offset, capacity, profile_call_stack[index].function_name);
         }
-        offset = profile_signal_append_field(
-            buffer, offset, capacity, profile_call_stack[index].function_name);
+    }
+    if (include_identity_ids) {
+        offset = profile_signal_append_literal(buffer, offset, capacity, "\t");
+        if (profile_call_depth == 0) {
+            offset = profile_signal_append_literal(buffer, offset, capacity, "-");
+        } else {
+            for (size_t index = 0; index < profile_call_depth; ++index) {
+                if (index != 0) {
+                    offset = profile_signal_append_literal(buffer, offset, capacity, ";");
+                }
+                offset = profile_signal_append_uint(
+                    buffer, offset, capacity, profile_call_stack[index].function_id);
+            }
+        }
     }
     return offset;
 }
@@ -2833,7 +2849,7 @@ static void profile_write_sample_marker(void) {
             (unsigned int)thread->thread_id);
     }
     payload_offset = profile_signal_append_active_stack(
-        buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES);
+        buffer, payload_offset, PROFILE_SAMPLE_MARKER_BUFFER_BYTES, 1);
     if (payload_offset == 0 || payload_offset >= PROFILE_SAMPLE_MARKER_BUFFER_BYTES) {
         goto sample_missed;
     }
@@ -2951,7 +2967,7 @@ static void profile_write_crash_marker(int signal_number) {
         buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, "ELISA_PROFILE\t1\tcrash\t");
     offset = profile_signal_append_uint(
         buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, (unsigned int)signal_number);
-    offset = profile_signal_append_active_stack(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES);
+    offset = profile_signal_append_active_stack(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, 0);
     offset = profile_signal_append_literal(buffer, offset, PROFILE_SIGNAL_MARKER_BUFFER_BYTES, "\n");
     (void)profile_signal_write_all(buffer, offset);
 }

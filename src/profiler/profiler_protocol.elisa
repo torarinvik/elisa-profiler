@@ -465,18 +465,33 @@ extend ProfilerNative:
             depth_field: mutable darray[u8] = []
             overflow_field: mutable darray[u8] = []
             stack_field: mutable darray[u8] = []
+            stack_ids_field: mutable darray[u8] = []
             cursor <- protocol_field_into(data, cursor, stop, &sequence_field)
             cursor <- protocol_field_into(data, cursor, stop, &thread_field)
             cursor <- protocol_field_into(data, cursor, stop, &depth_field)
             cursor <- protocol_field_into(data, cursor, stop, &overflow_field)
             cursor <- protocol_field_into(data, cursor, stop, &stack_field)
-            valid: bool = cursor == stop and protocol_unsigned(sequence_field) and (protocol_field_is(thread_field, "-") or protocol_unsigned(thread_field)) and protocol_unsigned(depth_field) and protocol_unsigned(overflow_field) and (protocol_field_is(stack_field, "-") or stack_field.count > NATIVE_ZERO.usize())
+            if cursor < stop:
+                cursor <- protocol_field_into(data, cursor, stop, &stack_ids_field)
+            valid: mutable bool = cursor == stop and protocol_unsigned(sequence_field) and (protocol_field_is(thread_field, "-") or protocol_unsigned(thread_field)) and protocol_unsigned(depth_field) and protocol_unsigned(overflow_field) and (protocol_field_is(stack_field, "-") or stack_field.count > NATIVE_ZERO.usize())
             if not valid:
                 summary.malformed <- true
                 summary.malformed_code <- NATIVE_PROTOCOL_ERROR_SAMPLE
                 return
             depth: i64 = protocol_number_field(depth_field)
             overflow_depth: i64 = protocol_number_field(overflow_field)
+            if stack_ids_field.count > NATIVE_ZERO.usize():
+                valid <- valid and (protocol_field_is(stack_ids_field, "-") or protocol_identity_path(stack_ids_field))
+                if not protocol_field_is(stack_ids_field, "-"):
+                    identity_depth: mutable usize = NATIVE_ONE.usize()
+                    for index in 0..<stack_ids_field.count |stack_ids_field, identity_depth|:
+                        identity_depth <- identity_depth + NATIVE_ONE.usize() if stack_ids_field[index] == NATIVE_BYTE_SEMICOLON
+                        summary.stable_ids_available <- true if stack_ids_field[index] != NATIVE_BYTE_ASCII_ZERO and stack_ids_field[index] != NATIVE_BYTE_SEMICOLON
+                    valid <- valid and depth >= NATIVE_ZERO and identity_depth == depth.usize()
+            if not valid:
+                summary.malformed <- true
+                summary.malformed_code <- NATIVE_PROTOCOL_ERROR_SAMPLE
+                return
             append_record_separator(sample_records)
             append_text(sample_records, "{\"sequence\":")
             append_protocol_number(sample_records, sequence_field)
@@ -494,6 +509,9 @@ extend ProfilerNative:
                 append_text(sample_records, "\"<root>\"")
             else:
                 append_json_string(sample_records, stack_field)
+            if stack_ids_field.count > NATIVE_ZERO.usize() and not protocol_field_is(stack_ids_field, "-"):
+                append_text(sample_records, ",\"stack_ids\":")
+                append_json_string(sample_records, stack_ids_field)
             append_text(sample_records, ",\"repetition\":")
             append_i64(sample_records, repetition)
             append_text(sample_records, "}")

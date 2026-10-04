@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import sys
@@ -68,6 +69,64 @@ def main() -> int:
         assert len(report["samples"]) == summary["sample_count"]
         assert all(sample["stack"] for sample in report["samples"])
         assert all(sample["depth"] >= 1 for sample in report["samples"])
+        assert all("stack_ids" in sample for sample in report["samples"])
+        assert all(len(sample["stack_ids"].split(";")) == sample["depth"] for sample in report["samples"])
+        assert all(all(frame_id.isdecimal() for frame_id in sample["stack_ids"].split(";"))
+                   for sample in report["samples"])
+        assert run_data["capabilities"]["identity"]["status"] == "compiler_stable_ids"
+        malformed_ids = copy.deepcopy(report)
+        sample = malformed_ids["samples"][0]
+        sample["stack_ids"] = "0" if sample["depth"] != 1 else "0;1"
+        malformed_ids_path = root / "sampling-malformed-ids.json"
+        malformed_ids_path.write_text(json.dumps(malformed_ids), encoding="utf-8")
+        rejected = subprocess.run(
+            [str(profiler), "compare", str(malformed_ids_path), str(report_path), "--format", "json"],
+            check=False, capture_output=True, text=True, timeout=45,
+        )
+        assert rejected.returncode == 2, (rejected.returncode, rejected.stdout, rejected.stderr)
+        assert "malformed_profile" in rejected.stdout
+        identity_source = root / "duplicate-function-names.elisa"
+        identity_source.write_text(
+            "module Left:\n"
+            "    public:\n"
+            "        def same(limit: i64) -> i64:\n"
+            "            index: mutable i64 = 0\n"
+            "            while index < limit |index|:\n"
+            "                index <- index + 1\n"
+            "            return index\n\n"
+            "module Right:\n"
+            "    public:\n"
+            "        def same(limit: i64) -> i64:\n"
+            "            index: mutable i64 = 0\n"
+            "            while index < limit |index|:\n"
+            "                index <- index + 1\n"
+            "            return index\n\n"
+            "def main() -> i64:\n"
+            "    left: i64 = Left::same(25000000)\n"
+            "    right: i64 = Right::same(25000000)\n"
+            "    return 0 if left == right else 1\n",
+            encoding="utf-8",
+        )
+        identity_report_path = root / "duplicate-function-names.json"
+        run([
+            str(profiler), "profile", str(identity_source), "--mode", "sample",
+            "--sample-period-us", SAMPLE_PERIOD_MICROSECONDS, "--format", "json",
+            "--output", str(identity_report_path),
+        ])
+        identity_report = json.loads(identity_report_path.read_text(encoding="utf-8"))
+        assert all(
+            "stack_ids" in item and len(item["stack_ids"].split(";")) == item["depth"]
+            for item in identity_report["samples"] if item["depth"] > 0
+        )
+        repeated_name_ids = {
+            identity
+            for item in identity_report["samples"]
+            for name, identity in zip(
+                item["stack"].split(";"), item.get("stack_ids", "").split(";")
+            )
+            if name == "same"
+        }
+        assert len(repeated_name_ids) >= 2, (repeated_name_ids, identity_report["samples"][:4])
         speedscope_path = root / "sampling.speedscope.json"
         run([str(profiler), "report", str(report_path), "--format", "speedscope", "--output", str(speedscope_path)])
         speedscope = json.loads(speedscope_path.read_text(encoding="utf-8"))
